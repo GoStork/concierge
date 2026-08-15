@@ -54,7 +54,14 @@ export interface ConversationRow {
   profileStatus: string | null;
   profileUrl: string | null;
   serviceType: string | null;
+  /**
+   * Display state. Usually a rung, but can be the branch outcome
+   * CALL_EXPIRED_STAGE when the call proving the rung lapsed - same shape as
+   * matched_elsewhere on the parents tables.
+   */
   matchStatus: string | null;
+  /** The rung underneath, always a real stage. Rank on this, not matchStatus. */
+  journeyStatus?: string | null;
   rawStatus: string;
   lastMessagePreview: string | null;
   /** Admin only - the server sends null to providers. */

@@ -100,7 +100,12 @@ export async function buildJourneyFunnel(filters: FunnelFilters): Promise<any> {
     // were dropped on some journeys still appear).
     const template = list.reduce((best, j) => (j.stages.length > best.stages.length ? j : best), list[0]);
     const stageIds = template.stages
-      .filter((s) => !["no_show", "match_call_no_show", "not_matched"].includes(s.id))
+      // Branch rungs are forks off the ladder, not steps through it, so they
+      // never become funnel stages. This was a hardcoded id list that went
+      // stale the moment the Canceled branches were added (and again with
+      // Expired) - the server declares `branch: true`, so read that. The ids
+      // stay as a fallback for payloads built before the field existed.
+      .filter((s) => !(s as any).branch && !["no_show", "match_call_no_show", "not_matched"].includes(s.id))
       .filter((s) => !(filters.providerScope && s.id === "registered"))
       .map((s) => ({ id: s.id, label: s.label }));
     let prevCount: number | null = null;

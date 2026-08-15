@@ -21,7 +21,7 @@
 
 import { serviceKeysFromLabels } from "../shared/service-keys";
 import { prisma } from "./db";
-import { JOURNEY_STAGE_ORDER, resolveJourneyStage } from "../shared/journey-ladder";
+import { JOURNEY_STAGE_ORDER, resolveJourneyStage, CALL_EXPIRED_STAGE } from "../shared/journey-ladder";
 import { serviceLineOfSubject } from "./journey-timeline";
 import {
   GATES_OPEN,
@@ -898,17 +898,46 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   // the timeline.
   const doctorCallCompletedOrgs = makeOrgLineSet();
   const doctorCallScheduledOrgs = makeOrgLineSet();
+  // Staleness evidence for the consult_scheduled badge. `s.status ===
+  // "CONSULTATION_BOOKED"` is a one-way flag: it proves the call was BOOKED
+  // and is never rolled back when the booking behind it expires unconfirmed
+  // or gets cancelled. So a card kept reading "Consultation Scheduled" beside
+  // a timeline that had already dropped the rung. The stage stays (the
+  // booking really happened - same call the timeline's Expired branch makes)
+  // but the badge is toned as needing a chase.
+  const consultLiveOrgs = makeOrgLineSet();
+  const consultLapsedOrgs = makeOrgLineSet();
+  const nowMs = Date.now();
   for (const b of bookings as any[]) {
     const org = b.providerUser?.providerId as string | undefined;
     if (!org) continue;
     const line = bookingLineOf(b);
     const done = b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED";
+    // Same liveness test as the timeline: booked, and not yet over.
+    const live = ["PENDING", "CONFIRMED"].includes(b.status)
+      && new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000 > nowMs;
     if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
       if (done) doctorCallCompletedOrgs.add(org, line);
       if (["PENDING", "CONFIRMED"].includes(b.status)) doctorCallScheduledOrgs.add(org, line);
-    } else if (b.meetingSubtype !== "MATCH_CALL" && done) {
-      consultCompletedOrgs.add(org, line);
+    } else if (b.meetingSubtype !== "MATCH_CALL") {
+      if (done) consultCompletedOrgs.add(org, line);
+      if (live) consultLiveOrgs.add(org, line);
+      if (["EXPIRED", "CANCELLED"].includes(b.status)) consultLapsedOrgs.add(org, line);
     }
+  }
+
+  /**
+   * True when the row's stage rests on a booking that no longer stands.
+   * Only consult_scheduled can go stale this way - every rung above it is
+   * proven by an artifact (form, invoice, agreement) that does not lapse.
+   */
+  function stageIsStale(s: (typeof sessions)[number], stage: string | null): boolean {
+    if (stage !== "consult_scheduled") return false;
+    const org = s.providerId as string | null;
+    if (!org) return false;
+    const line = lineOfSessionId.get(s.id) ?? null;
+    if (consultLiveOrgs.has(org, line) || consultCompletedOrgs.has(org, line)) return false;
+    return consultLapsedOrgs.has(org, line);
   }
 
   // The record was a THIRD copy of the ladder, alongside the two list
@@ -938,6 +967,22 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       consultScheduled: s.status === "CONSULTATION_BOOKED",
       connected: s.status === "PROVIDER_CONNECTED" || !!s.providerJoinedAt,
     });
+  }
+
+  /**
+   * Rollup for a set of threads: rank on the RUNGS (a branch must never
+   * out- or under-rank a milestone), then let the branch through when the
+   * winning rung is itself lapsed on every thread that holds it. Without the
+   * second half, the org card and the record header would go back to reading
+   * "Consultation Scheduled" over a row that already says Expired.
+   */
+  function rollupStatus(rows: { matchStatus: string | null; journeyStatus: string | null }[]): string | null {
+    const best = mostAdvanced(rows.map((r) => r.journeyStatus).filter(Boolean) as string[]);
+    if (!best) return null;
+    const atBest = rows.filter((r) => r.journeyStatus === best);
+    return atBest.length > 0 && atBest.every((r) => r.matchStatus === CALL_EXPIRED_STAGE)
+      ? CALL_EXPIRED_STAGE
+      : best;
   }
 
   function mostAdvanced(values: string[]): string | null {
@@ -1040,6 +1085,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         profileUrl: null,
         serviceType: null,
         matchStatus: null,
+        journeyStatus: null,
         rawStatus: s.status,
         lastMessagePreview: s.messages[0]?.content
           ? String(s.messages[0].content).replace(/\[\[.*?\]\]/g, "").replace(/\n/g, " ").trim().slice(0, 120)
@@ -1049,6 +1095,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         updatedAt: s.updatedAt,
       };
     }
+    const stage = sessionStatus(s);
     return {
       sessionId: s.id,
       providerId: s.providerId,
@@ -1070,7 +1117,15 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         isAdmin,
       ),
       serviceType: serviceTypeFor(resolvedKind),
-      matchStatus: sessionStatus(s),
+      // The branch outcome IS the row's current state when the call behind
+      // the stage lapsed - same treatment matched_elsewhere gets, and the
+      // same words the timeline's branch rung uses. A badge still reading
+      // "Consultation Scheduled" beside a forked ladder tells someone to wait
+      // for a call that is not coming.
+      matchStatus: stageIsStale(s, stage) ? CALL_EXPIRED_STAGE : stage,
+      // The rung underneath, unchanged - rollups, filters and sorts rank on
+      // this so a branch never competes with a milestone.
+      journeyStatus: stage,
       rawStatus: s.status,
       lastMessagePreview: s.messages[0]?.content
         ? String(s.messages[0].content).replace(/\[\[.*?\]\]/g, "").replace(/\n/g, " ").trim().slice(0, 120)
@@ -1184,7 +1239,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       providerId: id,
       providerName: org?.name ?? "Provider",
       logoUrl: org?.logoUrl ?? null,
-      matchStatus: mostAdvanced(orgSessions.map((c) => c.matchStatus).filter(Boolean) as string[]),
+      matchStatus: rollupStatus(orgSessions as any),
       contactReleased: !!rel,
       contactReleaseReason: rel?.reason ?? null,
       lastActivityAt: orgSessions[0]?.updatedAt ?? null,
@@ -1434,7 +1489,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     contactReleased: gates.showContact,
     contactReleaseReason: gates.contactReason,
     services,
-    matchStatus: mostAdvanced(conversations.map((c) => c.matchStatus).filter(Boolean) as string[]),
+    matchStatus: rollupStatus(conversations as any),
     providerOrgs,
     conversations,
     savedProfiles,

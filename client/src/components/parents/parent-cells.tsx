@@ -23,6 +23,7 @@ import { AgreementRow } from "@/components/chat/agreement-row";
 import {
   JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE,
   MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL,
+  CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL,
 } from "@shared/journey-ladder";
 import { ServiceTag, normalizeServiceKey } from "@/components/ui/service-tag";
 
@@ -73,6 +74,9 @@ export const JOURNEY_STATUS_LABELS: Record<string, string> = {
   // JOURNEY_STAGE_LABELS - but it does reach this badge, unlike No Show and
   // Canceled, because it becomes the row's current state.
   [MATCHED_ELSEWHERE_STAGE]: MATCHED_ELSEWHERE_LABEL,
+  // The other branch outcome that reaches this badge: the call the rung
+  // rested on expired unconfirmed (or was canceled with nothing rebooked).
+  [CALL_EXPIRED_STAGE]: CALL_EXPIRED_LABEL,
   CONSULTATION_BOOKED: JOURNEY_STAGE_LABELS.consult_scheduled,
   PROVIDER_CONNECTED: JOURNEY_STAGE_LABELS.consult_scheduled,
   MATCH_CALL: JOURNEY_STAGE_LABELS.match_call_scheduled,
@@ -254,6 +258,9 @@ const STAGE_TONE_FOR: Record<string, { bg: string; fg: string }> = {
   ip_form_submitted: STAGE_TONE.early,
   doctor_call_scheduled: STAGE_TONE.early,
   [MATCHED_ELSEWHERE_STAGE]: STAGE_TONE.lost,
+  // Amber, not muted: unlike a family lost to another provider, this one is
+  // still winnable - it needs a chase.
+  [CALL_EXPIRED_STAGE]: STAGE_TONE.call,
   doctor_call_completed: STAGE_TONE.early,
   match_call_scheduled: STAGE_TONE.call,
   matched: STAGE_TONE.match,
@@ -292,6 +299,7 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
     <span
       className="inline-flex items-center text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
       style={{ background: entry.bg, color: entry.fg }}
+      title={(stage as string) === CALL_EXPIRED_STAGE ? "The call request expired unconfirmed (or was canceled) and nothing was rebooked" : undefined}
     >
       {entry.label}
     </span>

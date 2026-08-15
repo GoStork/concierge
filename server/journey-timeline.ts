@@ -204,6 +204,7 @@ export async function buildJourneyTimelines(
       where: { parentUserId: { in: memberIds } },
       select: {
         id: true, status: true, outcome: true, scheduledAt: true, createdAt: true, cancelledAt: true,
+        expiredAt: true,
         cancelledByRole: true, meetingSubtype: true, duration: true, sessionId: true,
         providerUser: { select: { providerId: true, roles: true, provider: { select: { name: true } } } },
       },
@@ -483,12 +484,28 @@ export async function buildJourneyTimelines(
       canceledConsults.length > 0 && noShowConsults.length === 0
       && completed.length === 0 && liveBooking.length === 0;
     const lastConsultCanceledAt = latestCanceledAt(canceledConsults);
+    // Expired branch: the parent requested a slot, the provider never
+    // confirmed it, and the slot passed (pending-booking.scheduler stamps
+    // EXPIRED). Until now this rung simply vanished - the ladder fell back to
+    // "Exploring Profiles" while the session still carried
+    // CONSULTATION_BOOKED, so the Interested-profiles card beside it read
+    // "Consultation Scheduled" off the same dead booking. The request DID
+    // happen, so the rung stays ticked and the branch says how it ended.
+    // Ranks below both no-show and canceled: those are outcomes of a call
+    // that was actually on the calendar.
+    const expiredOf = (list: any[]) => list.filter((bk: any) => bk.status === "EXPIRED");
+    const latestExpiredAt = (list: any[]) => (list.length > 0 ? list.reduce<Date | null>((max, bk) => (!max || (bk.expiredAt || bk.scheduledAt) > max ? (bk.expiredAt || bk.scheduledAt) : max), null) : null);
+    const expiredConsults = expiredOf(consultBookings);
+    const showConsultExpiredRung =
+      expiredConsults.length > 0 && noShowConsults.length === 0 && !showConsultCanceledRung
+      && completed.length === 0 && liveBooking.length === 0;
+    const lastConsultExpiredAt = latestExpiredAt(expiredConsults);
     // A no-show still proves the call WAS scheduled; so does a cancellation
-    // WHEN its branch is on display - "Scheduled ✓, then Canceled" is the
-    // true story, and a branch hanging off an unreached rung reads as a
-    // rendering bug. A canceled call with a later real one keeps the old
-    // behaviour: the later call is the evidence.
-    const consultScheduledAt = liveConsult.length > 0 || completedConsult.length > 0 || noShowConsults.length > 0 || showConsultCanceledRung ? earliestCreatedAt(consultBookings) : null;
+    // or an expiry WHEN its branch is on display - "Scheduled ✓, then
+    // Canceled" is the true story, and a branch hanging off an unreached rung
+    // reads as a rendering bug. A canceled call with a later real one keeps
+    // the old behaviour: the later call is the evidence.
+    const consultScheduledAt = liveConsult.length > 0 || completedConsult.length > 0 || noShowConsults.length > 0 || showConsultCanceledRung || showConsultExpiredRung ? earliestCreatedAt(consultBookings) : null;
     const consultCompletedAt = completedConsult.length > 0 ? completedConsult.reduce<Date | null>((min, bk) => (!min || bk.scheduledAt < min ? bk.scheduledAt : min), null) : null;
     // No Show branch: a consultation was missed and nothing newer happened.
     // Suppression stays cross-subtype (any completed or live call, match
@@ -505,7 +522,12 @@ export async function buildJourneyTimelines(
       canceledMatchCalls.length > 0 && noShowMatchCalls.length === 0
       && completed.length === 0 && liveBooking.length === 0;
     const lastMatchCanceledAt = latestCanceledAt(canceledMatchCalls);
-    const matchCallScheduledAt = liveMatchCall.length > 0 || completedMatchCall.length > 0 || noShowMatchCalls.length > 0 || showMatchCanceledRung ? earliestCreatedAt(matchCallBookings) : null;
+    const expiredMatchCalls = expiredOf(matchCallBookings);
+    const showMatchExpiredRung =
+      expiredMatchCalls.length > 0 && noShowMatchCalls.length === 0 && !showMatchCanceledRung
+      && completed.length === 0 && liveBooking.length === 0;
+    const lastMatchExpiredAt = latestExpiredAt(expiredMatchCalls);
+    const matchCallScheduledAt = liveMatchCall.length > 0 || completedMatchCall.length > 0 || noShowMatchCalls.length > 0 || showMatchCanceledRung || showMatchExpiredRung ? earliestCreatedAt(matchCallBookings) : null;
     const lastMatchNoShowAt = latestMissedAt(noShowMatchCalls);
     // Doctor Call rung evidence (IVF ladder): same rules again.
     const doctorCallBookings = scopedBookings.filter((bk) => bk.meetingSubtype === "DOCTOR_CONSULTATION");
@@ -517,9 +539,14 @@ export async function buildJourneyTimelines(
       canceledDoctorCalls.length > 0 && noShowDoctorCalls.length === 0
       && completedDoctorCall.length === 0 && liveDoctorCall.length === 0;
     const lastDoctorCallCanceledAt = latestCanceledAt(canceledDoctorCalls);
+    const expiredDoctorCalls = expiredOf(doctorCallBookings);
+    const showDoctorCallExpired =
+      expiredDoctorCalls.length > 0 && noShowDoctorCalls.length === 0 && !showDoctorCallCanceled
+      && completedDoctorCall.length === 0 && liveDoctorCall.length === 0;
+    const lastDoctorCallExpiredAt = latestExpiredAt(expiredDoctorCalls);
     const doctorCallScheduledAt =
       liveDoctorCall.length > 0 || completedDoctorCall.length > 0 || noShowDoctorCalls.length > 0
-      || showDoctorCallCanceled
+      || showDoctorCallCanceled || showDoctorCallExpired
         ? earliestCreatedAt(doctorCallBookings)
         : null;
     const doctorCallCompletedAt = completedDoctorCall.length > 0
@@ -601,6 +628,7 @@ export async function buildJourneyTimelines(
       { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
       ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastConsultNoShowAt, tone: "warning" as const, branch: true }] : []),
       ...(showConsultCanceledRung ? [{ id: "consult_canceled", label: "Canceled", at: lastConsultCanceledAt, tone: "destructive" as const, branch: true }] : []),
+      ...(showConsultExpiredRung ? [{ id: "consult_expired", label: "Expired - not confirmed", at: lastConsultExpiredAt, tone: "warning" as const, branch: true }] : []),
       { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
     ];
     const moneyRungs = (optionalAgreement: boolean): Rung[] => [
@@ -663,6 +691,9 @@ export async function buildJourneyTimelines(
         ...(showDoctorCallCanceled
           ? [{ id: "doctor_call_canceled", label: "Canceled", at: lastDoctorCallCanceledAt, tone: "destructive" as const, branch: true }]
           : []),
+        ...(showDoctorCallExpired
+          ? [{ id: "doctor_call_expired", label: "Expired - not confirmed", at: lastDoctorCallExpiredAt, tone: "warning" as const, branch: true }]
+          : []),
         { id: "doctor_call_completed", label: "Doctor Call Completed", at: doctorCallCompletedAt, dropIfPassed: true },
       ];
       rungs = [
@@ -705,6 +736,7 @@ export async function buildJourneyTimelines(
         ...(showNotMatchedRung ? [{ id: "not_matched", label: "Not Matched", at: lastDeclineAt, tone: "warning" as const, branch: true }] : []),
         ...(showMatchNoShowRung ? [{ id: "match_call_no_show", label: "No Show", at: lastMatchNoShowAt, tone: "warning" as const, branch: true }] : []),
         ...(showMatchCanceledRung ? [{ id: "match_call_canceled", label: "Canceled", at: lastMatchCanceledAt, tone: "destructive" as const, branch: true }] : []),
+        ...(showMatchExpiredRung ? [{ id: "match_call_expired", label: "Expired - not confirmed", at: lastMatchExpiredAt, tone: "warning" as const, branch: true }] : []),
       ];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
@@ -796,6 +828,11 @@ export async function buildJourneyTimelines(
       attention = { kind: "no_show", label: "Call missed - follow-up sent", actionable: true };
     } else if (lastCancelNoRebook && liveBooking.length === 0 && !callWarningStale && (!reengaged || reengaged.createdAt < lastCancelNoRebook.createdAt)) {
       attention = { kind: "canceled", label: "Call canceled - not rebooked", actionable: true };
+    } else if ((showConsultExpiredRung || showMatchExpiredRung || showDoctorCallExpired) && !callWarningStale) {
+      // The parent did their part and the request died waiting on the
+      // provider. Actionable, and worded so nobody reads it as the parent's
+      // no-show: the call was never confirmed in the first place.
+      attention = { kind: "expired", label: "Call request expired - provider never confirmed", actionable: true };
     }
 
     const activityDates = [

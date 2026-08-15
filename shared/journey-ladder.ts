@@ -127,6 +127,23 @@ export const MATCHED_ELSEWHERE_STAGE = "matched_elsewhere";
 export const MATCHED_ELSEWHERE_LABEL = "Matched Elsewhere";
 
 /**
+ * The call the family requested was never confirmed by the provider and its
+ * slot passed (pending-booking.scheduler stamps the booking EXPIRED), or it
+ * was canceled with nothing rebooked.
+ *
+ * Outside JOURNEY_STAGE_ORDER for the same reason as matched_elsewhere: it is
+ * a branch, not a rung. It reaches the badge because it IS the row's current
+ * state - reading "Consultation Scheduled" next to a timeline whose ladder has
+ * already forked into "Expired - not confirmed" invites someone to sit and
+ * wait for a call that is not coming. The rung underneath is unchanged and
+ * still travels as `journeyStatus`.
+ *
+ * Word-for-word the timeline's branch label, per this file's rule.
+ */
+export const CALL_EXPIRED_STAGE = "call_expired";
+export const CALL_EXPIRED_LABEL = "Expired - not confirmed";
+
+/**
  * The pre-ladder step a freshly registered family is actually on: finishing
  * the AI concierge's intake questions. Not a rung (the ladder starts at
  * Registered and intake completion is chat state, not journey evidence), but
@@ -166,6 +183,10 @@ export function nextJourneyStep(
 ): { id: string; label: string } | null {
   const stage = stageId || "registered";
   if (stage === MATCHED_ELSEWHERE_STAGE) return null;
+  // An expired/canceled call is not a rung, so rank() would return -1 and the
+  // family would be told their next step is "Registered". The real next step
+  // is the call they were waiting on, rebooked.
+  if (stage === CALL_EXPIRED_STAGE) return { id: "consult_scheduled", label: JOURNEY_STAGE_LABELS.consult_scheduled };
   if (stage === "registered" && opts?.onboardingPending) return ONBOARDING_STEP;
   const ladder = (lineKey && LINE_NEXT_LADDERS[lineKey]) || JOURNEY_STAGE_ORDER;
   // Rank through the FULL order rather than indexOf on the line ladder: the
@@ -181,6 +202,7 @@ export function nextJourneyStep(
 export function journeyStageLabel(id: string | null | undefined): string | null {
   if (!id) return null;
   if (id === MATCHED_ELSEWHERE_STAGE) return MATCHED_ELSEWHERE_LABEL;
+  if (id === CALL_EXPIRED_STAGE) return CALL_EXPIRED_LABEL;
   return JOURNEY_STAGE_LABELS[id as JourneyStageId] ?? null;
 }
 

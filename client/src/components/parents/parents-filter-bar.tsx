@@ -14,7 +14,7 @@ import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { FilterRow, FilterSearch, FilterDropdown, FilterDate } from "@/components/ui/filter-controls";
 import { SERVICE_LABELS, IP_FORM_FILTER_LABELS } from "./parent-cells";
 import { ServiceDot } from "@/components/ui/service-tag";
-import { JOURNEY_STAGE_LABELS, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL } from "@shared/journey-ladder";
+import { JOURNEY_STAGE_LABELS, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL, CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL } from "@shared/journey-ladder";
 
 export interface ParentsFilterState {
   q: string;
@@ -93,13 +93,15 @@ export function ParentsFilterBar({
           />
           <FilterDropdown
             label="All statuses"
-            // Matched Elsewhere is appended rather than living in
-            // JOURNEY_STAGE_LABELS: it is a branch outcome, not a rung on the
-            // order ladder. Filterable because "who have I lost?" is the first
-            // thing an agency wants to clear out of their pipeline.
+            // The two branch outcomes are appended rather than living in
+            // JOURNEY_STAGE_LABELS: they are forks, not rungs on the order
+            // ladder. Both are filterable because "who have I lost?" and "whose
+            // call never got confirmed?" are the first two things an agency
+            // wants to pull out of their pipeline.
             options={[
               ...Object.entries(JOURNEY_STAGE_LABELS),
               [MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL] as [string, string],
+              [CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL] as [string, string],
             ]}
             selected={state.statuses}
             onChange={(next) => setParam("status", next.join(","))}

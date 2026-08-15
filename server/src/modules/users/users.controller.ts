@@ -22,7 +22,7 @@ import { checkEmailForSignup, normalizeEmail } from "../../../email-security";
 import { evaluateSignupRisk } from "../../../signup-risk";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { serviceLineOfSubject } from "../../../journey-timeline";
-import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE, nextJourneyStep } from "../../../../shared/journey-ladder";
+import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE, CALL_EXPIRED_STAGE, nextJourneyStep } from "../../../../shared/journey-ladder";
 import {
   winnersByLine, matchedElsewhereAt, PRE_ENGAGEMENT_STAGES,
   type CommitmentArtifact, type LineWinner,
@@ -1106,6 +1106,21 @@ export class UsersController {
           })).map(b => b.parentUserId)
         : [],
     );
+    // Consultation bookings that no longer stand (expired unconfirmed or
+    // canceled) versus ones still on the calendar. The session's
+    // CONSULTATION_BOOKED flag never rolls back, so without these the column
+    // reads "Consultation Scheduled" forever - disagreeing with the journey
+    // timeline, which forks to an Expired branch the moment the slot passes.
+    const consultBookingsOverview = ids.length
+      ? await this.prisma.booking.findMany({
+          where: {
+            parentUserId: { in: ids },
+            meetingSubtype: { notIn: ["MATCH_CALL", "DOCTOR_CONSULTATION"] },
+          },
+          select: { parentUserId: true, status: true, scheduledAt: true, duration: true },
+        })
+      : [];
+
     const submittedFormAccounts = new Set(
       (await this.prisma.ipFormResponse.findMany({
         where: { status: "SUBMITTED" },
@@ -1113,6 +1128,32 @@ export class UsersController {
       })).map(f => f.parentAccountId),
     );
     const accountKeyOf = new Map(parents.map((p: any) => [p.id, p.parentAccountId || p.id]));
+    // Consultation liveness, account-keyed like the journey itself: partners
+    // on one account share a call, so a booking under either login counts.
+    const overviewNowMs = Date.now();
+    const acctOf = (uid: string | null) => (uid ? (accountKeyOf.get(uid) || uid) : "");
+    const consultLiveAccts = new Set(
+      consultBookingsOverview
+        .filter(b => ["PENDING", "CONFIRMED"].includes(b.status)
+          && new Date(b.scheduledAt).getTime() + ((b as any).duration || 30) * 60 * 1000 > overviewNowMs)
+        .map(b => acctOf(b.parentUserId)),
+    );
+    const consultLapsedAccts = new Set(
+      consultBookingsOverview.filter(b => ["EXPIRED", "CANCELLED"].includes(b.status)).map(b => acctOf(b.parentUserId)),
+    );
+    const consultCompletedAccts = new Set(Array.from(consultCompletedUsers).map(uid => acctOf(uid as string)));
+    /**
+     * The DISPLAY state for a rung: consult_scheduled becomes the branch
+     * outcome once the call proving it has lapsed and nothing replaced it.
+     * Applied at the very end of this builder, after every rank-based rollup
+     * has run on the real rungs - a branch must never compete with a rung.
+     */
+    const displayStageOverview = (stage: string | null, userId: string): string | null => {
+      if (stage !== "consult_scheduled") return stage;
+      const k = acctOf(userId);
+      if (consultLiveAccts.has(k) || consultCompletedAccts.has(k)) return stage;
+      return consultLapsedAccts.has(k) ? CALL_EXPIRED_STAGE : stage;
+    };
 
     // ONE ladder, shared with the journey timeline - see
     // shared/journey-ladder.ts. The old local LADDER const had no rung for a
@@ -1598,6 +1639,15 @@ export class UsersController {
         }
       }
     }
+    // LAST: swap rungs for branch outcomes, after every rank-based rollup
+    // (couples merge, link-as-household, per-line stacks) has run on rungs.
+    for (const [userId, row] of Object.entries(overview)) {
+      row.matchStatus = displayStageOverview(row.matchStatus, userId);
+      row.serviceStatuses = (row.serviceStatuses || []).map((ss: any) => ({
+        ...ss,
+        status: displayStageOverview(ss.status, userId),
+      }));
+    }
     return overview;
   }
 
@@ -1640,6 +1690,9 @@ export class UsersController {
         outcome: true,
         parentUserId: true,
         scheduledAt: true,
+        // With scheduledAt, decides whether a booking is still LIVE - the same
+        // end-of-meeting test journey-timeline uses.
+        duration: true,
         // Attributes the booking to its thread's SERVICE LINE - see the
         // line-scoped account sets below.
         sessionId: true,
@@ -1905,18 +1958,41 @@ export class UsersController {
     // A CONFIRMED booking with a no-show outcome still proves Scheduled,
     // matching the timeline's rung evidence.
     const doctorCallScheduledAccounts = makeLineScopedSet();
+    // `session.status === "CONSULTATION_BOOKED"` is a one-way flag - it is
+    // never rolled back when the booking behind it expires unconfirmed or is
+    // canceled. These two sets let the row say so, exactly as the timeline's
+    // Expired branch does, instead of showing a green "Consultation
+    // Scheduled" over a call nobody is going to take.
+    const consultLiveAccounts = makeLineScopedSet();
+    const consultLapsedAccounts = makeLineScopedSet();
+    const bookingNowMs = Date.now();
     for (const b of bookings) {
       if (!b.parentUserId) continue;
       const key = accountKey(b.parentUserId);
       const line = bookingLine(b);
       const done = b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED";
+      const live = ["PENDING", "CONFIRMED"].includes(b.status)
+        && new Date(b.scheduledAt).getTime() + ((b as any).duration || 30) * 60 * 1000 > bookingNowMs;
       if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
         if (done) doctorCallCompletedAccounts.add(key, line);
         if (["PENDING", "CONFIRMED"].includes(b.status)) doctorCallScheduledAccounts.add(key, line);
-      } else if (b.meetingSubtype !== "MATCH_CALL" && done) {
-        consultCompletedAccounts.add(key, line);
+      } else if (b.meetingSubtype !== "MATCH_CALL") {
+        if (done) consultCompletedAccounts.add(key, line);
+        if (live) consultLiveAccounts.add(key, line);
+        if (["EXPIRED", "CANCELLED"].includes(b.status)) consultLapsedAccounts.add(key, line);
       }
     }
+
+    /**
+     * The row's DISPLAY state: the rung, unless it is a consultation whose
+     * call lapsed - then the branch outcome, same treatment matched_elsewhere
+     * gets. `journeyStatus` keeps the rung for ranking, sorting and filters.
+     */
+    const displayStage = (stage: string | null, key: string, line: string | null): string | null => {
+      if (stage !== "consult_scheduled") return stage;
+      if (consultLiveAccounts.has(key, line) || consultCompletedAccounts.has(key, line)) return stage;
+      return consultLapsedAccounts.has(key, line) ? CALL_EXPIRED_STAGE : stage;
+    };
 
     // Invoices grouped by sessionId so each match row only shows its own
     // invoices. Single query, in-memory grouping = no N+1.
@@ -2133,7 +2209,7 @@ export class UsersController {
         // The loss IS the current state, exactly as the ladder renders it -
         // a row still reading "Consultation Completed" invites the agency to
         // keep chasing a family that has already signed with someone else.
-        matchStatus: lostAt ? MATCHED_ELSEWHERE_STAGE : journeyStatus,
+        matchStatus: lostAt ? MATCHED_ELSEWHERE_STAGE : displayStage(journeyStatus, key, rowLine),
         // Kept so the row can still say how far this org actually got, and
         // so filters/sorts on real stages are not silently rewritten.
         journeyStatus,
