@@ -51,6 +51,7 @@ import ParentNewAppointmentPage from "@/pages/parent-new-appointment-page";
 import CdcClinicSuccessRatesPage from "@/pages/cdc-clinic-success-rates-page";
 import ForgotPasswordPage from "@/pages/forgot-password-page";
 import CheckEmailPage from "@/pages/check-email-page";
+import SmsConsentPage from "@/pages/sms-consent-page";
 import ResetPasswordPage from "@/pages/reset-password-page";
 import MatchmakerSelectionPage from "@/pages/matchmaker-selection-page";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
@@ -133,6 +134,7 @@ function AppRoutes() {
         <Route path="/" element={<AuthPage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/auth" element={<AuthPage />} />
+        <Route path="/sms-consent" element={<SmsConsentPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/check-email" element={<CheckEmailPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />

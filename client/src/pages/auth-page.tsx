@@ -123,8 +123,24 @@ export default function AuthPage() {
 
           <div className="flex items-center gap-4 text-sm opacity-60">
             <span>{companyName} Inc.</span>
-            <span>Privacy Policy</span>
-            <span>Terms of Service</span>
+            <a
+              href="https://www.gostork.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+              data-testid="link-login-privacy"
+            >
+              Privacy Policy
+            </a>
+            <a
+              href="https://www.gostork.com/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+              data-testid="link-login-terms"
+            >
+              Terms of Service
+            </a>
           </div>
         </div>
       </div>
