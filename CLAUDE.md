@@ -48,6 +48,13 @@ Never end a turn saying "you may need to restart" or "run the build yourself" - 
 
 **All emails must use `buildBrandedEmail()` — no SendGrid templates:** Every email notification must use the `buildBrandedEmail()` function from `server/src/modules/notifications/email-builder.ts`, which renders brand colors, logo, fonts, and button styles from the Brand Settings page. The `SENDGRID_TEMPLATES` constant has been fully removed — no email should ever use `templateId`/`templateData`. SMS notifications must use Twilio Content Templates (`contentSid` + `contentVars` via `dispatchSmsTemplate`). Never hardcode HTML email bodies or send raw plain-text SMS.
 
+**The SMS consent disclosure is carrier-registered copy - never reword it in one place:** The A2P 10DLC campaign that lets us send SMS at all is approved against a specific opt-in wording, and that wording lives in THREE places that must stay word-for-word identical:
+1. `client/src/components/ui/sms-consent-disclosure.tsx` - the `<SmsConsentDisclosure />` component shown above the Verify button on the phone step of `client/src/pages/onboarding-page.tsx`.
+2. `https://www.gostork.com/sms-consent` - the public evidence page on the WordPress marketing site (page ID 5461). It is the URL written into the campaign's declared message flow, so it must stay published forever; pulling a URL cited on a carrier registration is what fails an audit.
+3. The campaign's "How do end-users consent to receive messages?" field in the Twilio Console.
+
+Changing one without the others makes the live UI disagree with the registered flow, which can get the campaign suspended on a carrier audit and kill all SMS. Mount the shared component on EVERY surface that collects a phone number rather than writing inline consent copy. The in-app `/sms-consent` route (`client/src/pages/sms-consent-page.tsx`, public, no auth guard - keep it that way) renders that same component so the two in-repo copies cannot drift. Related: `https://www.gostork.com/terms` section 17 must keep passing Twilio's checklist - program name, description, msg/data rates, message frequency, support contact info, and HELP/STOP in bold.
+
 ## System Architecture
 
 **Marketplace Matched Preferences - CRITICAL:** Every active filter that a donor/surrogate satisfies MUST appear in the "Matched X Preferences" tab on their card. The matching logic in `getMatchedPreferences` (swipe-mappers.ts) must mirror `matchesFilter` (marketplace-filters.ts) exactly - including ethnicity/race synonym resolution (e.g., "White" filter matches "Caucasian" donors). Whenever a new filter is added to `matchesFilter`, add the same logic to `getMatchedPreferences` and `attrMap`. Never leave a filter out of Matched Preferences.
