@@ -113,6 +113,7 @@ export class GoogleCalendarService {
             refreshToken: credentials.refresh_token || connection.refreshToken,
             tokenExpiry: newExpiry,
             tokenValid: true,
+            reconnectAlertAt: null,
           },
         });
 
@@ -412,7 +413,7 @@ export class GoogleCalendarService {
           if (connection.email) updateWhere.email = connection.email;
           await this.prisma.calendarConnection.updateMany({
             where: updateWhere,
-            data: { tokenValid: true },
+            data: { tokenValid: true, reconnectAlertAt: null },
           });
         }
       } catch (err: any) {

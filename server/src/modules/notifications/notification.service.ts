@@ -74,6 +74,14 @@ const TWILIO_TEMPLATES = {
   BOOKING_CONFIRMED_PARENT: "HX2ad3886a826af603d4255f6abe59d57e",
   BOOKING_CONFIRMED_PROVIDER: "HX21d5758b976a2b90fc9a34db77381983",
   BOOKING_CANCELLED_PARENT: "HX9363d211407a375ac0c1c37abb8119af",
+  // Expired is NOT cancelled: nobody called it off - the provider simply
+  // never confirmed before the requested time. The cancelled template said
+  // "has been cancelled", which reads as an action someone took. This one
+  // explains what actually happened AND names the provider as the side that
+  // failed to confirm ("Nothing was needed from you") - without that, the
+  // parent reads "wasn't confirmed" and wonders if the missed confirmation
+  // was theirs. V3.1 supersedes HX969429d8a0485e16333d84df0207ff8f.
+  BOOKING_EXPIRED_PARENT: "HXb5dddb53ab656cc5ff0b6d949bea9187",
   BOOKING_CANCELLED_PROVIDER: "HX9c33671d45aef4cfd2a76e7f1acc4cac",
   BOOKING_RESCHEDULED_PARENT: "HX1676457910398959bfebf36808cee8d6",
   BOOKING_RESCHEDULED_PARENT_WITH_MSG: "HX898c696ecb971b0be5efbf6b95c09a5b",
@@ -792,12 +800,16 @@ export class NotificationService implements OnModuleInit {
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: "Meeting Request Expired",
       greeting: `Hi ${esc(firstName)},`,
-      body: `Your meeting request with <strong>${esc(staffMemberName || clinicName)}</strong>${staffMemberName && clinicName ? ` from <strong>${esc(clinicName)}</strong>` : ""} expired because it wasn't confirmed before the requested time.`,
+      // Passive "wasn't confirmed" left the parent wondering whether THEY
+      // were the ones who forgot to confirm. Name the provider as the side
+      // that never confirmed, and say outright that nothing was expected of
+      // the parent.
+      body: `Your meeting request with <strong>${esc(staffMemberName || clinicName)}</strong>${staffMemberName && clinicName ? ` from <strong>${esc(clinicName)}</strong>` : ""} expired because <strong>${esc(providerName)}</strong> didn't confirm it before the requested time. Nothing was needed from you.`,
       detailRows: [
         { label: "Requested Date", value: dateStr },
         { label: "Requested Time", value: timeStr },
       ],
-      alertBox: { text: "This request expired and was not confirmed. You can book a new time whenever you're ready.", type: "warning" },
+      alertBox: { text: `${providerName} didn't confirm this request in time, so it expired - no action was missed on your side. You can book a new time whenever you're ready.`, type: "warning" },
       buttons: [
         { label: "Book a New Time", url: rebookLink },
       ],
@@ -813,7 +825,7 @@ export class NotificationService implements OnModuleInit {
       const parentPhone = booking.parentUser?.mobileNumber || expPrimaryDetails.phone;
       if (parentPhone) {
         await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_expired", recipient: parentPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PARENT, contentVars: { "1": getFirstName(attendeeName), "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_EXPIRED_PARENT, contentVars: { "1": getFirstName(attendeeName), "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
         });
       }
     }
@@ -825,7 +837,7 @@ export class NotificationService implements OnModuleInit {
       });
       if (memberPhone) {
         await this.dispatchSmsTemplate({ userId: memberId, bookingId: booking.id, channel: "booking_expired", recipient: memberPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PARENT, contentVars: { "1": getFirstName(memberName), "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_EXPIRED_PARENT, contentVars: { "1": getFirstName(memberName), "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
         });
       }
     });
@@ -837,7 +849,7 @@ export class NotificationService implements OnModuleInit {
       });
       if (aePhone) {
         await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_expired", recipient: aePhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PARENT, contentVars: { "1": getFirstName(aeName) || ae.split("@")[0], "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_EXPIRED_PARENT, contentVars: { "1": getFirstName(aeName) || ae.split("@")[0], "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
         });
       }
     });

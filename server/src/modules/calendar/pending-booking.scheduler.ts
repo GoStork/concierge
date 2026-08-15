@@ -55,10 +55,19 @@ export async function runPendingBookingCheck(prisma: PrismaService, notification
 
       // 1. EXPIRE - slot has passed unanswered.
       if (slotMs <= nowMs) {
-        await prisma.booking.update({
-          where: { id: booking.id },
+        // Atomic claim, like the URGENT/DAILY branches below: both servers
+        // run this cron and both read the booking as PENDING on the same
+        // tick. A plain update succeeds for both, so both sent the "your
+        // request expired" email - and the dedupe key's 10-minute window
+        // could not save a slot that expires ON the window boundary (a 2:30
+        // slot means one server fires just before :30:00 and one just
+        // after). The status flip itself is the claim: only the server whose
+        // UPDATE still finds PENDING owns the notify.
+        const claim = await prisma.booking.updateMany({
+          where: { id: booking.id, status: "PENDING" },
           data: { status: "EXPIRED", expiredAt: now },
         });
+        if (claim.count === 0) continue;
 
         const recentlyExpired = nowMs - slotMs <= EXPIRY_NOTIFY_GRACE_MS;
         if (recentlyExpired) {

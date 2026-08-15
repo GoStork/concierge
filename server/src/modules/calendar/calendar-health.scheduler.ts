@@ -11,11 +11,13 @@ export async function runCalendarHealthCheck(prisma: PrismaService, notification
   const invalidConns = await prisma.calendarConnection.findMany({
     where: { tokenValid: false, connected: true },
     select: {
+      id: true,
       userId: true,
       provider: true,
       label: true,
       email: true,
       disconnectReason: true,
+      reconnectAlertAt: true,
     },
     distinct: ["userId", "provider"],
   });
@@ -27,19 +29,26 @@ export async function runCalendarHealthCheck(prisma: PrismaService, notification
 
   console.log(`[calendar-health] Found ${invalidConns.length} expired connection(s). Checking for unsent alerts...`);
 
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   for (const conn of invalidConns) {
     try {
-      // Skip if a reconnection alert was already sent in the last 24 hours
-      const recentAlert = await prisma.notification.findFirst({
-        where: {
-          userId: conn.userId,
-          channel: "calendar_reconnection",
-          createdAt: { gte: cutoff },
-        },
+      // Once a day per connection. This used to be "findFirst a Notification
+      // from the last 24h, then send" - a read-then-write that both servers
+      // pass on the same hourly tick (Aug 14: two emails at 00:00:00.436 and
+      // 00:00:00.501). The Notification.dedupeKey net could not catch it
+      // either: the key hashes the email body, and the body embeds the
+      // per-machine APP_URL, so the two servers hash differently. So the
+      // claim lives on the connection row: compare-and-swap on the value we
+      // just read - only the UPDATE that still finds it unchanged owns the
+      // send. The other server's UPDATE matches 0 rows and moves on.
+      if (conn.reconnectAlertAt && conn.reconnectAlertAt > cutoff) continue;
+      const claim = await prisma.calendarConnection.updateMany({
+        where: { id: conn.id, reconnectAlertAt: conn.reconnectAlertAt ?? null },
+        data: { reconnectAlertAt: now },
       });
-      if (recentAlert) continue;
+      if (claim.count === 0) continue;
 
       const user = await prisma.user.findUnique({
         where: { id: conn.userId },

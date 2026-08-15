@@ -1437,6 +1437,11 @@ model CalendarConnection {
   disconnectReason   String?
   encryptedPassword  String?
   passwordIv         String?
+  /// When the hourly health sweep last sent the "reconnect your calendar"
+  /// alert for this connection. The sweep runs on two servers on the same
+  /// tick; a compare-and-swap on this column decides which one sends. Reset
+  /// to null on reconnect so a fresh disconnect alerts again.
+  reconnectAlertAt   DateTime?
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 

@@ -358,7 +358,7 @@ export class CaldavCalendarService {
       } else {
         await this.prisma.calendarConnection.updateMany({
           where: { userId, provider, email, connected: true },
-          data: { tokenValid: true },
+          data: { tokenValid: true, reconnectAlertAt: null },
         });
       }
       return { healthy: valid, error: valid ? undefined : "Credentials may be invalid or expired" };

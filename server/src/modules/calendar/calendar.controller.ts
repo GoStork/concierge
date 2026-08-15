@@ -3479,7 +3479,7 @@ I'll check in with you right after the call. You've got this!`;
       if (existingWithEmail) {
         await this.prisma.calendarConnection.updateMany({
           where: { userId, provider: "google", email },
-          data: { accessToken, refreshToken: refreshToken || undefined, tokenExpiry: expiry, tokenValid: true },
+          data: { accessToken, refreshToken: refreshToken || undefined, tokenExpiry: expiry, tokenValid: true, reconnectAlertAt: null },
         });
         return res.redirect("/account/calendar?google_connected=1&mode=existing&email=" + encodeURIComponent(email));
       } else {
@@ -3708,7 +3708,7 @@ I'll check in with you right after the call. You've got this!`;
       if (existingWithEmail) {
         await this.prisma.calendarConnection.updateMany({
           where: { userId, provider: "microsoft", email },
-          data: { accessToken, refreshToken: refreshToken || undefined, tokenExpiry: expiry, tokenValid: true },
+          data: { accessToken, refreshToken: refreshToken || undefined, tokenExpiry: expiry, tokenValid: true, reconnectAlertAt: null },
         });
         return res.redirect("/account/calendar?microsoft_connected=1&mode=existing&email=" + encodeURIComponent(email));
       } else {
@@ -3889,7 +3889,7 @@ I'll check in with you right after the call. You've got this!`;
     if (existing) {
       await this.prisma.calendarConnection.update({
         where: { id: existing.id },
-        data: { encryptedPassword: encrypted, passwordIv: iv, tokenValid: true },
+        data: { encryptedPassword: encrypted, passwordIv: iv, tokenValid: true, reconnectAlertAt: null },
       });
     } else {
       await this.prisma.calendarConnection.create({
@@ -3958,7 +3958,7 @@ I'll check in with you right after the call. You've got this!`;
       if (existing) {
         const updated = await this.prisma.calendarConnection.update({
           where: { id: existing.id },
-          data: { connected: true, tokenValid: true, isConflictCalendar: isConflict, label: calInfo?.name || existing.label },
+          data: { connected: true, tokenValid: true, reconnectAlertAt: null, isConflictCalendar: isConflict, label: calInfo?.name || existing.label },
           select: { id: true, provider: true, label: true, email: true, calendarId: true, isConflictCalendar: true, isBookingCalendar: true, color: true, connected: true, tokenValid: true, createdAt: true },
         });
         results.push(updated);
