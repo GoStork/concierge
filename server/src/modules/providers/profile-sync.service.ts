@@ -10,8 +10,11 @@ import { indexEntityPhotos, deleteEntityFaces, isFaceMatchingConfigured, photoSe
 import {
   captchaSolverConfigured,
   extractRecaptchaSitekey,
+  extractRecaptchaAction,
   isRecaptchaEnterprise,
+  isRecaptchaV3,
   solveRecaptchaV2,
+  solveRecaptchaV3,
 } from "./captcha-solver";
 import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 import { applyAsrmGate } from "./asrm";
@@ -506,7 +509,17 @@ function extractSetCookies(response: Response): string[] {
 
 type AuthResult =
   | { ok: true; cookies: string }
-  | { ok: false; reason: string; wafBlocked?: boolean };
+  | {
+      ok: false;
+      reason: string;
+      wafBlocked?: boolean;
+      /**
+       * True when this candidate URL served a genuine login form, so the failure
+       * is about captcha/credentials/edge rather than a wrong path. The caller
+       * stops trying further candidates when this is set.
+       */
+      reachedLoginForm?: boolean;
+    };
 
 /**
  * Detect an edge/WAF BLOCK page (Cloudflare & friends) as distinct from a real
@@ -685,6 +698,16 @@ export async function authenticateAndGetCookies(
     const emailField = isWordPress ? "log" : emailFieldMatch ? emailFieldMatch[1] : "Email";
     const passwordField = isWordPress ? "pwd" : passwordFieldMatch ? passwordFieldMatch[1] : "Password";
 
+    // Did this candidate URL actually serve a real login form? If so, the caller
+    // must STOP walking its candidate list: every later candidate is a guess at
+    // a path we no longer need, and failing here means captcha/credentials/edge,
+    // not "wrong URL". Eggspecting showed why this matters - after wp-login.php
+    // served a real form and the captcha failed, we went on to probe
+    // /Account/Login (404) and /login (403 from Cloudflare), and that trailing
+    // 403 on a path this site has never had became the tail of the error string,
+    // reading like a WAF block when the actual cause was the captcha.
+    const foundRealLoginForm = isWordPress || !!passwordFieldMatch;
+
     // If the login page is captcha-protected, solve it now and inject the token
     // into the POST body. We fail loudly (rather than silently importing zero
     // profiles) when a captcha is present but no solver key is configured.
@@ -692,7 +715,17 @@ export async function authenticateAndGetCookies(
     // A WAF block on the login GET means the form we just "read" is really an
     // edge error page. Bail before spending money at the solver - the sitekey we
     // would extract belongs to a page we were never allowed to reach.
-    const loginGetBlock = detectWafBlock(loginHtml);
+    // Body markers first, then the status+server fallback: a bare 403 from a
+    // Cloudflare-fronted origin is a block even when the block page is empty,
+    // customized, or otherwise matches none of our markers. Without this second
+    // check a marker-less block page gets parsed like a real login form, and the
+    // reCAPTCHA script Cloudflare embeds in it sends us to the PAID solver for a
+    // page we were never allowed to reach.
+    const loginGetBlock =
+      detectWafBlock(loginHtml) ||
+      (loginResp.status === 403 && /cloudflare/i.test(loginResp.headers.get("server") || "")
+        ? `Cloudflare block (403 at the edge; cf-ray: ${loginResp.headers.get("cf-ray") || "none"})`
+        : null);
     if (loginGetBlock) {
       const reason = `${loginGetBlock} on the login page (status=${loginResp.status}) - the request never reached the site's login form`;
       console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
@@ -705,23 +738,39 @@ export async function authenticateAndGetCookies(
         return {
           ok: false,
           reason: `reCAPTCHA detected on login page but no sitekey could be extracted`,
+          reachedLoginForm: foundRealLoginForm,
         };
       }
       if (!captchaSolverConfigured()) {
         return {
           ok: false,
           reason: `reCAPTCHA on login page requires a captcha solver - set TWOCAPTCHA_API_KEY to enable automated solving`,
+          reachedLoginForm: foundRealLoginForm,
         };
       }
+      // v2 and v3 are different job types at the solver, not a detail we can
+      // paper over: submitting a v3 sitekey as a v2 job leaves the workers with
+      // no widget to click and returns ERROR_CAPTCHA_UNSOLVABLE every time.
+      const isV3 = isRecaptchaV3(loginHtml);
+      const enterprise = isRecaptchaEnterprise(loginHtml);
       try {
-        console.log(`[donor-sync] Solving reCAPTCHA (sitekey=${sitekey}) for ${loginPageUrl}`);
+        console.log(
+          `[donor-sync] Solving reCAPTCHA ${isV3 ? "v3" : "v2"}${enterprise ? " enterprise" : ""} (sitekey=${sitekey}) for ${loginPageUrl}`,
+        );
         onStatus?.("Solving the site's CAPTCHA (this can take 30-120s)...");
-        recaptchaToken = await solveRecaptchaV2(sitekey, loginPageUrl, {
-          enterprise: isRecaptchaEnterprise(loginHtml),
-        });
+        recaptchaToken = isV3
+          ? await solveRecaptchaV3(sitekey, loginPageUrl, {
+              action: extractRecaptchaAction(loginHtml),
+              enterprise,
+            })
+          : await solveRecaptchaV2(sitekey, loginPageUrl, { enterprise });
         onStatus?.("CAPTCHA solved - signing in...");
       } catch (captchaErr: any) {
-        return { ok: false, reason: `captcha solve failed: ${captchaErr.message}` };
+        return {
+          ok: false,
+          reason: `captcha solve failed: ${captchaErr.message}`,
+          reachedLoginForm: foundRealLoginForm,
+        };
       }
     } else if (loginCaptcha && loginCaptcha !== "reCAPTCHA") {
       // hCaptcha / Cloudflare challenge / generic human check - not solvable via
@@ -729,6 +778,7 @@ export async function authenticateAndGetCookies(
       return {
         ok: false,
         reason: `${loginCaptcha} on login page is not supported by the captcha solver (only reCAPTCHA is)`,
+        reachedLoginForm: foundRealLoginForm,
       };
     }
 
@@ -784,7 +834,7 @@ export async function authenticateAndGetCookies(
       if (location.toLowerCase().includes("login")) {
         const reason = `redirected back to login page (location="${location}", status=${authResp.status})`;
         console.error(`[donor-sync] Login failed - ${reason}`);
-        return { ok: false, reason };
+        return { ok: false, reason, reachedLoginForm: foundRealLoginForm };
       }
       console.log(`[donor-sync] Login successful (redirect to ${location})`);
 
@@ -808,13 +858,13 @@ export async function authenticateAndGetCookies(
       if (postBlock) {
         const reason = `${postBlock} on the login POST (status=200)`;
         console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
-        return { ok: false, reason, wafBlocked: true };
+        return { ok: false, reason, wafBlocked: true, reachedLoginForm: foundRealLoginForm };
       }
       const captcha = detectCaptcha(responseText);
       if (captcha) {
         const reason = `${captcha} required on POST response (status=200)`;
         console.error(`[donor-sync] Login failed - ${reason}`);
-        return { ok: false, reason };
+        return { ok: false, reason, reachedLoginForm: foundRealLoginForm };
       }
       // Look for explicit error hints first, then fall back to the generic "sign in + password" detector
       const errorPhrases = [
@@ -827,13 +877,13 @@ export async function authenticateAndGetCookies(
           const snippet = snippetAround(responseText, phrase) || phrase;
           const reason = `200 OK with error phrase "${phrase}": ...${snippet}...`;
           console.error(`[donor-sync] Login failed - ${reason}`);
-          return { ok: false, reason };
+          return { ok: false, reason, reachedLoginForm: foundRealLoginForm };
         }
       }
       if (lower.includes("sign in") && lower.includes("password")) {
         const reason = `still on login page (status=200, no specific error phrase found, body length=${responseText.length})`;
         console.error(`[donor-sync] Login failed - ${reason}`);
-        return { ok: false, reason };
+        return { ok: false, reason, reachedLoginForm: foundRealLoginForm };
       }
       console.log(`[donor-sync] Login successful (200 OK)`);
     } else {
@@ -861,7 +911,7 @@ export async function authenticateAndGetCookies(
       }
       const reason = `unexpected HTTP status ${authResp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}${bodySnippet}`;
       console.error(`[donor-sync] Login failed - ${reason}`);
-      return { ok: false, reason, wafBlocked };
+      return { ok: false, reason, wafBlocked, reachedLoginForm: foundRealLoginForm };
     }
 
     const cookieMap = new Map<string, string>();
@@ -4886,6 +4936,19 @@ async function runSyncJob(
             `[donor-sync] Edge block detected at ${candidate} - skipping the remaining ${
               loginCandidates.length - loginCandidates.indexOf(candidate) - 1
             } login candidate(s) on this origin`,
+          );
+          break;
+        }
+        // This candidate served a REAL login form, so the path is right and the
+        // remaining candidates are guesses at paths this site doesn't have. They
+        // cannot do better, they each cost a request that raises our threat score
+        // at the edge, and their 404s/403s pile onto the end of the error string
+        // and bury the actual cause. Stop here.
+        if (result.reachedLoginForm) {
+          console.error(
+            `[donor-sync] ${candidate} served a real login form but sign-in failed (${result.reason}) - not probing the remaining ${
+              loginCandidates.length - loginCandidates.indexOf(candidate) - 1
+            } candidate path(s)`,
           );
           break;
         }

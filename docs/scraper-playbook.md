@@ -37,19 +37,65 @@ re-discovering the same problems on every new agency.
   (WordPress), `/Account/Login`, then `/login` (and `/user/login`). It auto-detects the form
   `action`, CSRF/verification tokens (`__RequestVerificationToken`, `_token`, `csrf-token`),
   and email/password fields.
+  - **The walk STOPS as soon as a candidate serves a real login form** (`reachedLoginForm`).
+    Past that point the path is right and the failure is captcha/credentials/edge, so the
+    later candidates are guesses at paths the site doesn't have - they cost requests that
+    raise our threat score at the WAF, and their 404s/403s land at the *end* of the joined
+    error string where they read like the cause. Eggspecting on Aug 15 2026 is the worked
+    example: `wp-login.php` served a real form and failed on captcha, then `/Account/Login`
+    404'd and `/login` 403'd from Cloudflare - and that trailing 403 made a captcha bug look
+    like a WAF block. **Read `SyncLog.errors` left to right; the FIRST candidate is the one
+    that matters.**
 - **WordPress login uses `log`/`pwd` field names** (not `email`/`password`). The engine
   detects WordPress (by `wp-login.php` URL **or** `name="log"`+`name="pwd"` in the form),
   switches field names automatically, and satisfies WP's cookie check by sending the
   `wordpress_test_cookie` cookie plus the `testcookie` / `wp-submit` hidden fields.
   - **Gotcha:** for WordPress sites the **Source URL must be the donor-list page**, not
     `wp-login.php`. (The engine logs into WP, then needs the list page to scrape.)
-- **reCAPTCHA v2** is solved via **token injection** (no headless browser):
-  `captcha-solver.ts` extracts the `data-sitekey`, submits it to **2captcha**
+- **reCAPTCHA (v2 and v3)** is solved via **token injection** (no headless browser):
+  `captcha-solver.ts` extracts the sitekey, submits it to **2captcha**
   (`in.php`/`res.php`), gets a `g-recaptcha-response` token, and adds it to the login POST.
   - Configure with env **`TWOCAPTCHA_API_KEY`** (alias `CAPTCHA_SOLVER_API_KEY`).
   - Symptom in `SyncLog.errors`: `reCAPTCHA required on POST response` / `404 (reCAPTCHA page)`.
-  - **Only reCAPTCHA v2 is auto-solved.** hCaptcha / Cloudflare challenges fail loudly with
+  - **v2 vs v3 is a different 2captcha job type - getting it wrong fails 100% of the time.**
+    `isRecaptchaV3()` decides: a `data-sitekey` attribute means **v2** (checkbox *or*
+    invisible); no `data-sitekey` plus a bare `api.js?render=<key>` loader means **v3**.
+    Check `data-sitekey` FIRST - v2-invisible also calls `grecaptcha.execute()` and would
+    otherwise be misread as v3. v3 additionally sends `version=v3`, the page's `action`
+    (from `grecaptcha.execute(k,{action:"..."})`, default `submit`), and `min_score` (0.7:
+    above the common ~0.5 plugin cutoff, below the 0.9 band where solves time out).
+  - **Symptom: `2captcha v2 solve failed: ERROR_CAPTCHA_UNSOLVABLE` = a v3 sitekey submitted
+    as a v2 job.** The workers get no widget to click. This broke Eggspecting from Aug 14
+    2026 when they put their WP login behind the **WPCaptcha** plugin's v3 flow; the extractor
+    already understood `render=`, but the caller always used the v2 path. The error string
+    names the job type now, so "v2 solve failed" on a v3 page is self-diagnosing.
+  - **v3 is a score, not a pass/fail.** A perfectly valid purchased token can still be
+    rejected if the site's cutoff is above what the solver's session scored. If v3 solves
+    succeed but the POST still bounces, tune `min_score` - don't blame the solve.
+  - **Only reCAPTCHA is auto-solved.** hCaptcha / Cloudflare challenges fail loudly with
     `... not supported by the captcha solver (only reCAPTCHA is)` rather than POSTing blind.
+- **Edge/WAF blocks are NOT captchas, and must never be retried into** (commit `a1472442`).
+  `detectWafBlock()` runs *before* `detectCaptcha()` everywhere, because Cloudflare's block
+  page embeds the origin's own reCAPTCHA script - captcha-first ordering labels every edge
+  block `(reCAPTCHA page)` and sends you auditing the wrong vendor. Detection keys strictly
+  on **block-page markers** (`sorry, you have been blocked`, `error code 1020/1015`,
+  `cdn-cgi/challenge-platform`, `__cf_chl`, `cloudflare ray id`), never on the mere presence
+  of "cloudflare" - most of these agency sites are Cloudflare-fronted while serving a
+  perfectly normal login form. A **403 with `server: cloudflare`** counts as a block even
+  when the body matches no marker; this is checked on the login **GET** as well as the POST,
+  so a marker-less block page never reaches the *paid* solver.
+  - A block **aborts the candidate loop**: the remaining candidates are the same closed door
+    on the same origin, and each one buys another solve and pushes our IP further up the
+    WAF's threat score. That is how one Eggspecting block became **9 paid solves across 3
+    retries**.
+  - **The block is often rate-based on OUR IP, not a standing ban** (Eggspecting, confirmed
+    Aug 15 2026). A single login attempt succeeded; a second attempt ~3 minutes later from
+    the same IP got a bare `403 + server: cloudflare` on `wp-login.php` with the captcha
+    solved and valid. This is why the once-a-night sync mostly works while any retry ladder
+    or manual re-test cascades into failure. **Practical rule: when debugging one of these,
+    you get roughly ONE live login attempt - make it count, then stop and let the next
+    nightly be the test.** The durable fix is asking the agency to allowlist our sync IP or
+    exempt our account, not more scraper cleverness.
 - **HTTP 405 on `/Account/Login` is NOT the real error** - it means the *correct* login
   URL (e.g. `/user/login` on JMS/o-jms, `/login` on Symfony) failed transiently and the
   engine fell through to the EDC fallback path, which those non-EDC platforms reject with
