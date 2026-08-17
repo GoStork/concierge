@@ -452,6 +452,10 @@ model User {
   photoUrl               String?
   mobileNumber           String?
   mobileNumberDisplay    String?
+  /// A2P 10DLC: separate opt-in for the ongoing notification SMS stream (match updates,
+  /// appointment notices, provider messages). OTP verification codes are transactional and
+  /// NOT gated by this. Must default false - a pre-checked box is its own A2P violation.
+  smsNotificationsOptIn  Boolean                 @default(false)
   dateOfBirth            DateTime?
   gender                 String?
   partnerGender          String?

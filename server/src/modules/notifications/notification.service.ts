@@ -2088,6 +2088,14 @@ export class NotificationService implements OnModuleInit {
           sentSubject = subject;
           sentHtml = html;
         } else if (reminder.type === "SMS") {
+          // A2P: reminder SMS bypasses dispatchSmsTemplate, so gate here too.
+          if (!(await this.recipientHasSmsOptIn(reminder.recipient, reminder.userId, "booking_reminder"))) {
+            await this.prisma.notification.update({
+              where: { id: reminder.id },
+              data: { status: "skipped", sentAt: new Date() },
+            });
+            continue;
+          }
           const otherPartyName = isProvider ? attendeeName : providerName;
           const reminderVars = {
               "1": getFirstName(isProvider ? booking.providerUser?.name : attendeeName),
@@ -2193,6 +2201,37 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /**
+   * A2P 10DLC consent gate for ongoing notification SMS.
+   *
+   * Every non-OTP SMS requires the recipient's separate opt-in
+   * (User.smsNotificationsOptIn - an unticked checkbox at signup, changeable in
+   * account settings). OTP verification codes never pass through here; they are
+   * transactional and stay ungated. Consent belongs to the owner of the phone
+   * number, so resolve by recipient number first and fall back to the attributed
+   * userId (some booking call sites attribute the row to the parent while
+   * texting another party). Email is the untouched fallback channel for anyone
+   * who has not opted in - that is what keeps the opt-in genuinely optional.
+   */
+  private async recipientHasSmsOptIn(recipient: string, fallbackUserId?: string | null, channel?: string): Promise<boolean> {
+    const consentUser =
+      (await this.prisma.user.findFirst({
+        where: { mobileNumber: recipient },
+        select: { id: true, smsNotificationsOptIn: true },
+      })) ||
+      (fallbackUserId
+        ? await this.prisma.user.findUnique({
+            where: { id: fallbackUserId },
+            select: { id: true, smsNotificationsOptIn: true },
+          })
+        : null);
+    if (consentUser?.smsNotificationsOptIn) return true;
+    this.logger.log(
+      `SMS${channel ? ` (${channel})` : ""} to ${recipient} suppressed: recipient has not opted in to notification texts (user ${consentUser?.id ?? "unknown"})`,
+    );
+    return false;
+  }
+
   private async dispatchSmsTemplate(params: {
     userId: string;
     bookingId?: string;
@@ -2201,6 +2240,7 @@ export class NotificationService implements OnModuleInit {
     contentSid: string;
     contentVars: Record<string, string>;
   }) {
+    if (!(await this.recipientHasSmsOptIn(params.recipient, params.userId, params.channel))) return;
     // The exact sentence the parent's phone shows: the real template body
     // fetched from Twilio with our variables substituted. Falls back to the
     // template-id + variables summary if the fetch fails - a faithful record
@@ -2529,11 +2569,13 @@ export class NotificationService implements OnModuleInit {
         body: html,
       }).catch(e => this.logger.error(`Failed to send escalation email to ${admin.email}: ${e.message}`));
 
-      // Send SMS if admin has a phone number
+      // Send SMS if admin has a phone number. Internal staff alert to our own
+      // team, not a consumer notification - bypasses the A2P consent gate.
       if (admin.mobileNumber) {
         this.sendRawSms(
           admin.mobileNumber,
           `${brandData.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance in the AI concierge.\n\nJoin the chat: ${chatUrl}`,
+          { skipConsentGate: true },
         ).catch(e => this.logger.error(`Failed to send escalation SMS to ${admin.mobileNumber}: ${e.message}`));
       }
     }
@@ -2598,7 +2640,8 @@ export class NotificationService implements OnModuleInit {
           },
         }).catch(e => this.logger.error(`Failed to send agreement SMS: ${e.message}`));
       } else {
-        // Fallback raw SMS until template is created
+        // Fallback raw SMS until template is created. A2P consent gate applies
+        // inside sendRawSms, same as the template path gates in dispatchSmsTemplate.
         this.sendRawSms(
           params.parentPhone,
           `Hi ${firstName}, your agreement from ${params.providerName} is ready to sign.\n\nReview and sign: ${params.signingUrl || chatUrl}`,
@@ -3024,12 +3067,16 @@ export class NotificationService implements OnModuleInit {
     }).catch(e => this.logger.error(`Failed to send W-9 completed email to ${params.adminEmail}: ${e.message}`));
   }
 
-  private async sendRawSms(to: string, body: string) {
+  private async sendRawSms(to: string, body: string, opts?: { skipConsentGate?: boolean }) {
     // Same test-run kill-switch as sendSmsWithTemplate - see the comment there.
     if (process.env.SMS_DISABLED === "1") {
       this.logger.log(`[SMS DISABLED] To: ${to}, Body: ${body.slice(0, 80)}`);
       return;
     }
+    // A2P consent gate, applied here so no call site can forget it. The only
+    // legitimate bypass is an internal staff alert (admin escalation), which is
+    // not a consumer notification - it must be explicit at the call site.
+    if (!opts?.skipConsentGate && !(await this.recipientHasSmsOptIn(to))) return;
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFrom = process.env.TWILIO_PHONE_NUMBER;

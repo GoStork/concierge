@@ -9,7 +9,7 @@ import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound,
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
-import { SmsConsentDisclosure } from "@/components/ui/sms-consent-disclosure";
+import { SmsTransactionalNotice, SmsNotificationsOptIn } from "@/components/ui/sms-consent-disclosure";
 import { TurnstileWidget } from "@/components/ui/turnstile-widget";
 import { countryNameToIsoCode } from "@/lib/country-flag";
 
@@ -87,6 +87,7 @@ interface OnboardingData {
   phoneDisplay: string;
   phoneIsoCode: string;
   phoneIsValid: boolean;
+  smsOptIn: boolean;
   otp: string[];
 }
 
@@ -202,6 +203,8 @@ export default function OnboardingPage() {
     phoneDisplay: "",
     phoneIsoCode: "",
     phoneIsValid: false,
+    // A2P: must start unticked. A pre-checked box is its own campaign violation.
+    smsOptIn: false,
     otp: ["", "", "", "", "", ""],
   });
 
@@ -317,6 +320,7 @@ export default function OnboardingPage() {
         country: data.country.trim() || null,
         mobileNumber: data.phoneE164,
         mobileNumberDisplay: data.phoneDisplay,
+        smsNotificationsOptIn: data.smsOptIn,
         interestedServices: data.goals,
       });
 
@@ -644,6 +648,8 @@ export default function OnboardingPage() {
                 });
                 setOtpError(null);
               }}
+              smsOptIn={data.smsOptIn}
+              onSmsOptInChange={checked => update({ smsOptIn: checked })}
               error={otpError}
             />
           )}
@@ -962,6 +968,8 @@ function StepPhone({
   detectedCountry,
   detectingCountry,
   onChange,
+  smsOptIn,
+  onSmsOptInChange,
   error,
 }: {
   value: string;
@@ -971,6 +979,8 @@ function StepPhone({
   detectedCountry: string | null;
   detectingCountry: boolean;
   onChange: (params: { e164: string; display: string; isValid: boolean; isoCode: string }) => void;
+  smsOptIn: boolean;
+  onSmsOptInChange: (checked: boolean) => void;
   error?: string | null;
 }) {
   // Priority: explicit user selection > country from location step > geo API detection
@@ -1009,7 +1019,24 @@ function StepPhone({
         </p>
       )}
 
-      <SmsConsentDisclosure actionLabel="tapping Verify phone number" />
+      <SmsTransactionalNotice className="mb-4" />
+
+      {/* A2P 10DLC: the ongoing-notifications opt-in is a SEPARATE, genuinely optional
+          consent. The box starts unticked and the Verify button works either way -
+          if declining ever blocks signup, the campaign fails on error 30923 again. */}
+      <label
+        className="flex items-start gap-3 rounded-[var(--radius)] border-2 border-primary/40 bg-accent/10 p-4 cursor-pointer transition-colors hover:border-primary has-[:checked]:border-primary has-[:checked]:bg-accent/20"
+        data-testid="label-sms-opt-in"
+      >
+        <input
+          type="checkbox"
+          checked={smsOptIn}
+          onChange={e => onSmsOptInChange(e.target.checked)}
+          className="mt-0.5 h-5 w-5 shrink-0 accent-[hsl(var(--primary))]"
+          data-testid="checkbox-sms-opt-in"
+        />
+        <SmsNotificationsOptIn />
+      </label>
     </div>
   );
 }

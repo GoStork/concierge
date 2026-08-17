@@ -411,6 +411,9 @@ export class UsersController {
     if (body.mobileNumber) updateData.mobileNumber = body.mobileNumber;
     if (body.mobileNumberDisplay) updateData.mobileNumberDisplay = body.mobileNumberDisplay;
     if (body.referralSource) updateData.referralSource = body.referralSource;
+    // A2P 10DLC: separate opt-in for ongoing notification SMS, collected via an
+    // unticked checkbox on the phone step. Only ever set from an explicit boolean.
+    if (typeof body.smsNotificationsOptIn === "boolean") updateData.smsNotificationsOptIn = body.smsNotificationsOptIn;
 
     await this.ensureParentAccount(user.id);
 
@@ -463,6 +466,9 @@ export class UsersController {
     }
     if (body.mobileNumber !== undefined) updateData.mobileNumber = body.mobileNumber || null;
     if (body.mobileNumberDisplay !== undefined) updateData.mobileNumberDisplay = body.mobileNumberDisplay || null;
+    // A2P 10DLC: the settings toggle is the in-app revocation/re-consent path for
+    // notification texts (alongside the STOP keyword). Explicit boolean only.
+    if (typeof body.smsNotificationsOptIn === "boolean") updateData.smsNotificationsOptIn = body.smsNotificationsOptIn;
     if (body.photoUrl !== undefined) updateData.photoUrl = body.photoUrl || null;
     if (body.city !== undefined) updateData.city = body.city || null;
     if (body.state !== undefined) updateData.state = body.state || null;

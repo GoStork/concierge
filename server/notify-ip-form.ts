@@ -57,6 +57,7 @@ async function sendRawSms(to: string, body: string): Promise<void> {
     console.log(`[IP FORM NOTIFY] [SMS DISABLED] To: ${to}`);
     return;
   }
+  if (!(await phoneHasSmsOptIn(to))) return;
   const twilioSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioToken = process.env.TWILIO_AUTH_TOKEN;
   const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
@@ -88,6 +89,23 @@ async function sendRawSms(to: string, body: string): Promise<void> {
   }
 }
 
+/**
+ * A2P 10DLC consent gate - mirrors NotificationService.recipientHasSmsOptIn.
+ * Every SMS in this file is an ongoing notification, so it requires the
+ * recipient's separate opt-in (User.smsNotificationsOptIn). Consent belongs to
+ * the phone number's owner; a number with no matching User row (e.g. a guest
+ * with no account) has never opted in, so it gets email only.
+ */
+async function phoneHasSmsOptIn(phone: string): Promise<boolean> {
+  const owner = await prisma.user.findFirst({
+    where: { mobileNumber: phone },
+    select: { id: true, smsNotificationsOptIn: true },
+  });
+  if (owner?.smsNotificationsOptIn) return true;
+  console.log(`[IP FORM NOTIFY] SMS to ${phone} suppressed: recipient has not opted in to notification texts (user ${owner?.id ?? "unknown"})`);
+  return false;
+}
+
 /** Twilio Content Template SMS (same HTTP contract as NotificationService.sendSmsWithTemplate). */
 async function sendSmsTemplate(to: string, contentSid: string, contentVars: Record<string, string>): Promise<void> {
   const twilioSid = process.env.TWILIO_ACCOUNT_SID;
@@ -98,6 +116,7 @@ async function sendSmsTemplate(to: string, contentSid: string, contentVars: Reco
     console.log(`[IP FORM NOTIFY] [SMS MOCK] To: ${to}, ContentSid: ${contentSid}, Vars: ${JSON.stringify(contentVars)}`);
     return;
   }
+  if (!(await phoneHasSmsOptIn(to))) return;
   const paramsInit: Record<string, string> = { To: to, ContentSid: contentSid, ContentVariables: JSON.stringify(contentVars) };
   if (twilioMessagingServiceSid) paramsInit.MessagingServiceSid = twilioMessagingServiceSid;
   else paramsInit.From = twilioFrom!;

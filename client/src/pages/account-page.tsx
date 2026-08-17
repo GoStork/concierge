@@ -100,6 +100,55 @@ const allTabs = [
   { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
 ];
 
+/**
+ * A2P 10DLC: in-app revocation/re-consent path for notification texts, alongside
+ * the STOP keyword. Saves immediately (own PUT), independent of the edit form.
+ * OTP verification codes are transactional and unaffected by this preference.
+ */
+function SmsNotificationsToggle() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [pending, setPending] = useState(false);
+  const optedIn = !!(user as any)?.smsNotificationsOptIn;
+
+  const handleChange = async (checked: boolean) => {
+    setPending(true);
+    try {
+      await apiRequest("PUT", "/api/user/profile", { smsNotificationsOptIn: checked });
+      await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({
+        title: checked ? "Notification texts turned on" : "Notification texts turned off",
+        description: checked
+          ? "We'll text you match updates, appointment notices, and provider messages."
+          : "You'll get these updates by email instead.",
+      });
+    } catch (e: any) {
+      toast({ title: "Could not update SMS preference", description: e.message, variant: "destructive" });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-[var(--radius)] bg-secondary p-4" data-testid="sms-notifications-toggle">
+      <div className="space-y-1">
+        <Label htmlFor="switch-sms-notifications">Text me updates</Label>
+        <p className="t-helper">
+          Match updates, appointment notices, and provider messages as texts. Verification
+          codes are always sent when you request them. Reply STOP to any text to unsubscribe.
+        </p>
+      </div>
+      <Switch
+        id="switch-sms-notifications"
+        checked={optedIn}
+        disabled={pending}
+        onCheckedChange={handleChange}
+        data-testid="switch-sms-notifications"
+      />
+    </div>
+  );
+}
+
 function AccountTab() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -880,6 +929,7 @@ function AccountTab() {
                   data-testid="input-edit-mobile"
                 />
               </div>
+              <SmsNotificationsToggle />
               {!isProviderUser && (
                 <>
                   <div className="space-y-2">
@@ -1074,6 +1124,7 @@ function AccountTab() {
                 <Label>Mobile Number</Label>
                 <Input disabled value={mobileNumberDisplay || formatPhoneDisplay(mobileNumber)} placeholder="-- Not specified --" data-testid="text-account-mobile" />
               </div>
+              <SmsNotificationsToggle />
               {!isProviderUser && (
                 <>
                   <div className="space-y-2">

@@ -1,15 +1,20 @@
-import { SmsConsentDisclosure } from "@/components/ui/sms-consent-disclosure";
+import {
+  SmsTransactionalNotice,
+  SmsNotificationsOptIn,
+} from "@/components/ui/sms-consent-disclosure";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 
 /**
  * Public, unauthenticated evidence page for the A2P 10DLC campaign registration.
  *
  * Carrier reviewers have to be able to verify our SMS call-to-action, but the real
- * opt-in sits behind account signup where they cannot reach it. This page shows the
- * exact same <SmsConsentDisclosure /> the user sees on the phone step, so the
- * declared message flow and the live UI are the same code and cannot drift apart.
+ * opt-in sits behind account signup where they cannot reach it. This page renders the
+ * exact same components the user sees on the phone step - the transactional
+ * verification-code notice and the separate, optional notifications opt-in checkbox -
+ * so the declared message flow and the live UI are the same code and cannot drift.
  *
- * Referenced by the Twilio campaign's message flow - keep it publicly reachable.
+ * Referenced by the Twilio campaign's message flow - keep it publicly reachable,
+ * with no auth guard, forever (including after launch).
  */
 export default function SmsConsentPage() {
   const { data: brand } = useBrandSettings();
@@ -20,31 +25,45 @@ export default function SmsConsentPage() {
       <div className="mx-auto max-w-2xl space-y-8">
         <div className="space-y-3">
           <h1 className="t-page-title font-heading" data-testid="text-sms-consent-title">
-            How {brandName} SMS opt-in works
+            How {brandName} SMS consent works
           </h1>
           <p className="t-field-prose">
-            {brandName} sends text messages only to people who provide a mobile number and
-            agree to receive them during account signup.
+            {brandName} collects SMS consent in two separate steps on the phone number
+            step of account signup. Consent to receive text messages is never a
+            condition of using {brandName} or of any purchase.
           </p>
         </div>
 
         <div className="space-y-3">
-          <h2 className="t-section-title font-heading">The disclosure users see</h2>
+          <h2 className="t-section-title font-heading">
+            Step 1: the one-time verification code
+          </h2>
           <p className="t-field-prose">
-            On the phone number step of signup, immediately above the "Verify phone number"
-            button, every user sees this:
+            The user enters their mobile number and taps "Verify phone number". This
+            sends a single one-time verification code that the user has explicitly
+            requested. Immediately above the button, every user sees this notice:
           </p>
-          <SmsConsentDisclosure actionLabel="tapping Verify phone number" />
+          <SmsTransactionalNotice />
         </div>
 
         <div className="space-y-3">
-          <h2 className="t-section-title font-heading">What we send</h2>
-          <ul className="t-field-prose list-disc space-y-1 pl-5">
-            <li>One-time account verification codes</li>
-            <li>Match updates</li>
-            <li>Appointment confirmations and reminders</li>
-            <li>Messages from providers you connect with</li>
-          </ul>
+          <h2 className="t-section-title font-heading">
+            Step 2: the optional notifications opt-in
+          </h2>
+          <p className="t-field-prose">
+            On the same screen, a separate checkbox offers ongoing notification texts.
+            The box starts unticked, and signup completes whether or not it is ticked.
+            The checkbox label reads:
+          </p>
+          <div className="rounded-[var(--radius)] border-2 border-primary/40 bg-accent/10 p-4 flex items-start gap-3">
+            <input
+              type="checkbox"
+              disabled
+              className="mt-0.5 h-5 w-5 shrink-0 accent-[hsl(var(--primary))]"
+              aria-label="Example of the unticked opt-in checkbox"
+            />
+            <SmsNotificationsOptIn />
+          </div>
         </div>
 
         <div className="rounded-[var(--radius)] bg-accent/10 p-5 space-y-2">
@@ -53,10 +72,12 @@ export default function SmsConsentPage() {
           </p>
           <p className="t-field-prose">
             Reply <strong>STOP</strong> to unsubscribe, or <strong>HELP</strong> for
-            assistance.
+            assistance. Users can also turn notification texts on or off at any time
+            from their account settings.
           </p>
           <p className="t-field-prose">
-            Consent is not a condition of purchase. We never sell or share your number.
+            Consent to receive text messages is not a condition of using {brandName} or
+            of any purchase. We never sell or share your number.
           </p>
         </div>
 
