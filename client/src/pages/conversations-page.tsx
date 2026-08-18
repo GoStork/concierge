@@ -1599,9 +1599,9 @@ const sendMessageMutation = useMutation({
   };
 
   useEffect(() => {
-    dispatch(setHideBottomNav(!!selectedSessionId || !!selectedParentSession));
+    dispatch(setHideBottomNav(!!selectedSessionId || !!selectedParentSession || assistantOpen));
     return () => { dispatch(setHideBottomNav(false)); };
-  }, [selectedSessionId, selectedParentSession, dispatch]);
+  }, [selectedSessionId, selectedParentSession, assistantOpen, dispatch]);
 
   // When the fallback path selects a session (no ?session= in URL), immediately lock the
   // session ID into the URL. This prevents the sort-order-dependent fallback from switching
