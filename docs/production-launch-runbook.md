@@ -15,23 +15,23 @@ app.gostork.com and the dev machines STOP being production.
 
 ## 0. Open decisions (blocking - answer before sequencing the launch)
 
-- [?] **Where is 1.0 hosted?** What origin does Cloudflare proxy app.gostork.com
-  to today? (Not the go-stork.replit.app deployment - that was shut down
-  2026-08-18 and 1.0 must be verified still up.)
-- [?] **Where does 2.0 production run?** (New Replit deployment / other host.)
-  Whatever it is: deployments are snapshots - wire GitHub auto-deploy on push to
-  main, or make "republish after push" part of the workflow.
-- [?] **Database strategy.** Dev currently runs on Supabase project
-  `bryzqwfzvgjenijciwaa` (shared by both Macs). Does 1.0 production have real
-  user data in a different DB that must be migrated/merged? Is the current
-  Supabase project the intended 2.0 production DB, and if so do we scrub test
-  data (test parents, fictional 555-01xx numbers) before launch?
+Decided 2026-08-18 (Eran):
+- [x] **Database strategy: FRESH production DB.** A new Supabase project becomes
+  production; the current project `bryzqwfzvgjenijciwaa` stays as the dev DB.
+  Consequence: a production data-seeding plan is required - see section 3.
+- [x] **Dev Macs after launch: separate dev database** (the current project).
+  Complete isolation - a stale dev process can only ever touch dev data.
+  PASSIVE_MODE on the Macs becomes optional extra hygiene, not a requirement.
+
+Still open:
+- [?] **Where is 1.0 hosted?** Eran to check: Cloudflare dashboard -> DNS ->
+  the app.gostork.com record's target (and confirm 1.0 still loads in a
+  browser after the 2026-08-18 go-stork.replit.app shutdown).
+- [?] **Where does 2.0 production run?** Undecided. Whatever it is:
+  deployments are snapshots - wire GitHub auto-deploy on push to main, or make
+  "republish after push" part of the workflow.
 - [?] **Launch style.** Big-bang DNS swap vs. staged beta (e.g. beta subdomain
   first). Downtime tolerance?
-- [?] **What do the dev Macs become after launch?** If they stay on the
-  production DB they are zombie-environment risks (exactly the Replit incident
-  of 2026-08-18). Options: set PASSIVE_MODE=1 on both Macs post-launch, or move
-  dev to a separate DB. Decide before launch day.
 
 ## 1. Domain & Cloudflare
 
@@ -69,16 +69,35 @@ app.gostork.com and the dev machines STOP being production.
 - [ ] Rotate any secrets that lived on the old Replit deployment if it is ever
   deleted-with-history or was shared.
 
-## 3. Database
+## 3. Database (decided: FRESH production Supabase project; current one stays dev)
 
-- [ ] Apply all `prisma/migrations/*` to the production DB (or confirm the
-  shared Supabase project already has them - it does as of 2026-08-18 if the
-  same project is kept).
-- [ ] Scrub/flag test data if the shared DB becomes production (test emails,
-  555-01xx fixture phones, test providers).
-- [ ] Verify `smsNotificationsOptIn` grandfather state matches intent at launch
-  (2026-08-18: 43/43 users with phones opted in).
-- [ ] Backups: confirm Supabase PITR/backup tier appropriate for production.
+- [ ] Provision the production Supabase project (region, tier, PITR/backups
+  appropriate for production).
+- [ ] Apply the full schema: `prisma migrate deploy` (all of
+  `prisma/migrations/*`) against the new DB.
+- [ ] **Content seeding plan - the big workstream.** Production starts with no
+  users, but the PLATFORM CONTENT must come over from dev. Inventory to copy
+  (script it, don't hand-copy): SiteSettings + BrandTemplate (brand),
+  ConciergePromptSection (AI prompts - DB is source of truth), Matchmaker
+  personas, ProviderType seed rows, Provider orgs + services + cost sheets +
+  templates that are real (not test), donor/surrogate profiles + photos,
+  knowledge base (KnowledgeChunk/ExpertGuidanceRule + pgvector data), CDC
+  datasets, GoStork house provider (GOSTORK_PROVIDER_ID env must match the new
+  row id). Explicitly EXCLUDE: test users, test parents, 555-01xx phones,
+  chat sessions, notifications, bookings.
+- [ ] pgvector extension enabled on the new project before knowledge import.
+- [ ] Decide provider/staff account migration: real provider logins (e.g.
+  Eggspecting staff) must exist in prod - re-invite vs. copy with password
+  hashes.
+- [ ] Production `DATABASE_URL` (+ session store - connect-pg-simple uses the
+  same DB) into the prod env only. Dev Macs keep pointing at the dev project.
+- [ ] Supabase MCP: ops sessions must target the right project per environment -
+  the project id `bryzqwfzvgjenijciwaa` in CLAUDE.md becomes DEV; add the prod
+  project id to CLAUDE.md at cutover with a "which DB am I touching" warning.
+- [ ] Nightly donor-scraper sync: decide target - production pinger writes to
+  prod DB; dev scraping stays on dev. Photos/GCS paths must resolve in both.
+- [ ] Re-apply the `smsNotificationsOptIn` grandfather intent for any migrated
+  users (2026-08-18 dev state: 43/43 with phones opted in).
 
 ## 4. Twilio / SMS (A2P 10DLC)
 
