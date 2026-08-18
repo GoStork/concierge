@@ -116,22 +116,40 @@ DONE:
   `gostork-recordings` stays where it is either way - the SA key just needs
   to be in the prod env).
 
+- [x] Prod DB password reset by Eran (2026-08-18). Prod pooler host is
+  **`aws-0-us-east-1.pooler.supabase.com`** (dev is `aws-1`; the MCP does
+  not tell you which - probe). Connection strings for the prod host env:
+  transaction pooler `:6543/postgres?pgbouncer=true` = `DATABASE_URL`;
+  session pooler `:5432/postgres` = `DIRECT_URL`. On the MacBook the
+  session-pooler URL lives ONLY in `~/.gostork-prod.env` (chmod 600, outside
+  the repo) as `TARGET_DATABASE_URL`; run the seeder with
+  `set -a; source ~/.gostork-prod.env; set +a; npx tsx scripts/seed-production.ts --execute`.
+  Never put it in a dev Mac `.env`.
+- [ ] **Rotate the prod DB password before beta users arrive** - it was
+  pasted into a chat session on 2026-08-18. Rotation = dashboard reset +
+  update `~/.gostork-prod.env` + prod host env.
+- [x] **PROD SEEDED 2026-08-18** - 82,140 rows / 38 tables, all counts
+  equal to source: Provider 467, ProviderLocation 1253, EggDonor 1659,
+  Surrogate 40, SpermDonor 90, ConciergePromptSection 30, KnowledgeChunk
+  2331 (2277 with embeddings, same as dev), IvfSuccessRate 42044,
+  PhotoFingerprint 33268, SiteSettings 1, BrandTemplate 3 (1 active),
+  SecurityCountryPolicy 175. User / AiChatSession / Booking / Notification
+  = 0 by design. Independent FK sweep over all 106 constraints: zero
+  dangling references. Three seeder fixes landed on the way (all in
+  `scripts/seed-production.ts`, commit-tracked): (a) json/jsonb columns
+  are JSON.stringify'd - pg re-encodes a JS array from jsonb as a PG array
+  literal (`Provider.ivfAcceptingPatients=["gay_couple"]` -> 22P02);
+  (b) multi-row batched INSERTs - the per-row version ran ~5 rows/s over
+  the pooler (hours for the 75k-row tables), batched run took ~2 min;
+  (c) `USER_REF_NULL_COLUMNS.Surrogate` was misspelled
+  (`reservedByUserId`; real column `reservedByParentId`) so 3 dev
+  test-parent reservations came over as orphans - nulled on prod (with
+  `reservationExpiresAt`) and the list fixed. Re-running the seeder is
+  safe (idempotent, never clobbers prod edits).
+
 NEXT, in order (items marked ERAN need a human in a browser):
-1. [ ] ERAN: reset the prod DB password in the Supabase dashboard
-   (Settings > Database > "Reset database password":
-   https://supabase.com/dashboard/project/itlnituvybtnzmrzbkoz/settings/database)
-   and copy the two connection strings from the Connect dialog: transaction
-   pooler (:6543, `?pgbouncer=true`) = prod `DATABASE_URL`; session pooler
-   (:5432) = prod `DIRECT_URL` and the seeder's `TARGET_DATABASE_URL`. Put
-   them ONLY in the prod host env + a local gitignored file for the seed run
-   - never in `.env` of a dev Mac (that is exactly the cross-wiring the two-
-   environment decision exists to prevent).
-2. [ ] Seed: `TARGET_DATABASE_URL=<session pooler url> npx tsx
-   scripts/seed-production.ts` (dry-run first - it also prints the target
-   schema compare, expect only the 15 dead dev-only columns as drift), then
-   `--execute`; resolve any orphan-FK report lines. Then verify counts on
-   prod via MCP (project id itlnituvybtnzmrzbkoz) - e.g. Provider,
-   EggDonor, Surrogate, ConciergePromptSection, SiteSettings=1, User=0.
+1. [x] prod DB password + connection strings.
+2. [x] Seed complete + verified (above).
 3. [ ] ERAN: `gcloud auth login` (owner account for GoStork's GCP) on the
    MacBook, then decide the project (see discovery above) and
    `gcloud config set project <id>`. Then provision the 2.0 host (VM vs
@@ -216,7 +234,7 @@ Useful context for the executing session:
   --to-schema`, plus dev's raw-SQL indexes, plus a `_prisma_migrations`
   baseline of all 160 dirs so future `migrate deploy` is incremental.
   Parity with dev verified (tables/columns/PK/FK/indexes).
-- [ ] **Content seeding plan - the big workstream.** Production starts with no
+- [x] **Content seeding plan - DONE 2026-08-18 (see 0.5 for counts + FK sweep).** Original scope: Production starts with no
   users, but the PLATFORM CONTENT must come over from dev. Inventory to copy
   (script it, don't hand-copy): SiteSettings + BrandTemplate (brand),
   ConciergePromptSection (AI prompts - DB is source of truth), Matchmaker

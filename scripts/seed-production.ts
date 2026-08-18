@@ -60,8 +60,12 @@ const CONTENT_TABLES: string[] = [
 // Content tables sometimes point at User rows (audit/ownership refs). Users
 // are not copied, so these columns are nulled during the copy. Verified
 // nullable in prisma/schema.prisma before listing here.
+// A reservation belongs to a (test) parent User that is not copied, so the
+// reservation itself is dropped: both the FK and its expiry are nulled.
+// (Was misspelled "reservedByUserId" until the 2026-08-18 prod seed - the
+// column is reservedByParentId - so it silently never applied.)
 const USER_REF_NULL_COLUMNS: Record<string, string[]> = {
-  Surrogate: ["reservedByUserId"],
+  Surrogate: ["reservedByParentId", "reservationExpiresAt"],
 };
 
 const EXECUTE = process.argv.includes("--execute");
@@ -129,18 +133,26 @@ async function main() {
     const { rows } = await source.query(`SELECT ${selectList} FROM "${table}"`);
     const jsonCols = await jsonColumnsOf(source, table);
     const colList = common.map((c) => `"${c}"`).join(", ");
+    const conflictClause = common.includes("id") ? `ON CONFLICT ("id") DO NOTHING` : `ON CONFLICT DO NOTHING`;
+    // Multi-row INSERTs: one round-trip per row over the pooler ran at ~5
+    // rows/s (the 75k-row PhotoFingerprint + IvfSuccessRate tables would
+    // have taken hours). Batch size is bounded by Postgres' 65535 bind
+    // parameter limit.
+    const BATCH = Math.max(1, Math.min(500, Math.floor(60000 / Math.max(1, common.length))));
     let inserted = 0;
-    for (const row of rows) {
-      const vals = common.map((c) => {
-        const v = row[c];
-        return jsonCols.has(c) && v !== null && v !== undefined ? JSON.stringify(v) : v;
+    for (let start = 0; start < rows.length; start += BATCH) {
+      const chunk = rows.slice(start, start + BATCH);
+      const vals: unknown[] = [];
+      const tuples = chunk.map((row, ri) => {
+        const placeholders = common.map((c, ci) => {
+          const v = row[c];
+          vals.push(jsonCols.has(c) && v !== null && v !== undefined ? JSON.stringify(v) : v);
+          return `$${ri * common.length + ci + 1}`;
+        });
+        return `(${placeholders.join(", ")})`;
       });
-      const params = common.map((_, i) => `$${i + 1}`).join(", ");
-      const conflictTarget = common.includes("id") ? `("id")` : "";
       const r = await target.query(
-        conflictTarget
-          ? `INSERT INTO "${table}" (${colList}) VALUES (${params}) ON CONFLICT ${conflictTarget} DO NOTHING`
-          : `INSERT INTO "${table}" (${colList}) VALUES (${params}) ON CONFLICT DO NOTHING`,
+        `INSERT INTO "${table}" (${colList}) VALUES ${tuples.join(", ")} ${conflictClause}`,
         vals,
       );
       inserted += r.rowCount || 0;
