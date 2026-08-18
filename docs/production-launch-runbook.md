@@ -30,12 +30,13 @@ Decided 2026-08-18 (Eran):
   Flexible-style). 1.0 was never on the Replit deployment; the 2026-08-18
   shutdown did not affect it.
 
+- [x] **Where does 2.0 production run: GCP** (decided 2026-08-18). Same cloud
+  as 1.0/GCS/Speech-to-Text. Sub-decisions to make when provisioning: VM (like
+  1.0) vs Cloud Run; region; and CI/CD - wire auto-deploy on push to main
+  (Cloud Build/GitHub Actions) so production can never drift behind the repo
+  the way the Replit deployment did.
+
 Still open:
-- [?] **Where does 2.0 production run?** Undecided. Note: GCP is already in
-  the stack (1.0 hosting, GCS, Speech-to-Text), so reusing GCP (new VM /
-  Cloud Run) is a natural candidate vs. a Replit deployment. Whatever it is:
-  deployments are snapshots - wire GitHub auto-deploy on push to main, or make
-  "republish after push" part of the workflow.
 - [?] **Launch style.** Big-bang DNS swap vs. staged beta (e.g. beta subdomain
   first). Downtime tolerance?
 
@@ -43,12 +44,21 @@ Still open:
 
 - [ ] Point app.gostork.com origin at the 2.0 production host (keep orange-cloud
   proxy).
-- [ ] **WAF/bot-challenge bypass for machine endpoints** - verified 2026-08-18
-  that Cloudflare currently serves `cf-mitigated: challenge` to non-browser
-  requests. Without bypass rules, ALL inbound webhooks die silently. Create
-  WAF skip rules for at least:
-  - `/api/webhooks/*` (PandaDoc, and any Stripe/Twilio webhook paths)
-  - `/api/cron/run-nightly-sync` (external pinger)
+- [ ] **Bot Fight Mode must come OFF at launch** (verified ON 2026-08-18 with
+  JS Detections; it is what serves `cf-mitigated: challenge` to non-browser
+  requests). On standard plans Bot Fight Mode CANNOT be bypassed per-path -
+  WAF skip rules do not apply to it - so left on, it silently kills ALL
+  server-to-server traffic to app.gostork.com: PandaDoc/Stripe webhooks and
+  the nightly-sync pinger. (Likely why the production PandaDoc subscription
+  sits deactivated today.) Replace with:
+  - Scoped WAF custom rules (challenge browsers on auth/signup paths if
+    desired, explicitly skip `/api/webhooks/*` and `/api/cron/*`)
+  - Turnstile already guards signup/OTP at the app layer
+  - Or upgrade to a plan with configurable Super Bot Fight Mode / Bot
+    Management if blanket bot protection is wanted
+- [ ] Other Security toggles as of 2026-08-18: Block AI Bots ACTIVE on all
+  pages (crawler-focused - fine, but verify it never matches API/webhook
+  traffic in smoke tests); AI Labyrinth OFF; Browser Integrity Check OFF.
 - [ ] Cache rules: bypass cache for `/api/*`; ensure SSE
   (in-app notifications stream) is not buffered/cached by Cloudflare.
 - [ ] SSL mode: currently effectively Flexible (1.0 origin has no TLS -
