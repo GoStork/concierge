@@ -1962,9 +1962,13 @@ chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireA
 
 // ---------------------------------------------------------------------------
 // Provider assistant - the pinned "AI Concierge" chat in the PROVIDER's
-// conversation list. One shared PROVIDER_CONCIERGE session per provider (all
-// staff see the same thread, messages identified by senderName - mirrors the
-// shared parent-account session model). The system prompt lives in the
+// conversation list. One PRIVATE PROVIDER_CONCIERGE session PER STAFF MEMBER
+// (userId + providerId), so a role-restricted coordinator's thread never shows
+// a colleague's questions or answers, and the pipeline context each user gets
+// is filtered to what their role may see - mirroring the inbox's
+// COORDINATOR_SUBJECT_TYPES filter. (Before 2026-08-18 there was one shared
+// session per provider; that legacy thread now belongs to whichever staffer
+// created it, history intact.) The system prompt lives in the
 // ConciergePromptSection row "provider_assistant_prompt" (DB is the single
 // source of truth; ai-prompt-defaults.ts only seeds it).
 // ---------------------------------------------------------------------------
@@ -1972,8 +1976,11 @@ chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireA
 const providerAssistantAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 async function findOrCreateProviderAssistantSession(user: any) {
+  // Keyed on userId, not just providerId: each staff member gets their own
+  // private thread. The pre-split org-shared session matches only for the user
+  // who originally created it (its userId), which is the intended migration.
   const existing = await prisma.aiChatSession.findFirst({
-    where: { providerId: user.providerId, sessionType: "PROVIDER_CONCIERGE" },
+    where: { userId: user.id, providerId: user.providerId, sessionType: "PROVIDER_CONCIERGE" },
     orderBy: { updatedAt: "desc" },
   });
   if (existing) return existing;
@@ -2013,6 +2020,19 @@ async function resolveProviderAssistantMatchmaker(session: any) {
 // Live pipeline snapshot injected into every assistant request. Never cached -
 // the assistant must answer "what needs my attention?" from current truth.
 async function buildProviderAssistantContext(user: any): Promise<string> {
+  // The context an assistant answer is built from must never exceed what the
+  // asking staffer's own inbox shows - same COORDINATOR_SUBJECT_TYPES filter
+  // as GET /api/provider/concierge-sessions. Otherwise a role-restricted
+  // coordinator could read the org's other pipelines through the AI.
+  const roles: string[] = user.roles || [];
+  const isAllSessionRole = (ALL_SESSION_PROVIDER_ROLES as readonly string[]).some(r => roles.includes(r));
+  const coordinatorTypes = !isAllSessionRole
+    ? roles.flatMap((r: string) => COORDINATOR_SUBJECT_TYPES[r] || [])
+    : null;
+  const subjectTypeFilter = coordinatorTypes && coordinatorTypes.length > 0
+    ? { OR: [{ subjectType: null }, { subjectType: { in: coordinatorTypes } }] }
+    : {};
+
   const [provider, sessions, staffUsers] = await Promise.all([
     prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } }),
     prisma.aiChatSession.findMany({
@@ -2020,6 +2040,7 @@ async function buildProviderAssistantContext(user: any): Promise<string> {
         providerId: user.providerId,
         status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
         sessionType: { not: "PROVIDER_CONCIERGE" },
+        ...subjectTypeFilter,
       },
       orderBy: { updatedAt: "desc" },
       take: 30,
@@ -2032,17 +2053,26 @@ async function buildProviderAssistantContext(user: any): Promise<string> {
     prisma.user.findMany({ where: { providerId: user.providerId }, select: { id: true } }),
   ]);
 
-  const pendingBySession = await prisma.silentQuery.groupBy({
-    by: ["sessionId"],
-    where: { providerId: user.providerId, status: "PENDING" },
-    _count: { id: true },
-    _min: { createdAt: true },
+  // Pending whisper counts, restricted through the session relation with the
+  // same filter (groupBy cannot filter across relations, so aggregate in JS -
+  // PENDING rows per provider are few).
+  const pendingRows = await prisma.silentQuery.findMany({
+    where: { providerId: user.providerId, status: "PENDING", session: subjectTypeFilter },
+    select: { sessionId: true, createdAt: true },
   });
-  const pendingMap = new Map(pendingBySession.map(p => [p.sessionId, p]));
+  const pendingMap = new Map<string, { _count: { id: number }; _min: { createdAt: Date | null } }>();
+  for (const row of pendingRows) {
+    const agg = pendingMap.get(row.sessionId) || { _count: { id: 0 }, _min: { createdAt: null } };
+    agg._count.id += 1;
+    if (!agg._min.createdAt || row.createdAt < agg._min.createdAt) agg._min.createdAt = row.createdAt;
+    pendingMap.set(row.sessionId, agg);
+  }
 
+  // Bookings have no subjectType, so the conservative split: all-session roles
+  // see the org's calendar, restricted coordinators only their own calls.
   const upcomingBookings = await prisma.booking.findMany({
     where: {
-      providerUserId: { in: staffUsers.map(u => u.id) },
+      providerUserId: isAllSessionRole ? { in: staffUsers.map(u => u.id) } : user.id,
       scheduledAt: { gte: new Date() },
       status: { in: ["PENDING", "CONFIRMED"] },
     },
@@ -2062,7 +2092,7 @@ async function buildProviderAssistantContext(user: any): Promise<string> {
     return `- ${who} | ${subject} | status ${s.status}${pendingNote}`;
   });
 
-  const totalPending = pendingBySession.reduce((sum, p) => sum + p._count.id, 0);
+  const totalPending = pendingRows.length;
   const bookingLines = upcomingBookings.map(b =>
     `- ${b.scheduledAt.toISOString()} | ${b.meetingSubtype || b.subject || "consultation"} | ${b.status}${b.attendeeName ? ` | ${b.attendeeName}` : ""}`
   );
@@ -2107,8 +2137,8 @@ chatRouter.get("/api/provider/concierge-assistant", requireAuth, async (req, res
 });
 
 // Provider-side twin of PATCH /api/my/chat-session/matchmaker: swap the persona
-// the provider's own pinned assistant speaks as. One session per provider, so
-// the switch is account-wide for that provider's staff.
+// the provider's own pinned assistant speaks as. Sessions are per staff member,
+// so the switch is personal - it never changes a colleague's assistant.
 chatRouter.patch("/api/provider/concierge-assistant/matchmaker", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
