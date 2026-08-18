@@ -23,11 +23,17 @@ Decided 2026-08-18 (Eran):
   Complete isolation - a stale dev process can only ever touch dev data.
   PASSIVE_MODE on the Macs becomes optional extra hygiene, not a requirement.
 
+- [x] **Where is 1.0 hosted: Google Cloud.** Verified 2026-08-18 in Cloudflare
+  DNS + direct origin probe: `app.gostork.com` -> A `34.28.191.216` (proxied),
+  plus siblings `alpha-app` -> `35.238.203.120` and `test-app` ->
+  `34.46.187.88`. Origin serves plain HTTP (TLS terminates at Cloudflare -
+  Flexible-style). 1.0 was never on the Replit deployment; the 2026-08-18
+  shutdown did not affect it.
+
 Still open:
-- [?] **Where is 1.0 hosted?** Eran to check: Cloudflare dashboard -> DNS ->
-  the app.gostork.com record's target (and confirm 1.0 still loads in a
-  browser after the 2026-08-18 go-stork.replit.app shutdown).
-- [?] **Where does 2.0 production run?** Undecided. Whatever it is:
+- [?] **Where does 2.0 production run?** Undecided. Note: GCP is already in
+  the stack (1.0 hosting, GCS, Speech-to-Text), so reusing GCP (new VM /
+  Cloud Run) is a natural candidate vs. a Replit deployment. Whatever it is:
   deployments are snapshots - wire GitHub auto-deploy on push to main, or make
   "republish after push" part of the workflow.
 - [?] **Launch style.** Big-bang DNS swap vs. staged beta (e.g. beta subdomain
@@ -45,7 +51,16 @@ Still open:
   - `/api/cron/run-nightly-sync` (external pinger)
 - [ ] Cache rules: bypass cache for `/api/*`; ensure SSE
   (in-app notifications stream) is not buffered/cached by Cloudflare.
-- [ ] SSL mode Full (strict) against the origin; verify no redirect loops.
+- [ ] SSL mode: currently effectively Flexible (1.0 origin has no TLS -
+  verified 2026-08-18). For 2.0, put TLS on the origin and move the zone to
+  Full (strict); verify no redirect loops.
+- [ ] Decide fate of the 1.0 sibling records at/after launch:
+  `alpha-app.gostork.com` (35.238.203.120) and `test-app.gostork.com`
+  (34.46.187.88) - retire or repurpose (e.g. test-app as the 2.0 staging/beta
+  origin for a staged launch).
+- [ ] Decommission plan for the 1.0 GCP resources once 2.0 is stable
+  (VMs/IPs behind 34.28.191.216 and the two siblings) - stop billing, keep a
+  snapshot.
 - [ ] Turnstile: the site key is domain-scoped. Add app.gostork.com to the
   Turnstile widget's allowed hostnames (or mint a production site key) and set
   the production secret in the prod env. Signup OTP send breaks without this.
