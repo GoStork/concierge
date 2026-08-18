@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,24 @@ export default function W9SigningPage() {
   });
 
   const isCompleted = data?.isCompletedView === true;
+
+  // When the signer clicks Finish, PandaDoc's embedded session posts a
+  // session_view.document.completed message - bounce back to where they
+  // started (same pattern as provider-agreement-signing-page) so the user
+  // is not left staring at the iframe wondering what happens next.
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      const t = typeof e.data === "string" ? e.data : String((e.data as any)?.type || (e.data as any)?.event || "");
+      if (t.includes("session_view.document.completed")) {
+        // Give PandaDoc's own confirmation a beat to render first.
+        setTimeout(() => handleBack(), 1500);
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+    // handleBack closes over stable refs; re-binding per render is pointless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const logoSrc = brand?.logoUrl ? (getPhotoSrc(brand.logoUrl) || brand.logoUrl) : null;
   const companyName = brand?.companyName || "GoStork";
 
@@ -47,6 +66,11 @@ export default function W9SigningPage() {
         Array.isArray(q.queryKey) &&
         q.queryKey.some(k => typeof k === "string" && k.includes("/w9")),
     });
+    // Also refresh the Home work queue - the "Complete your W-9 form" task
+    // closes server-side (webhook or read-time reconcile) and must not sit
+    // on screen after the user just signed.
+    queryClient.invalidateQueries({ queryKey: ["/api/provider/tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/provider/dashboard-queue"] });
     if (window.history.length > 1) {
       navigate(-1);
     } else {

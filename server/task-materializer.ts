@@ -555,6 +555,8 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
   let remaining = await reconcileSilenceTasks(db, tasks);
   // Calendar tasks close the moment the calendar is healthy again.
   remaining = await reconcileCalendarTasks(db, remaining);
+  // W-9 / provider-agreement tasks close the moment the document is signed.
+  remaining = await reconcileDocSignTasks(db, remaining);
 
   // Only the queue kinds this file owns - a playbook task has no artifact to
   // reconcile against, and silence was handled above.
@@ -651,6 +653,63 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
  * threads after the task was raised. The 10-minute silence sweep is the
  * backstop with the full last-touch definition.
  */
+/**
+ * W-9 and GoStork provider-agreement tasks (systemKey `w9:<providerId>` /
+ * `pagr:<providerId>`) are normally closed by the PandaDoc completion webhook
+ * the moment the document is signed. But that webhook is a single delivery to
+ * whichever machine PandaDoc has registered - a machine that is asleep, a
+ * handler that throws, or a stale Prisma client orphans the OPEN task forever
+ * while the document itself already shows COMPLETED. Reconcile at read time:
+ * the task is live only while a matching document row exists that is not yet
+ * COMPLETED; a signed document (or a deleted row - e.g. a force re-request in
+ * flight) closes the task, so the queue never tells a provider to do what
+ * they already did.
+ */
+async function reconcileDocSignTasks<T extends { id: string; source?: string; systemKey?: string | null }>(
+  db: Db, tasks: T[],
+): Promise<T[]> {
+  const docTasks = tasks.filter(
+    (t: any) => t.source === "SYSTEM" && (t.systemKey?.startsWith("w9:") || t.systemKey?.startsWith("pagr:")),
+  ) as any[];
+  if (!docTasks.length) return tasks;
+  try {
+    const w9ProviderIds = docTasks.filter((t) => t.systemKey.startsWith("w9:")).map((t) => t.systemKey.slice(3));
+    const pagrProviderIds = docTasks.filter((t) => t.systemKey.startsWith("pagr:")).map((t) => t.systemKey.slice(5));
+
+    const [openW9s, openPagrs] = await Promise.all([
+      w9ProviderIds.length
+        ? db.providerW9.findMany({
+            where: { providerId: { in: w9ProviderIds }, status: { not: "COMPLETED" } },
+            select: { providerId: true },
+          })
+        : [],
+      pagrProviderIds.length
+        ? db.providerAgreement.findMany({
+            where: { providerId: { in: pagrProviderIds }, status: { not: "COMPLETED" } },
+            select: { providerId: true },
+          })
+        : [],
+    ]);
+    const live = new Set<string>([
+      ...(openW9s as any[]).map((w) => `w9:${w.providerId}`),
+      ...(openPagrs as any[]).map((p) => `pagr:${p.providerId}`),
+    ]);
+
+    const done = docTasks.filter((t) => !live.has(t.systemKey));
+    if (!done.length) return tasks;
+    const doneIds = new Set(done.map((t) => t.id));
+    await db.parentTask.updateMany({
+      where: { id: { in: Array.from(doneIds) }, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+    console.log(`[tasks] Doc-sign reconcile closed ${done.length} task(s): ${done.map((t: any) => t.systemKey).join(", ")}`);
+    return tasks.filter((t) => !doneIds.has(t.id));
+  } catch (e: any) {
+    console.error(`[tasks] Doc-sign reconcile failed: ${e?.message}`);
+    return tasks;
+  }
+}
+
 async function reconcileSilenceTasks<T extends { id: string; source?: string; systemKey?: string | null }>(
   db: Db, tasks: T[],
 ): Promise<T[]> {
