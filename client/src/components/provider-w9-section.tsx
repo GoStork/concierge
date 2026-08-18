@@ -97,10 +97,13 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
   return (
     <div className="space-y-1.5">
       <Label>W-9 <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
-      <div className="flex items-center gap-3 rounded-[var(--radius)] border p-3 bg-secondary/40">
-        <FileText className="w-4 h-4 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">W-9 Form</p>
+      {/* Stacks on mobile - one horizontal row starves the title into
+          letter-wrap once the completed-state action cluster appears. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-[var(--radius)] border p-3 bg-secondary/40">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <FileText className="w-4 h-4 text-primary shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">W-9 Form</p>
           <p className="t-helper">
             {w9Loading ? "Loading..."
               : !w9?.templateConfigured && w9?.templateNeedsFields ? (isProviderMode ? "Not available yet" : "Template uploaded - assign signature field to finish setup")
@@ -109,11 +112,12 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
               : w9.status === "SENT" ? (isProviderMode ? "Awaiting your signature" : "Sent - awaiting signature")
               : w9.status === "ERROR" ? "Something went wrong - try again"
               : (isProviderMode ? "Ready to fill out" : "Not sent yet")}
-          </p>
+            </p>
+          </div>
         </div>
 
         {w9?.status === "COMPLETED" && w9.w9Id && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             <span className="flex items-center gap-1 text-xs font-medium" style={{ color: "hsl(var(--brand-success))" }}>
               <Check className="w-3.5 h-3.5" /> Completed
             </span>
@@ -167,7 +171,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
         )}
 
         {!isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             {w9.status === "SENT" && w9.w9Id && (
               <Button variant="ghost" size="sm" onClick={() => navigate(`/w9/${w9.w9Id}`)} title="View">
                 <ExternalLink className="w-4 h-4" />
@@ -190,7 +194,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
             variant={w9?.templateNeedsFields ? "default" : "outline"}
             size="sm"
             onClick={() => setShowW9Setup(s => !s)}
-            className="shrink-0"
+            className="shrink-0 self-start sm:self-auto"
             style={w9?.templateNeedsFields ? { background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" } : undefined}
           >
             {showW9Setup ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
@@ -203,7 +207,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
             variant="ghost"
             size="sm"
             onClick={() => setShowW9Setup(s => !s)}
-            className="shrink-0 text-muted-foreground"
+            className="shrink-0 self-start sm:self-auto text-muted-foreground"
             title={showW9Setup ? "Hide template setup" : "Edit W-9 template"}
           >
             {showW9Setup ? <ChevronUp className="w-4 h-4 mr-1.5" /> : <ChevronDown className="w-4 h-4 mr-1.5" />}
@@ -216,7 +220,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
             disabled={w9FillMutation.isPending}
             onClick={() => w9FillMutation.mutate()}
             style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
-            className="shrink-0"
+            className="shrink-0 self-start sm:self-auto"
           >
             {w9FillMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
             Fill out W-9
