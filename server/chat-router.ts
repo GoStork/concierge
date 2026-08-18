@@ -6393,6 +6393,14 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
   // Always respond 200 first - PandaDoc disables webhooks after repeated non-200 responses
   res.json({ received: true });
 
+  // Passive environments acknowledge but never process - a stale instance
+  // acting on a signing event is how off-design emails and unclosed tasks
+  // happen (see passive-mode.ts).
+  if (process.env.PASSIVE_MODE === "1") {
+    console.log("[PandaDoc webhook] PASSIVE_MODE - event acknowledged, not processed");
+    return;
+  }
+
   try {
     const events = Array.isArray(req.body) ? req.body : [req.body];
 

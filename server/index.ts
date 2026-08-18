@@ -1,5 +1,8 @@
 import "reflect-metadata";
 import "dotenv/config";
+// Must be the very next import after dotenv - strips egress credentials in
+// passive environments before any other module reads them.
+import { PASSIVE_MODE } from "./passive-mode";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
@@ -171,6 +174,7 @@ export function log(message: string, source = "nestjs") {
   let nightlySyncStorageRef: StorageService | null = null;
   let nightlySyncNotificationRef: NotificationService | null = null;
   app.post("/api/cron/run-nightly-sync", (req: Request, res: Response) => {
+    if (PASSIVE_MODE) return res.status(200).json({ skipped: "PASSIVE_MODE" });
     const secret = process.env.NIGHTLY_SYNC_SECRET;
     if (!secret) {
       return res.status(503).json({ message: "NIGHTLY_SYNC_SECRET not configured" });
@@ -274,6 +278,9 @@ export function log(message: string, source = "nestjs") {
   // shared DB and they pile up. Set ENABLE_NIGHTLY_SCHEDULER=true on exactly ONE
   // host if you ever want the in-process cron instead of the pinger. The atomic
   // NightlySyncLock is the safety net either way.
+  if (PASSIVE_MODE) {
+    log("[PASSIVE_MODE] Schedulers disabled - no sweeps, reminders, or watchdogs run on this instance");
+  } else {
   if (process.env.ENABLE_NIGHTLY_SCHEDULER === "true") {
     log("[nightly-sync] In-process scheduler ENABLED on this host (ENABLE_NIGHTLY_SCHEDULER=true)");
     startNightlySyncScheduler(prismaService, storageService, notificationService);
@@ -291,6 +298,7 @@ export function log(message: string, source = "nestjs") {
   startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));
   startRankSnapshotScheduler(prismaService);
   startTwilioAbuseWatchdog(prismaService, notificationService);
+  }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
