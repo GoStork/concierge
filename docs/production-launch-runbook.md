@@ -36,9 +36,26 @@ Decided 2026-08-18 (Eran):
   (Cloud Build/GitHub Actions) so production can never drift behind the repo
   the way the Replit deployment did.
 
-Still open:
-- [?] **Launch style.** Big-bang DNS swap vs. staged beta (e.g. beta subdomain
-  first). Downtime tolerance?
+- [x] **Launch style: STAGED via test-app.gostork.com** (decided 2026-08-18).
+  2.0 goes live first on the existing `test-app.gostork.com` record (repointed
+  to the new GCP origin), used with real families/providers for a validation
+  period, then `app.gostork.com` flips to the same origin. Consequences:
+  - Staging runs on the PRODUCTION database from beta day one - beta users are
+    real users whose data must survive the flip.
+  - During beta: `APP_URL=https://test-app.gostork.com` on the staging
+    deployment (all email/SMS/PandaDoc links point there); at the final flip it
+    becomes `https://app.gostork.com` + restart. Two-line change by design.
+  - Turnstile allowed hostnames need test-app.gostork.com AND app.gostork.com.
+  - OAuth redirect URIs (Google/Microsoft) need both hostnames.
+  - PandaDoc: add a staging webhook subscription for test-app during beta;
+    reactivate/repoint the production one at the flip.
+  - Bot Fight Mode is ZONE-wide, so it must come off BEFORE the beta starts,
+    not at the final flip (it would kill staging webhooks too).
+  - A2P note: the campaign declares app.gostork.com as the flow URL; beta
+    signups happen on test-app with identical consent UI. Substance matches;
+    the declared URL is the permanent home. Acceptable - do not re-file.
+
+All section-0 decisions are now closed.
 
 ## 1. Domain & Cloudflare
 
@@ -217,20 +234,42 @@ Rule: exactly ONE environment runs schedulers against the production DB.
 - [ ] Admin accounts audit; remove/disable test admin logins.
 - [ ] Rate limiting sanity on auth + OTP routes at production traffic levels.
 
-## 11. Launch-day sequence (draft - finalize once section 0 is decided)
+## 11. Launch sequence (staged - two phases)
 
-1. Freeze: no pushes during the window.
-2. Production host: deploy current main, full env per section 2, restart.
-3. DB: final migration check (and data migration from 1.0 if decided).
-4. Cloudflare: flip origin to the 2.0 host; WAF bypass + cache rules live.
-5. Reactivate production PandaDoc subscription; verify one signed test doc
-   end-to-end.
-6. Verify Turnstile, OTP send, login, session persistence through Cloudflare.
-7. Repoint nightly-sync pinger; watch one scheduler cycle in prod logs.
-8. Set PASSIVE_MODE=1 on both Macs (if that decision stands); restart them.
-9. Smoke tests (section 12).
-10. Twilio cutover is INDEPENDENT: it happens when the campaign is VERIFIED,
-    which may be before or after launch day (section 4).
+### Phase A - beta on test-app.gostork.com
+
+1. Provision the production Supabase DB; run migrations; execute the content
+   seeding plan (section 3).
+2. Provision the GCP host for 2.0 with TLS on the origin; wire auto-deploy
+   from main.
+3. Full production env on it (section 2) with `APP_URL=https://test-app.gostork.com`
+   and the production DATABASE_URL.
+4. Cloudflare: turn Bot Fight Mode OFF (zone-wide prerequisite); add scoped
+   WAF rules + cache bypass for /api; repoint `test-app.gostork.com` A record
+   to the new origin; SSL Full (strict).
+5. Turnstile + OAuth redirect URIs for test-app.
+6. Create the staging PandaDoc webhook subscription (test-app URL); verify one
+   signed doc end-to-end.
+7. Repoint nightly-sync pinger at test-app; confirm schedulers run ONLY there
+   (dev Macs move to the dev DB per section 0, so they are isolated already).
+8. Smoke tests (section 12) against test-app.
+9. Beta period: real families/providers, watch logs, fix, iterate (auto-deploy
+   keeps staging current).
+
+### Phase B - the flip to app.gostork.com
+
+1. Freeze pushes during the window.
+2. Cloudflare: repoint `app.gostork.com` A record to the same GCP origin.
+3. On the host: `APP_URL=https://app.gostork.com`; restart.
+4. PandaDoc: reactivate/repoint the production subscription
+   (app.gostork.com); retire the staging one.
+5. Repoint the nightly-sync pinger to app.gostork.com.
+6. Turnstile/OAuth already include the hostname (Phase A step 5).
+7. Re-run smoke tests against app.gostork.com.
+8. Decide fate of test-app record (keep as staging alias to the same origin,
+   or retire) and decommission 1.0 GCP resources (section 1).
+9. Twilio cutover remains INDEPENDENT: it happens when the campaign is
+   VERIFIED, before or after either phase (section 4).
 
 ## 12. Post-launch smoke tests
 
