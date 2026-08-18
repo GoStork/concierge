@@ -348,6 +348,14 @@ Rule: exactly ONE environment runs schedulers against the production DB.
 4. Cloudflare: turn Bot Fight Mode OFF (zone-wide prerequisite); add scoped
    WAF rules + cache bypass for /api; repoint `test-app.gostork.com` A record
    to the new origin; SSL Full (strict).
+   - Repointing is a DNS-only change: the 1.0 test VM (`34.46.187.88`), its
+     files and its DB are NOT touched or overwritten - 2.0 runs on a separate
+     host with the fresh prod Supabase. The 1.0 test instance simply stops
+     receiving traffic for that hostname.
+   - [ ] BEFORE repointing: confirm nobody (QA, provider demos, the 1.0 team)
+     still uses 1.0's test-app. If someone does, park it first on a new
+     record (e.g. `test-old.gostork.com` -> `34.46.187.88`, proxied) so it
+     stays reachable until the 1.0 decommission (section 1).
 5. Turnstile + OAuth redirect URIs for test-app.
 6. Create the staging PandaDoc webhook subscription (test-app URL); verify one
    signed doc end-to-end.
