@@ -55,6 +55,13 @@ Decided 2026-08-18 (Eran):
     signups happen on test-app with identical consent UI. Substance matches;
     the declared URL is the permanent home. Acceptable - do not re-file.
 
+- [x] **Environment architecture: TWO isolated environments** (decided
+  2026-08-18). Dev (Macs + dev Supabase) and Production (GCP + prod Supabase).
+  `test-app.gostork.com` is NOT a third environment - during the beta it is
+  production-in-waiting (same origin, same prod DB, different hostname), and
+  afterwards it is retired or kept as a spare alias. No permanent staging tier
+  unless future scale justifies it.
+
 All section-0 decisions are now closed.
 
 ## 1. Domain & Cloudflare
