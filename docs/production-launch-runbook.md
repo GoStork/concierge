@@ -107,12 +107,14 @@ All section-0 decisions are now closed.
   start; restart after changing.
 - [ ] `PASSIVE_MODE` must NOT be set on the production host (it strips email/SMS
   creds and disables schedulers - see server/passive-mode.ts).
-- [ ] Full secret inventory copied to prod: DATABASE_URL, SESSION secret,
-  SENDGRID_API_KEY, TWILIO_* (see SMS section for which SID),
-  TWILIO_VERIFY_SERVICE_SID, PANDADOC_API_KEY + PANDADOC_WEBHOOK_SECRET,
-  GEMINI_API_KEY, OPENAI_API_KEY, GCS_SERVICE_ACCOUNT_KEY + GCS_BUCKET_NAME,
-  Stripe keys (live mode), Daily.co, Google Speech-to-Text, Turnstile secret,
-  GOSTORK_PROVIDER_ID.
+- [x] Secret inventory: `.env.production.example` in the repo root is the
+  authoritative template (built 2026-08-18 from the live dev key list + code
+  reads). Every key annotated [copy]/[fresh]/[prod]. Notables: FIELD_ and
+  CALDAV_ENCRYPTION_KEY are fresh AND rotation-sensitive; VITE_* keys bake in
+  at client BUILD time so production builds need production values; Stripe
+  goes live-mode; verify whether Braintree is still in use before launch.
+- [ ] Fill the template on the GCP host (values via Eran for the [prod]/[fresh]
+  ones).
 - [ ] `NODE_ENV=production` and trust-proxy/secure-cookie behavior verified
   behind Cloudflare (session cookies must survive the proxy).
 - [ ] Rotate any secrets that lived on the old Replit deployment if it is ever
