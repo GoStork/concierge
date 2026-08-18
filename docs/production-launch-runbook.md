@@ -66,8 +66,8 @@ All section-0 decisions are now closed.
 
 ## 0.5 Phase A execution status (living - update as steps complete)
 
-As of 2026-08-18 evening (work moved to a MacBook session "Production
-Preparation"; iMac session did the groundwork):
+As of 2026-08-18 (MacBook session "Production Preparation" continued from the
+iMac handoff):
 
 DONE:
 - [x] Content seeder built + dry-run tested against dev: 82,140 rows / 38
@@ -75,18 +75,67 @@ DONE:
   TARGET_DATABASE_URL + --execute to write).
 - [x] Production env template: `.env.production.example` (every key annotated
   copy/fresh/prod).
+- [x] **Production Supabase project created** (2026-08-18, $10/mo approved by
+  Eran in-session): org `qobelfonalrrtgeopjny`, name "GoStork Production",
+  **project id `itlnituvybtnzmrzbkoz`**, region us-east-1, Postgres 17.6.
+  Dashboard: https://supabase.com/dashboard/project/itlnituvybtnzmrzbkoz
+- [x] **Full schema applied to prod** via Supabase MCP (no DB password
+  needed): extensions vector + pg_trgm in `public` (matching dev), pgcrypto +
+  uuid-ossp in `extensions`; DDL generated with
+  `prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script`
+  (109 tables, 175 indexes, 106 FKs, 4 enums) - NOT by replaying
+  `prisma/migrations/*` (0_init is 25KB and cannot rebuild the schema; dev
+  was shaped by `db push` + ad hoc SQL). Then the 24 raw-SQL-only indexes
+  that dev has and Prisma does not know about (HNSW on the 4
+  `profileEmbedding` cols + KnowledgeChunk.embedding, trgm GIN on
+  ParentNote/ParentTask, the COALESCE functional uniques on
+  ProviderAutoReply/ProviderAutoReplySend/ProviderParentBriefing, the
+  ParentOwner partial uniques, lower(city/state), partial Invoice/CostItem).
+- [x] **Parity verified prod vs dev**: table set identical; PK 109=109; FK
+  106=106; column diff = 15 dev-only DEAD columns that are not in
+  schema.prisma (BrandTemplate's 10 legacy chatBubble*/chatInput* cols,
+  SiteSettings + ProviderBrandSettings `quickReplyBorderOpacity`/
+  `quickReplyBgOpacity`, ProviderCostSheet.matchingRules - code confirms all
+  unused). The seeder does column-intersection inserts, so they are simply
+  skipped. Skipped on purpose: `ParentFollowUp_pkey` (legacy duplicate) and
+  the two `ParentProfileView_account_*` twins of Prisma-named indexes.
+- [x] `_prisma_migrations` baselined on prod with all 160 migration dirs
+  (sha256 checksums, applied_steps_count=1), so `prisma migrate deploy` in
+  CI/CD is a clean no-op instead of re-running 0_init into existing tables.
+  Future schema changes: keep writing migration files; deploy applies only
+  new ones. `session` (connect-pg-simple) is created by the app on first
+  boot (`createTableIfMissing: true`).
+- [x] gcloud installed on the MacBook (`brew install --cask
+  google-cloud-sdk`, SDK 580.0.0, `/opt/homebrew/bin/gcloud`). No account
+  yet.
+- [x] Discovery: the GCS/Speech service account lives in GCP project
+  `gen-lang-client-0051391254` (auto-created AI Studio project). Compute
+  Engine API is NOT enabled there, so the 1.0 VMs (34.28.191.216 etc.) are in
+  a DIFFERENT project. Decision needed when provisioning: host 2.0 in the
+  1.0 project, or a clean `gostork-prod` project (GCS bucket
+  `gostork-recordings` stays where it is either way - the SA key just needs
+  to be in the prod env).
 
-NEXT, in order:
-1. [ ] Create production Supabase project in org `qobelfonalrrtgeopjny`
-   (GoStork). Cost $10/month - **Eran approves in-session before creating**.
-   Region: match GCP region choice (1.0 IPs are us-central/us-east GCP;
-   dev Supabase is us-east-1 - us-east-1 is the default choice).
-2. [ ] Enable pgvector, run all `prisma/migrations/*` against it
-   (`prisma migrate deploy` with DIRECT_URL), then run the seeder with
-   TARGET_DATABASE_URL + --execute; resolve any orphan-FK report lines.
-3. [ ] gcloud: not installed on the iMac; check `which gcloud` on the MacBook.
-   Auth with the Google account that owns GoStork's GCP. Then provision the
-   2.0 host (VM vs Cloud Run decision at that point) + static IP + TLS.
+NEXT, in order (items marked ERAN need a human in a browser):
+1. [ ] ERAN: reset the prod DB password in the Supabase dashboard
+   (Settings > Database > "Reset database password":
+   https://supabase.com/dashboard/project/itlnituvybtnzmrzbkoz/settings/database)
+   and copy the two connection strings from the Connect dialog: transaction
+   pooler (:6543, `?pgbouncer=true`) = prod `DATABASE_URL`; session pooler
+   (:5432) = prod `DIRECT_URL` and the seeder's `TARGET_DATABASE_URL`. Put
+   them ONLY in the prod host env + a local gitignored file for the seed run
+   - never in `.env` of a dev Mac (that is exactly the cross-wiring the two-
+   environment decision exists to prevent).
+2. [ ] Seed: `TARGET_DATABASE_URL=<session pooler url> npx tsx
+   scripts/seed-production.ts` (dry-run first - it also prints the target
+   schema compare, expect only the 15 dead dev-only columns as drift), then
+   `--execute`; resolve any orphan-FK report lines. Then verify counts on
+   prod via MCP (project id itlnituvybtnzmrzbkoz) - e.g. Provider,
+   EggDonor, Surrogate, ConciergePromptSection, SiteSettings=1, User=0.
+3. [ ] ERAN: `gcloud auth login` (owner account for GoStork's GCP) on the
+   MacBook, then decide the project (see discovery above) and
+   `gcloud config set project <id>`. Then provision the 2.0 host (VM vs
+   Cloud Run) + static IP + TLS + auto-deploy from main.
 4. [ ] Continue Phase A per section 11 (Cloudflare bot mode, test-app DNS,
    Turnstile, OAuth URIs, PandaDoc staging subscription, pinger).
 
@@ -158,10 +207,15 @@ Useful context for the executing session:
 
 ## 3. Database (decided: FRESH production Supabase project; current one stays dev)
 
-- [ ] Provision the production Supabase project (region, tier, PITR/backups
-  appropriate for production).
-- [ ] Apply the full schema: `prisma migrate deploy` (all of
-  `prisma/migrations/*`) against the new DB.
+- [x] Provision the production Supabase project - DONE 2026-08-18: id
+  `itlnituvybtnzmrzbkoz` (us-east-1, PG 17). Org is on the Pro tier ($10/mo
+  project) which includes daily backups; [ ] decide on the PITR add-on before
+  real families are on it (section 11 Phase A step 1).
+- [x] Apply the full schema - DONE 2026-08-18, but NOT via `migrate deploy`
+  (see 0.5 for why): DDL from `prisma migrate diff --from-empty
+  --to-schema`, plus dev's raw-SQL indexes, plus a `_prisma_migrations`
+  baseline of all 160 dirs so future `migrate deploy` is incremental.
+  Parity with dev verified (tables/columns/PK/FK/indexes).
 - [ ] **Content seeding plan - the big workstream.** Production starts with no
   users, but the PLATFORM CONTENT must come over from dev. Inventory to copy
   (script it, don't hand-copy): SiteSettings + BrandTemplate (brand),
@@ -172,15 +226,17 @@ Useful context for the executing session:
   datasets, GoStork house provider (GOSTORK_PROVIDER_ID env must match the new
   row id). Explicitly EXCLUDE: test users, test parents, 555-01xx phones,
   chat sessions, notifications, bookings.
-- [ ] pgvector extension enabled on the new project before knowledge import.
+- [x] pgvector extension enabled on the new project (2026-08-18; `vector`
+  and `pg_trgm` in schema `public` to match dev, HNSW indexes pre-created).
 - [ ] Decide provider/staff account migration: real provider logins (e.g.
   Eggspecting staff) must exist in prod - re-invite vs. copy with password
   hashes.
 - [ ] Production `DATABASE_URL` (+ session store - connect-pg-simple uses the
   same DB) into the prod env only. Dev Macs keep pointing at the dev project.
-- [ ] Supabase MCP: ops sessions must target the right project per environment -
-  the project id `bryzqwfzvgjenijciwaa` in CLAUDE.md becomes DEV; add the prod
-  project id to CLAUDE.md at cutover with a "which DB am I touching" warning.
+- [x] Supabase MCP: ops sessions must target the right project per environment -
+  `bryzqwfzvgjenijciwaa` = DEV, `itlnituvybtnzmrzbkoz` = PROD. Both are
+  visible to the same MCP from 2026-08-18, so the "which DB am I touching"
+  warning was added to CLAUDE.md the same day (not deferred to cutover).
 - [ ] Nightly donor-scraper sync: decide target - production pinger writes to
   prod DB; dev scraping stays on dev. Photos/GCS paths must resolve in both.
 - [ ] Re-apply the `smsNotificationsOptIn` grandfather intent for any migrated

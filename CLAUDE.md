@@ -102,7 +102,7 @@ Changing one without the others makes the live UI disagree with the registered f
 
 ## External Dependencies
 
-- **PostgreSQL (Supabase):** Primary database; also the session store (`connect-pg-simple`). (Redis was removed - no longer a dependency.)
+- **PostgreSQL (Supabase):** Primary database; also the session store (`connect-pg-simple`). (Redis was removed - no longer a dependency.) **TWO projects exist since 2026-08-18 - check which DB you are touching before every Supabase MCP call:** `bryzqwfzvgjenijciwaa` = **DEV** (both Macs, all day-to-day work, the project id referenced elsewhere in this file) and `itlnituvybtnzmrzbkoz` = **PRODUCTION** ("GoStork Production", us-east-1; real families' data once the beta starts). Default to DEV. Only touch PROD when the task is explicitly a production/launch task (see `docs/production-launch-runbook.md`), and never run test data, seeders, or exploratory writes against it. Prompt/brand pushes that CLAUDE.md says to "push to DB via MCP" go to DEV during development; propagating them to PROD is a deliberate launch/ops step, not a side effect.
 - **Google Gemini 3.5 Flash:** AI for scraping, data extraction, OCR, cost-sheet parsing+classification, and the concierge AI router. Replaced the prior Gemini 2.0/2.5 Flash usage across the codebase. All `model: "..."` calls in `server/` should use `gemini-3.5-flash` unless there's a specific reason for an older version.
 - **SendGrid:** Email notifications.
 - **Twilio:** SMS notifications.
