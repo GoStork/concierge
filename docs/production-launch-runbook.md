@@ -64,6 +64,42 @@ Decided 2026-08-18 (Eran):
 
 All section-0 decisions are now closed.
 
+## 0.5 Phase A execution status (living - update as steps complete)
+
+As of 2026-08-18 evening (work moved to a MacBook session "Production
+Preparation"; iMac session did the groundwork):
+
+DONE:
+- [x] Content seeder built + dry-run tested against dev: 82,140 rows / 38
+  tables (`scripts/seed-production.ts`; dry-run is default, needs
+  TARGET_DATABASE_URL + --execute to write).
+- [x] Production env template: `.env.production.example` (every key annotated
+  copy/fresh/prod).
+
+NEXT, in order:
+1. [ ] Create production Supabase project in org `qobelfonalrrtgeopjny`
+   (GoStork). Cost $10/month - **Eran approves in-session before creating**.
+   Region: match GCP region choice (1.0 IPs are us-central/us-east GCP;
+   dev Supabase is us-east-1 - us-east-1 is the default choice).
+2. [ ] Enable pgvector, run all `prisma/migrations/*` against it
+   (`prisma migrate deploy` with DIRECT_URL), then run the seeder with
+   TARGET_DATABASE_URL + --execute; resolve any orphan-FK report lines.
+3. [ ] gcloud: not installed on the iMac; check `which gcloud` on the MacBook.
+   Auth with the Google account that owns GoStork's GCP. Then provision the
+   2.0 host (VM vs Cloud Run decision at that point) + static IP + TLS.
+4. [ ] Continue Phase A per section 11 (Cloudflare bot mode, test-app DNS,
+   Turnstile, OAuth URIs, PandaDoc staging subscription, pinger).
+
+Useful context for the executing session:
+- PandaDoc subscription uuids: production (deactivated)
+  2d18c09a-e107-4ad4-9b0b-799e8dd3dd5c; iMac dev
+  5161bc69-39b8-4ab9-afc9-7d1e74150c66; MacBook dev targets gostork.ngrok.app;
+  Replit sub a627a0ed-... deactivated. List via
+  GET https://api.pandadoc.com/public/v1/webhook-subscriptions (API-Key auth).
+- The A2P/Twilio cutover is INDEPENDENT and waits for VERIFIED (section 4);
+  the `twilio-a2p-campaign-watch` scheduled task runs on the iMac at 7am.
+- Dev DB (source for the seeder): Supabase `bryzqwfzvgjenijciwaa`.
+
 ## 1. Domain & Cloudflare
 
 - [ ] Point app.gostork.com origin at the 2.0 production host (keep orange-cloud
