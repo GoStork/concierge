@@ -76,6 +76,19 @@ async function columnsOf(c: Client, table: string): Promise<string[]> {
   return r.rows.map((x) => x.column_name);
 }
 
+// json/jsonb columns need explicit serialization on the way back in: pg parses
+// them into JS values on SELECT, and a JS *array* value (e.g. a jsonb column
+// holding ["gay_couple"]) is re-encoded by pg as a Postgres array literal
+// {"gay_couple"} - invalid JSON, so the INSERT fails with 22P02. Discovered
+// 2026-08-18 on the first real prod seed (Provider.ivfAcceptingPatients).
+async function jsonColumnsOf(c: Client, table: string): Promise<Set<string>> {
+  const r = await c.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND data_type IN ('json','jsonb')`,
+    [table],
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
+
 async function main() {
   if (!SOURCE_URL) throw new Error("No SOURCE_DATABASE_URL / DATABASE_URL");
   const source = new Client({ connectionString: SOURCE_URL });
@@ -114,10 +127,14 @@ async function main() {
       .map((c) => (nullCols.includes(c) ? `NULL AS "${c}"` : `"${c}"`))
       .join(", ");
     const { rows } = await source.query(`SELECT ${selectList} FROM "${table}"`);
+    const jsonCols = await jsonColumnsOf(source, table);
     const colList = common.map((c) => `"${c}"`).join(", ");
     let inserted = 0;
     for (const row of rows) {
-      const vals = common.map((c) => row[c]);
+      const vals = common.map((c) => {
+        const v = row[c];
+        return jsonCols.has(c) && v !== null && v !== undefined ? JSON.stringify(v) : v;
+      });
       const params = common.map((_, i) => `$${i + 1}`).join(", ");
       const conflictTarget = common.includes("id") ? `("id")` : "";
       const r = await target.query(
