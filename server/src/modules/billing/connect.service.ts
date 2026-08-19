@@ -422,7 +422,7 @@ export class ConnectService {
   async getExpressLoginLink(providerId: string): Promise<{ url: string }> {
     const account = await this.prisma.providerBankAccount.findUnique({
       where: { providerId },
-      select: { stripeConnectAccountId: true, payoutMethod: true },
+      select: { stripeConnectAccountId: true, payoutMethod: true, detailsSubmitted: true },
     });
     if (!account?.stripeConnectAccountId) {
       throw new BadRequestException("No Stripe Connect account on file.");
@@ -453,7 +453,7 @@ export class ConnectService {
   > {
     const account = await this.prisma.providerBankAccount.findUnique({
       where: { providerId },
-      select: { stripeConnectAccountId: true, payoutMethod: true },
+      select: { stripeConnectAccountId: true, payoutMethod: true, detailsSubmitted: true },
     });
     if (!account?.stripeConnectAccountId) {
       return { status: "disconnected" };
@@ -503,8 +503,13 @@ export class ConnectService {
       return { status: "blocked", reason: "Could not verify your Stripe balance. Try again in a few minutes." };
     }
 
-    // 4. Safe to disconnect. Custom: delete the account on Stripe.
-    if (account.payoutMethod === "STRIPE_CONNECT_CUSTOM") {
+    // 4. Safe to disconnect. Custom: delete the account on Stripe. An
+    // Express account the provider never finished (details not submitted)
+    // is deleted too - leaving half-created live accounts on the platform
+    // is clutter Stripe's risk team notices, and the provider gets a fresh
+    // one on re-onboarding anyway. Platform-liable accounts with a zero
+    // balance are deletable per Stripe.
+    if (account.payoutMethod === "STRIPE_CONNECT_CUSTOM" || !account.detailsSubmitted) {
       try {
         await deleteConnectAccount(account.stripeConnectAccountId);
       } catch (e: any) {

@@ -664,7 +664,19 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   licensing when we hold customers' funds) - lawyer question, not a
   default. So: Colombia + other non-Stripe countries = manual wire (the
   existing fallback) unless sales/legal opens another route; ask Stripe
-  sales before launch since LATAM surrogacy is a core market; (c) the invoice guardrail demands a Tax ID and the Legal
+  sales before launch since LATAM surrogacy is a core market. BUILT
+  2026-08-19 (cadc6127 + e68d7035): legal-entity country on the Legal tab
+  drives W-9 vs W-8BEN-E (second PandaDoc template set - [ ] ERAN: upload
+  the IRS W-8BEN-E PDF in the admin Legal page), local tax-ID label, the
+  invoice guardrail, the Stripe account country (recipient service
+  agreement for non-US, EIN pre-filled only for US, in-app bank form
+  US-only), the Payouts page rail (Stripe vs "international payouts" card
+  for MX/CO/UA/GE/...), and a USD-invoice + local-currency payout estimate
+  (open.er-api.com, display only). Verified live: a CY entity created a
+  real connected account (acct_1U6GTfFmrxto5Gu4, deleted after the test)
+  and reached Stripe-hosted Express onboarding; MX shows the international
+  card. International rail = Trolley (decided 2026-08-19, manual Chase
+  step dropped) - next build. Old item (c) the invoice guardrail demands a Tax ID and the Legal
   tab is built around the W-9 - foreign entities have no EIN and file a
   W-8BEN-E, no 1099; ask the accountant about withholding; (d) show
   payout currency/FX to the provider. UNTIL BUILT: international
