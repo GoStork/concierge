@@ -626,11 +626,23 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   {received:true} signed, 400 with a bad signature - secrets match.
   Refunds/chargebacks liability acknowledgement: Completed. "Ongoing
   seller compliance" acknowledgement: Completed 2026-08-19 (Settings >
-  Connect > Platform profile). [ ] Platform onboarding questionnaire
-  ("View onboarding" on that page) still incomplete - gates the first
-  provider's Connect bank onboarding; do it with Eran before the first
-  real provider connects. The connect destination shows Requires setup
-  until then. Live charge + refund: done twice (section 12).
+  Connect > Platform profile). Platform "Confirm your integration
+  choices" done 2026-08-19 (Connected accounts page > Setup guide > Go
+  live; the legacy "View onboarding" button is a dead end): business
+  model = Marketplace (buyers pay GoStork, sellers paid individually),
+  Stripe-hosted onboarding, Express dashboard, GoStork liable for
+  refunds/chargebacks - all matching stripe-service.ts `controller`
+  params; Eran accepted the Connect Platform Agreement. Stripe emailed
+  "Your Connect application is approved"; the gostork-2-connect webhook
+  flipped Requires setup -> Active. First live connected account NOT yet
+  created: the Express start from /account/payouts now passes the
+  platform gate but live KYC rejects the test agency's dummy EIN
+  (00-0000000) and .example.com URL (fixed to gostork.com) - we do not
+  fabricate tax IDs on live Stripe, so [ ] the first real provider's
+  Connect onboarding is the remaining proof. Live charge + refund: done
+  twice (section 12). Note: the two $5 refunds left the live balance
+  slightly negative ("Add funds to cover your negative balance" banner) -
+  Stripe recoups from the next payment; no action needed.
 - [ ] Phase B: repoint both destinations to app.gostork.com (or add a
   second pair) - the description on each says so.
 - [ ] Stripe Connect (provider payouts) redirect/return URLs on production
