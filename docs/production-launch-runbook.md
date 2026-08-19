@@ -792,6 +792,11 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   Stripe when the payload lacks it. No provider transfer existed yet on
   this invoice (agency has no Connect account), so the clawback path was
   not exercised - [ ] re-test refund after the first real Connect payout.
+  Follow-up shipped same day (2b999765): the journey ladder now has a
+  two-step refund BRANCH hanging off "Invoice Paid" (Refund Requested ->
+  Refund Completed, like No Show off the call), `Invoice.refundRequestedAt`
+  stamped by the admin refund endpoint, and the Match Status badge/filter
+  carry both values. Verified on prod: parent record ladder + Parents table.
 - [ ] LEFTOVER 1.0 TRAFFIC on test-app: something polls
   `GET /api/v1/surrogates/list-to-update?agencyName=familycreations` every
   ~30 s (404 on 2.0). A 1.0 scraper/cron still targets the test hostname -
