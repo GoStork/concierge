@@ -156,8 +156,11 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     setAddrPostal(state.businessAddressPostalCode || "");
   }, [state?.id, state?.lastW9SyncAt, state?.updatedAt]);
 
-  const isUs = isUsEntity(country);
-  const taxForm = TAX_FORM_LABELS[taxFormFor(country)];
+  // "I have a US entity" (Payouts page): tax machinery behaves as US - the
+  // W-9 with the US entity's EIN - while the address stays the real one.
+  const usPayoutEntity = !!(state as any)?.usPayoutEntity;
+  const isUs = isUsEntity(country) || usPayoutEntity;
+  const taxForm = TAX_FORM_LABELS[usPayoutEntity ? "W9" : taxFormFor(country)];
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!legalName.trim()) throw new Error("Legal name is required.");
@@ -336,7 +339,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
                 : "Required by US tax law for any NON-US business receiving payments from a US company (it certifies your foreign status - no US tax ID needed). Sign it via PandaDoc."}
             </p>
           </div>
-          <ProviderW9Section providerId={effectiveProviderId} mode={isAdmin ? "admin" : "provider"} formType={taxFormFor(country)} />
+          <ProviderW9Section providerId={effectiveProviderId} mode={isAdmin ? "admin" : "provider"} formType={usPayoutEntity ? "W9" : taxFormFor(country)} />
         </section>
       )}
 
@@ -355,7 +358,9 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         <Field
           label="Country of the legal entity"
           required
-          hint={payoutRailFor(country) === "STRIPE"
+          hint={usPayoutEntity
+            ? "You marked \"I have a US entity\" on the Payouts page, so tax forms and payouts follow the US path (W-9, EIN, Stripe) regardless of this country."
+            : payoutRailFor(country) === "STRIPE"
             ? "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. US entities are paid through Stripe."
             : "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. Non-US entities are paid through GoStork's international payout partner."}
         >

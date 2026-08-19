@@ -22,7 +22,7 @@
  */
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { prisma as prismaClient } from "../../../db";
-import { normalizeCountry, payoutRailFor } from "../../../../shared/payout-countries";
+import { normalizeCountry, payoutRailFor, effectivePayoutCountry } from "../../../../shared/payout-countries";
 import * as trolley from "./trolley.client";
 
 const READY_RECIPIENT_STATUSES = new Set(["active"]);
@@ -45,7 +45,7 @@ export class TrolleyService {
     ]);
     if (!provider) throw new BadRequestException("Provider not found");
     const country = normalizeCountry(legal?.businessAddressCountry);
-    if (payoutRailFor(country) !== "INTERNATIONAL") {
+    if (payoutRailFor(effectivePayoutCountry(country, legal?.usPayoutEntity)) !== "INTERNATIONAL") {
       throw new BadRequestException("International payouts are for non-US legal entities. US entities are paid through Stripe.");
     }
     const email = adminUser?.email || provider.email;

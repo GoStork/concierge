@@ -704,6 +704,18 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   the provider's share); [ ] wire Trolley taxForm statuses into the W-8
   guardrail once the Trolley Tax module is confirmed on the plan
   (currently the PandaDoc W-8BEN-E template covers it).
+  ESCAPE HATCH (Eran 2026-08-20): the Payouts page's "I have a US legal
+  entity" checkbox (ProviderLegalIdentity.usPayoutEntity) lets a foreign
+  operator with a US entity take the full US path - Stripe + US bank +
+  W-9/EIN - the effective country flips via effectivePayoutCountry() in
+  every payout/tax code path; blocked while a payout method is live on
+  the other rail. VERIFIED (2026-08-20, Claude Chat cross-check): Stripe's
+  connect/accounts availability list DOES include CO/CY/MX (GE absent)
+  BUT the cross-border-payouts page limits self-serve transfers to
+  US/UK/EEA/CA/CH and states recipient-service-agreement accounts cannot
+  receive Connect cross-border payouts at all - so a US platform still
+  cannot pay CO/MX connected accounts; the availability list is about
+  where accounts can EXIST, not who can pay them. Trolley stays required.
   RULE (Eran 2026-08-20): US entities =
   Stripe Connect, ALL non-US entities = Trolley, even Stripe-reachable
   countries like Cyprus/Canada/UK - one international flow. Old item (c) the invoice guardrail demands a Tax ID and the Legal

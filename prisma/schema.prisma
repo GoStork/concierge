@@ -1903,6 +1903,12 @@ model ProviderLegalIdentity {
   businessAddressPostalCode String?
   businessAddressCountry    String? @default("US")
 
+  // "I have a US entity": the provider operates abroad but owns a US legal
+  // entity and wants Stripe payouts to its US bank + a W-9 with a US EIN.
+  // Flips the effective payout/tax country to US (shared/payout-countries
+  // effectivePayoutCountry) without touching the address on file.
+  usPayoutEntity Boolean @default(false)
+
   // "MANUAL" | "W9_AUTO_FILL" | "MIGRATED_FROM_BRAND_SETTINGS"
   // Tracked at the row level (not per-field) since that's enough for the
   // UI "From W-9" badge. If a single field is hand-edited we flip the

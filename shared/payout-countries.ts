@@ -38,6 +38,20 @@ export function isUsEntity(code: string | null | undefined): boolean {
 }
 
 /**
+ * The country the PAYOUT/TAX machinery should treat the provider as.
+ *
+ * A provider whose operating business is abroad may still own a US legal
+ * entity and prefer to be paid into its US bank (Eran, 2026-08-20: the
+ * "I have a US entity" checkbox on the Payouts page). When
+ * ProviderLegalIdentity.usPayoutEntity is set, everything downstream -
+ * payout rail, Stripe account country, W-9 vs W-8BEN-E, tax-ID label -
+ * behaves as US, while the address on file stays their real one.
+ */
+export function effectivePayoutCountry(code: string | null | undefined, usPayoutEntity?: boolean | null): string {
+  return usPayoutEntity ? "US" : normalizeCountry(code);
+}
+
+/**
  * STRIPE = Connect transfer; INTERNATIONAL = Trolley.
  *
  * Product rule (Eran, 2026-08-20): US entities are paid through Stripe

@@ -1668,8 +1668,9 @@ export async function resolveTaxFormTemplate(providerId: string, settings?: any)
   templateUpdatedAt: Date | null;
 }> {
   const s = settings || (await getSiteSettingsOrThrow());
-  const legal = await prisma.providerLegalIdentity.findUnique({ where: { providerId }, select: { businessAddressCountry: true } });
-  const formType = (legal?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE";
+  const legal = await prisma.providerLegalIdentity.findUnique({ where: { providerId }, select: { businessAddressCountry: true, usPayoutEntity: true } });
+  // usPayoutEntity ("I have a US entity") flips the owed form to the W-9.
+  const formType = legal?.usPayoutEntity || (legal?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE";
   if (formType === "W9") {
     return { formType, label: "W-9", templateUrl: s.w9TemplateUrl || null, templateId: s.w9PandaDocTemplateId || null, roles: s.w9PandaDocRoles || null, templateUpdatedAt: s.w9TemplateUpdatedAt || null };
   }

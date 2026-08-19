@@ -37,6 +37,7 @@ interface PayoutsState {
   payoutRail?: "STRIPE" | "INTERNATIONAL";
   payoutCurrency?: string;
   customFormAvailable?: boolean;
+  usPayoutEntity?: boolean;
   payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | "TROLLEY" | null;
   trolleyRecipientId?: string | null;
   trolleyRecipientStatus?: string | null;
@@ -190,6 +191,12 @@ export function ProviderPayoutsTab() {
           all international providers. The Stripe options are hidden so
           nobody creates a Stripe account GoStork will not pay through. */}
       {state?.payoutRail === "INTERNATIONAL" && <InternationalPayoutSection state={state} />}
+
+      {/* A non-US operator who ticked "I have a US entity": offer the way
+          back to the international rail while nothing is connected yet. */}
+      {!state?.payoutMethod && state?.payoutRail !== "INTERNATIONAL" && state?.usPayoutEntity && (
+        <UsEntityCheckbox checked={true} />
+      )}
 
       {/* Method picker - only when nothing has been started yet */}
       {!state?.payoutMethod && state?.payoutRail !== "INTERNATIONAL" && (
@@ -1028,6 +1035,11 @@ function InternationalPayoutSection({ state }: { state: PayoutsState }) {
         </p>
       </div>
 
+      {/* Escape hatch: a foreign operator that also owns a US legal entity
+          can be paid through Stripe into its US bank instead - the flag
+          flips the whole payout/tax machinery (W-9 + EIN) to the US path. */}
+      {!started && <UsEntityCheckbox checked={false} />}
+
       {started && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
           <StatusTile label="Payout account" ok={!!state.trolleyPayoutMethodReady} okText={`Ready${state.trolleyPayoutCurrency ? ` (${state.trolleyPayoutCurrency})` : ""}`} pendingText="Bank details not complete" />
@@ -1123,5 +1135,52 @@ function InternationalManage({ state }: { state: PayoutsState }) {
         <iframe title="Payout settings" src={widgetUrl} className="w-full rounded-lg border" style={{ height: 640, border: 0 }} />
       )}
     </div>
+  );
+}
+
+
+/**
+ * "I have a US entity" - a foreign-operating provider that owns a US legal
+ * entity can opt into the Stripe/US path (US bank, W-9, EIN). Persisted on
+ * the legal identity; the whole Payouts page re-derives from the flag.
+ */
+function UsEntityCheckbox({ checked }: { checked: boolean }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const toggle = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/provider/payouts/us-entity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Could not update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/payouts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/legal-identity"] });
+    },
+    onError: (e: any) => toast({ title: "Could not update", description: e?.message, variant: "destructive" }),
+  });
+  return (
+    <label className="flex items-start gap-2.5 rounded-lg border bg-secondary/40 p-3 cursor-pointer" data-testid="us-entity-checkbox">
+      <input
+        type="checkbox"
+        className="accent-primary mt-0.5"
+        checked={checked}
+        disabled={toggle.isPending}
+        onChange={(e) => toggle.mutate(e.target.checked)}
+      />
+      <span className="text-sm">
+        <span className="font-medium">I have a US legal entity</span>
+        <span className="block t-helper mt-0.5">
+          Tick this if your business also has a US-registered entity and you prefer to be paid in USD into
+          its US bank account through Stripe. You'll provide that entity's EIN and sign a W-9 instead of a
+          W-8BEN-E.
+        </span>
+      </span>
+    </label>
   );
 }

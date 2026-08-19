@@ -1,0 +1,1 @@
+ALTER TABLE "ProviderLegalIdentity" ADD COLUMN IF NOT EXISTS "usPayoutEntity" BOOLEAN NOT NULL DEFAULT false;

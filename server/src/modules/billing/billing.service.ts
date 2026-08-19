@@ -1,7 +1,7 @@
 import { asJson } from "../../../../shared/prisma-json";
 import { serviceTypeOfSession } from "../../../service-lines";
 import { platformPrimaryColor } from "../../../brand-color";
-import { taxFormFor, isUsEntity, TAX_FORM_LABELS } from "../../../../shared/payout-countries";
+import { taxFormFor, isUsEntity, TAX_FORM_LABELS, effectivePayoutCountry } from "../../../../shared/payout-countries";
 import { Prisma } from "@prisma/client";
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
@@ -287,7 +287,7 @@ export class BillingService {
       include: {
         referralFeeConfigs: true,
         services: { include: { providerType: true } },
-        legalIdentity: { select: { legalName: true, taxId: true, businessAddressCountry: true } },
+        legalIdentity: { select: { legalName: true, taxId: true, businessAddressCountry: true, usPayoutEntity: true } },
         w9: { select: { status: true, formType: true } },
       },
     });
@@ -312,7 +312,7 @@ export class BillingService {
     // Country-aware: a non-US entity has a local tax ID (RFC, NIT, VAT...)
     // and signs a W-8BEN-E instead of a W-9 - same ProviderW9 row, formType
     // tells which form it was.
-    const legalCountry = provider.legalIdentity?.businessAddressCountry || "US";
+    const legalCountry = effectivePayoutCountry(provider.legalIdentity?.businessAddressCountry, (provider.legalIdentity as any)?.usPayoutEntity);
     const requiredForm = taxFormFor(legalCountry);
     const missingIdentity: string[] = [];
     if (!provider.legalIdentity?.legalName?.trim()) missingIdentity.push("Legal Name");

@@ -261,7 +261,7 @@ export class W9Controller {
         w9: {
           select: { id: true, status: true, requestedAt: true, completedAt: true, signerEmail: true, formType: true },
         },
-        legalIdentity: { select: { businessAddressCountry: true } },
+        legalIdentity: { select: { businessAddressCountry: true, usPayoutEntity: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -279,10 +279,10 @@ export class W9Controller {
         // Which form this provider owes (by legal country) and which one the
         // row actually is - a mismatch renders as NOT_SENT for the owed form.
         country: p.legalIdentity?.businessAddressCountry || "US",
-        requiredForm: (p.legalIdentity?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE",
+        requiredForm: p.legalIdentity?.usPayoutEntity || (p.legalIdentity?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE",
         formType: p.w9?.formType || null,
         w9Id: p.w9?.id || null,
-        status: p.w9 && (p.w9.formType || "W9") === ((p.legalIdentity?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE") ? p.w9.status : "NOT_SENT",
+        status: p.w9 && (p.w9.formType || "W9") === (p.legalIdentity?.usPayoutEntity || (p.legalIdentity?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE") ? p.w9.status : "NOT_SENT",
         requestedAt: p.w9?.requestedAt || null,
         completedAt: p.w9?.completedAt || null,
         signerEmail: p.w9?.signerEmail || null,

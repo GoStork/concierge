@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { prisma as prismaClient } from "../../../db";
-import { normalizeCountry, payoutRailFor } from "../../../../shared/payout-countries";
+import { normalizeCountry, payoutRailFor, effectivePayoutCountry } from "../../../../shared/payout-countries";
 import { TrolleyService } from "./trolley.service";
 import {
   createConnectAccount,
@@ -224,7 +224,7 @@ export class ConnectService {
     });
     // The in-app bank form is the US path (routing number, SSN-last-4, USD):
     // non-US entities use Stripe-hosted onboarding or the international rail.
-    if (normalizeCountry(legalIdentity?.businessAddressCountry) !== "US") {
+    if (effectivePayoutCountry(legalIdentity?.businessAddressCountry, (legalIdentity as any)?.usPayoutEntity) !== "US") {
       throw new BadRequestException(
         "The in-app bank form is for US businesses only. Non-US providers connect through Stripe-hosted onboarding (where available) or GoStork's international payout partner.",
       );

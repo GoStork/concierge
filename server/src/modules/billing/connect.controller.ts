@@ -14,7 +14,7 @@ import {
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
-import { normalizeCountry, payoutRailFor, currencyFor } from "../../../../shared/payout-countries";
+import { normalizeCountry, payoutRailFor, currencyFor, effectivePayoutCountry } from "../../../../shared/payout-countries";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { ConnectService, type CustomPayoutFormData } from "./connect.service";
 import { prisma } from "../../../db";
@@ -72,16 +72,47 @@ export class ConnectController {
   private async railInfo(providerId: string) {
     const legal = await prisma.providerLegalIdentity.findUnique({
       where: { providerId },
-      select: { businessAddressCountry: true },
+      select: { businessAddressCountry: true, usPayoutEntity: true },
     });
-    const country = normalizeCountry(legal?.businessAddressCountry);
+    // "I have a US entity" makes the payout/tax machinery treat the
+    // provider as US while the address stays their real country.
+    const country = effectivePayoutCountry(legal?.businessAddressCountry, legal?.usPayoutEntity);
     return {
-      legalCountry: country,
+      legalCountry: normalizeCountry(legal?.businessAddressCountry),
+      usPayoutEntity: !!legal?.usPayoutEntity,
       payoutRail: payoutRailFor(country),
       payoutCurrency: currencyFor(country),
       // The in-app bank form (Custom account) is US-only.
       customFormAvailable: country === "US",
     };
+  }
+
+  /**
+   * The "I have a US entity" checkbox on the Payouts page: flips the
+   * provider's effective payout/tax country to US (Stripe + W-9 + US bank)
+   * or back. Blocked once a payout method is live on the other rail - the
+   * account has to be disconnected first so money never straddles rails.
+   */
+  @Post("api/provider/payouts/us-entity")
+  @UseGuards(SessionOrJwtGuard)
+  async setUsPayoutEntity(@Req() req: Request, @Body() body: { enabled: boolean }) {
+    const user = req.user as any;
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const enabled = !!body?.enabled;
+    const account = await prisma.providerBankAccount.findUnique({ where: { providerId: user.providerId }, select: { payoutMethod: true } });
+    if (enabled && account?.payoutMethod === "TROLLEY") {
+      throw new HttpException("International payouts are already set up. Contact GoStork support to switch to a US entity.", HttpStatus.BAD_REQUEST);
+    }
+    if (!enabled && (account?.payoutMethod === "STRIPE_CONNECT_EXPRESS" || account?.payoutMethod === "STRIPE_CONNECT_CUSTOM")) {
+      throw new HttpException("Stripe payouts are already set up on your US entity. Disconnect the payout account first, then switch.", HttpStatus.BAD_REQUEST);
+    }
+    // getOrCreate semantics: the legal-identity row may not exist yet.
+    await prisma.providerLegalIdentity.upsert({
+      where: { providerId: user.providerId },
+      create: { providerId: user.providerId, usPayoutEntity: enabled },
+      update: { usPayoutEntity: enabled },
+    });
+    return { success: true, usPayoutEntity: enabled };
   }
 
   /**
@@ -219,6 +250,7 @@ export class ConnectController {
           businessAddressState: true,
           businessAddressPostalCode: true,
           businessAddressCountry: true,
+          usPayoutEntity: true,
         },
       }),
     ]);
@@ -234,7 +266,7 @@ export class ConnectController {
       taxId: legalIdentity?.taxId || null,
       businessType: legalIdentity?.businessType === "individual" ? "individual" : "company",
       phone: provider.phone || null,
-      country: legalIdentity?.businessAddressCountry || "US",
+      country: effectivePayoutCountry(legalIdentity?.businessAddressCountry, (legalIdentity as any)?.usPayoutEntity),
       address: legalIdentity?.businessAddressLine1 ? {
         line1: legalIdentity.businessAddressLine1,
         line2: legalIdentity.businessAddressLine2 || undefined,
