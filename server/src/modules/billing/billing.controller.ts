@@ -884,6 +884,21 @@ export class BillingController {
       // regardless of which surface the admin used.
       const refund = stripeService.parseRefundEvent(event);
       if (refund) {
+        if (!refund.latestRefundId) {
+          // Payload did not embed charge.refunds (normal on current API
+          // versions) - look the refund up so we keep the id and, critically,
+          // the refundMode metadata that decides the provider clawback split.
+          try {
+            const latest = await stripeService.fetchLatestRefundForCharge(refund.chargeId);
+            if (latest) {
+              refund.latestRefundId = latest.id;
+              refund.latestRefundReason = latest.reason;
+              refund.latestRefundMetadata = latest.metadata;
+            }
+          } catch (e: any) {
+            this.logger.error(`Could not fetch latest refund for charge ${refund.chargeId}: ${e?.message}`);
+          }
+        }
         this.logger.log(`Stripe refund webhook: pi=${refund.paymentIntentId} refunded=${refund.amountRefundedCents}/${refund.amountCents} full=${refund.fullyRefunded} mode=${refund.latestRefundMetadata?.refundMode || "proportional"}`);
         try {
           await this.billingService.handleChargeRefunded({

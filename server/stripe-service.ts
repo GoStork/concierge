@@ -655,8 +655,12 @@ export function parseRefundEvent(event: Stripe.Event): {
   if (!paymentIntentId) return null;
 
   // refunds.data is newest-first; the refund that triggered this event is
-  // typically the first entry. If the list isn't expanded, we fall back to
-  // null and let the service look it up.
+  // typically the first entry. Since API version 2022-11-15 the Charge in a
+  // webhook payload does NOT embed `refunds` any more, so this is usually
+  // undefined in live traffic (seen on the first real prod refund,
+  // 2026-08-19) - callers MUST then use fetchLatestRefundForCharge() to
+  // recover the refund id + the refundMode metadata, otherwise a
+  // keep_platform_fee refund is silently processed as proportional.
   const refunds = (charge as any).refunds?.data as Stripe.Refund[] | undefined;
   const latest = refunds && refunds.length > 0 ? refunds[0] : null;
 
@@ -669,6 +673,27 @@ export function parseRefundEvent(event: Stripe.Event): {
     latestRefundId: latest?.id || null,
     latestRefundReason: latest?.reason || null,
     latestRefundMetadata: (latest?.metadata as Record<string, string> | undefined) || null,
+  };
+}
+
+/**
+ * Fetches the newest refund on a charge. Used by the webhook handler when the
+ * charge.refunded payload does not embed `refunds` (the default on current
+ * API versions) so the refund id + metadata (refundMode) are not lost.
+ */
+export async function fetchLatestRefundForCharge(chargeId: string): Promise<{
+  id: string;
+  reason: string | null;
+  metadata: Record<string, string> | null;
+} | null> {
+  const stripe = getStripe();
+  const list = await stripe.refunds.list({ charge: chargeId, limit: 1 });
+  const latest = list.data[0];
+  if (!latest) return null;
+  return {
+    id: latest.id,
+    reason: latest.reason || null,
+    metadata: (latest.metadata as Record<string, string> | undefined) || null,
   };
 }
 

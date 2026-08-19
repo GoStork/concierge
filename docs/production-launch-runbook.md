@@ -779,8 +779,19 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   `payment_intent.succeeded` reached the VM through Cloudflare -> Invoice
   PAID (paymentMethod CARD, pi_3U68bECGqwxDjN6V1Zx2D0mu), parent
   journey stage -> "Deposit Paid". Agreement auto-draft skipped (test
-  agency has no agreement template - expected). [ ] refund via admin
-  Billing tab -> `charge.refunded` -> REFUNDED (in progress).
+  agency has no agreement template - expected). Refund: admin Billing tab
+  -> Refund $5 proportional -> Stripe refund created -> `charge.refunded`
+  webhook -> Invoice REFUNDED (refundedAmount 500, reason + notes
+  stored), parent card "Your payment has been fully refunded", lead status
+  back to "Invoice Sent" (a refunded invoice no longer counts as paid -
+  by design). **Live charge + refund PASS.** FOUND + FIXED: the
+  `charge.refunded` payload on the current API version does not embed
+  `charge.refunds`, so `stripeRefundId` stayed NULL and the refundMode
+  metadata was lost (a keep_platform_fee refund would have been clawed
+  back proportionally). Webhook handler now fetches the latest refund from
+  Stripe when the payload lacks it. No provider transfer existed yet on
+  this invoice (agency has no Connect account), so the clawback path was
+  not exercised - [ ] re-test refund after the first real Connect payout.
 - [ ] LEFTOVER 1.0 TRAFFIC on test-app: something polls
   `GET /api/v1/surrogates/list-to-update?agencyName=familycreations` every
   ~30 s (404 on 2.0). A 1.0 scraper/cron still targets the test hostname -
