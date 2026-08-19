@@ -299,12 +299,17 @@ NEXT, in order (items marked ERAN need a human in a browser):
       verification" because calendar scopes are sensitive: until verified,
       connecting users see an "unverified app" interstitial and the project
       has a 100-user LIFETIME cap. -> section 7 item added.
-      [ ] **Microsoft** app registration 42cdb0fb-1332-4c65-8904-3f654954560a:
-      add `https://test-app.gostork.com/api/calendar/microsoft/callback`
-      (+ app.gostork.com twin if missing) under Authentication > Web
-      redirect URIs -
-      https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/Authentication/appId/42cdb0fb-1332-4c65-8904-3f654954560a
-      (Chrome was not signed in to Azure at the time of writing).
+      [x] **Microsoft** app registration "GoStork Calendar"
+      (42cdb0fb-1332-4c65-8904-3f654954560a, tenant gostork075.onmicrosoft.com,
+      sign in as eran.amir@gostork075.onmicrosoft.com): added Web redirect
+      URIs `https://test-app.gostork.com/api/calendar/microsoft/callback`
+      AND `https://app.gostork.com/api/calendar/microsoft/callback` -
+      the pre-existing app.gostork.com/gostork.com entries used the OLD 1.0
+      path `/api/microsoft/callback`, which 2.0 does not serve, so Outlook
+      connect on app.gostork.com would have failed at the Phase B flip.
+      (Dev ngrok hosts are NOT registered for Microsoft - only the old
+      Replit dev URL is - so Outlook connect has not been testable on the
+      Macs; test it on test-app.)
    d. [ ] Smoke tests (section 12) once Eran has signed up on test-app and
       been promoted to admin.
    Note: `systemctl restart gostork` = ~10s of 502 at the edge (seen when
@@ -509,7 +514,7 @@ in this order:
   demo video. Until approved: "unverified app" warning on connect + 100
   users lifetime cap (3 used). Do this early in the beta - review takes
   days to weeks.
-- [ ] Microsoft Graph app registration: add production redirect URIs.
+- [x] Microsoft Graph app registration: test-app + app.gostork.com redirect URIs with the 2.0 path added 2026-08-19.
 - [ ] Apple/CalDAV: no redirect URIs, but verify app-specific password flow
   documentation for users.
 - [ ] Reconnect flows tested against the production URL (calendar-health emails
