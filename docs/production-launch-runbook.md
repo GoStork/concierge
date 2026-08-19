@@ -607,8 +607,15 @@ Rule: exactly ONE environment runs schedulers against the production DB.
 
 ## 12. Post-launch smoke tests
 
-- [ ] Signup end-to-end on a real phone: OTP arrives, opt-in checkbox persists
-  to smsNotificationsOptIn, account completes with box UNTICKED too.
+- [x] Signup end-to-end on a real phone (2026-08-19, test-app): Turnstile
+  passed on the new hostname, OTP SMS sent via Twilio Verify (OtpAttempt
+  outcome=sent x2), account created with phone + smsNotificationsOptIn=true,
+  trustState TRUSTED (eran.amir@gostork.com = admin, eran.amir+beta1 = test
+  parent). [ ] still to try: box UNTICKED variant. Observed rough edges:
+  signup form double-submit shows "already exists" after a successful
+  first submit; login page shows "Invalid email or password" for a server
+  500 (should say "something went wrong"). Note: editing the phone on
+  /account does NOT re-verify via OTP (by design today - only signup does).
 - [ ] Booking flow: confirmation email (correct 2.0 design, logo loads) + SMS
   (only if opted in).
 - [ ] Provider: W-9 sign -> Home task closes without refresh; agreement flow.
