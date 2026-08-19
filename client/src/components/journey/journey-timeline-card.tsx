@@ -202,7 +202,6 @@ function StageColumn({ stage, isFirst, isLast, branches, widthPct }: {
   // fork drawn the same way, rotated.
   const BRANCH_GAP = 12;
   const branch = branches && branches.length > 0 ? branches[0] : undefined;
-  const chained = branches && branches.length > 1 ? branches.slice(1) : [];
   return (
     // Fixed width (see widthPct) so rung indexes align across ladders;
     // min-w-0 lets a long label wrap under its dot instead of widening it.
@@ -256,50 +255,60 @@ function StageColumn({ stage, isFirst, isLast, branches, widthPct }: {
       {/* A branch rung hangs BELOW the main line, reached by the corner that
           finishes the fork: down the column edge, then right into its dot.
           The vertical ladder puts it to the RIGHT of its sibling, which is
-          the same relationship rotated with the rest of the track. */}
-      {branch && (
-        <>
-          <div className="flex">
-            {/* calc(50% - HALF_DOT) so the dot that follows lands centred on
-                the column, directly under its sibling. */}
-            <div
-              className="shrink-0"
-              style={{
-                width: `calc(50% - ${HALF_DOT}px)`,
-                // The corner drops through the gap first, then turns - so the
-                // horizontal run still lands exactly on the dot's centre.
-                height: `${BRANCH_GAP + HALF_DOT}px`,
-                borderLeft: `1px solid ${line}`,
-                borderBottom: `1px solid ${line}`,
-                borderBottomLeftRadius: "8px",
-              }}
-            />
-            <div style={{ marginTop: `${BRANCH_GAP}px` }}>
-              {/* A warning branch keeps a standard dot - the fork says enough.
-              A destructive one keeps its red X: a cancelled call whose dot
-              draws a green positional checkmark reads as "done", which is
-              the one thing a cancellation is not. */}
-          <StageMark stage={branch.tone === "destructive" ? branch : { ...branch, tone: undefined }} />
-            </div>
-          </div>
-          <div className="px-1 pt-1 text-center">
-            <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(branch)}`}>{branch.label}</p>
-            {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
-          </div>
-          {/* The rest of the chain continues straight DOWN from the first
-              branch dot - a short stem, then the next dot, centred on the
-              column like its predecessor. */}
-          {chained.map((b) => (
-            <div key={b.id} className="flex flex-col items-center" data-testid={`journey-stage-${b.id}`}>
-              <span className="w-px" style={{ height: `${BRANCH_GAP}px`, backgroundColor: line }} />
-              <StageMark stage={b.tone === "destructive" ? b : { ...b, tone: undefined }} />
-              <div className="px-1 pt-1 text-center">
-                <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(b)}`}>{b.label}</p>
-                {b.reachedAt && <p className="t-helper leading-4">{fmtDate(b.reachedAt)}</p>}
+          the same relationship rotated with the rest of the track.
+          A CHAIN (Refund Requested -> Refund Completed) continues along the
+          same branch row, one column-width per step, joined by rails like
+          the main line - the wrapper is n columns wide and overflows into
+          the neighbours' empty space under their labels (by request: the
+          second step sits right after the first, not under it). */}
+      {branch && branches && (
+        <div className="flex items-start" style={{ width: `${branches.length * 100}%` }}>
+          {branches.map((b, idx) => {
+            const isLastBranch = idx === branches.length - 1;
+            const branchRail = { marginTop: `${BRANCH_GAP + HALF_DOT}px`, height: 1, backgroundColor: line };
+            return (
+              <div
+                key={b.id}
+                className="min-w-0"
+                style={{ width: `${100 / branches.length}%` }}
+                data-testid={`journey-stage-${b.id}`}
+              >
+                <div className="flex items-start">
+                  {idx === 0 ? (
+                    /* calc(50% - HALF_DOT) so the dot that follows lands centred on
+                       the column, directly under its sibling. The corner drops
+                       through the gap first, then turns - so the horizontal run
+                       still lands exactly on the dot's centre. */
+                    <div
+                      className="shrink-0"
+                      style={{
+                        width: `calc(50% - ${HALF_DOT}px)`,
+                        height: `${BRANCH_GAP + HALF_DOT}px`,
+                        borderLeft: `1px solid ${line}`,
+                        borderBottom: `1px solid ${line}`,
+                        borderBottomLeftRadius: "8px",
+                      }}
+                    />
+                  ) : (
+                    <div className="flex-1" style={branchRail} />
+                  )}
+                  <div style={{ marginTop: `${BRANCH_GAP}px` }}>
+                    {/* A warning branch keeps a standard dot - the fork says enough.
+                        A destructive one keeps its red X: a cancelled call whose dot
+                        draws a green positional checkmark reads as "done", which is
+                        the one thing a cancellation is not. */}
+                    <StageMark stage={b.tone === "destructive" ? b : { ...b, tone: undefined }} />
+                  </div>
+                  {isLastBranch ? <div className="flex-1" /> : <div className="flex-1" style={branchRail} />}
+                </div>
+                <div className="px-1 pt-1 text-center">
+                  <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(b)}`}>{b.label}</p>
+                  {b.reachedAt && <p className="t-helper leading-4">{fmtDate(b.reachedAt)}</p>}
+                </div>
               </div>
-            </div>
-          ))}
-        </>
+            );
+          })}
+        </div>
       )}
     </div>
   );
