@@ -1,62 +1,48 @@
-name: Nightly Sync Pinger (DISABLED - manual only)
+name: Nightly Sync Pinger (production)
 
-# DISABLED as the nightly driver as of Jun 2026. The nightly scraper sync now
-# runs on the always-on iMac (a long-lived process with ENABLE_NIGHTLY_SCHEDULER
-# =true), NOT on Replit. Replit Autoscale is request-scoped: it reaps the
-# container as soon as the triggering HTTP request returns, which killed the
-# fire-and-forget sync mid-run (the Jun 21 "server restarted" failures). A
-# long-lived host is required for a job that runs well over an hour.
+# Fires the nightly donor/surrogate scraper sync on the PRODUCTION host at
+# 2:00 AM America/New_York every night (06:00 UTC during EDT, 07:00 UTC during
+# EST - both crons are listed; the app's NightlySyncLock + "already running"
+# guard make the second tick a no-op, and the lock is anchored to the 2 AM ET
+# slot so it cannot double-run).
 #
-# The scheduled crons below are intentionally removed so Replit is no longer
-# pinged at 2 AM ET. Only `workflow_dispatch` remains, as a manual emergency
-# trigger (e.g. if the iMac is down): run this workflow by hand to fire the
-# Replit endpoint once. The atomic NightlySyncLock still prevents a manual ping
-# from colliding with the iMac's run.
+# History: until Jun 2026 this pinged Replit (request-scoped, reaped the
+# container mid-run - disabled); then the iMac ran the scheduler in-process
+# against the DEV DB. Since 2026-08-19 the production host is a long-lived
+# GCE VM (docs/production-launch-runbook.md 0.5) with the in-process
+# scheduler OFF, so the pinger is the production driver again. The dev Macs
+# keep syncing the DEV DB on their own schedule.
 #
-# Requires repo secret NIGHTLY_SYNC_SECRET (same value set in Replit Secrets).
+# Phase A target: https://test-app.gostork.com. Phase B: change TARGET to
+# https://app.gostork.com (one line). Requires repo secret NIGHTLY_SYNC_SECRET
+# = the production host's NIGHTLY_SYNC_SECRET (NOT the dev value).
 
 on:
+  schedule:
+    - cron: "0 6 * * *"   # 02:00 EDT
+    - cron: "0 7 * * *"   # 02:00 EST
   workflow_dispatch:
+
+env:
+  TARGET: https://test-app.gostork.com
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Wake Replit container
-        # Replit Autoscale spins the container down when idle. At 02:00 ET the
-        # container has been cold all night, so a bare POST gets a 503 from
-        # Replit's edge before our app sees it. Hit /__health first and poll
-        # until 200 - that wakes the container without consuming the cron
-        # secret. Up to ~90s total wait.
-        run: |
-          for i in $(seq 1 18); do
-            code=$(curl -s -o /dev/null --max-time 10 -w "%{http_code}" \
-              https://go-stork.replit.app/__health || echo "000")
-            echo "Attempt $i: HTTP $code"
-            if [ "$code" = "200" ]; then
-              echo "Container warm."
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "::warning::Container did not return 200 within 90s; will still try the ping"
-
-      - name: Trigger nightly sync on Replit
+      - name: Trigger nightly sync on production
         env:
           SECRET: ${{ secrets.NIGHTLY_SYNC_SECRET }}
-        # Retry the POST too, in case the wake step ended just before the
-        # container finished initializing (between Replit edge accepting the
-        # request and our app populating prismaRef).
         run: |
           if [ -z "$SECRET" ]; then
             echo "::error::NIGHTLY_SYNC_SECRET repo secret is not set"
             exit 1
           fi
-          for i in 1 2 3 4 5; do
+          for i in 1 2 3; do
             response=$(curl -sS --max-time 30 -w "\n%{http_code}" -X POST \
               -H "x-cron-secret: $SECRET" \
-              https://go-stork.replit.app/api/cron/run-nightly-sync)
+              "$TARGET/api/cron/run-nightly-sync")
             body=$(echo "$response" | sed '$d')
             code=$(echo "$response" | tail -n 1)
             echo "Attempt $i: HTTP $code | Body: $body"
@@ -64,14 +50,13 @@ jobs:
               echo "Pinger succeeded."
               exit 0
             fi
-            # 503 = Replit edge cold-start or our app's "still starting" guard.
-            # Any other error code is terminal (401 bad secret, 500 server bug).
+            # 503 = app still starting (e.g. mid auto-deploy). Anything else is terminal.
             if [ "$code" != "503" ]; then
               echo "::error::Pinger failed with HTTP $code (not retryable)"
               exit 1
             fi
-            echo "Got 503, retrying in 10s..."
-            sleep 10
+            echo "Got 503, retrying in 20s..."
+            sleep 20
           done
-          echo "::error::Pinger still 503 after 5 retries - container never came up"
+          echo "::error::Pinger still 503 after 3 retries"
           exit 1
