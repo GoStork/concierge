@@ -1185,6 +1185,12 @@ export async function createConnectAccount(params: CreateConnectAccountParams): 
     capabilities: {
       transfers: { requested: true },
     },
+    // Non-US connected accounts that only receive transfers (no charges)
+    // must sit under Stripe's RECIPIENT service agreement - Stripe rejects
+    // `transfers` alone for e.g. CY otherwise ("specify the recipient
+    // service agreement or request card_payments"). Providers never charge
+    // through their own account, so recipient is the right agreement.
+    ...((params.country || "US") !== "US" ? { tos_acceptance: { service_agreement: "recipient" } } : {}),
     business_profile: {
       // name = DBA / display name shown to customers
       ...(params.businessName ? { name: params.businessName } : {}),
