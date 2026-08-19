@@ -549,9 +549,18 @@ export class ConnectController {
       accountType: row.accountType ?? null,
       onboardingStartedAt: row.onboardingStartedAt ?? null,
       onboardingCompletedAt: row.onboardingCompletedAt ?? null,
+      // International rail (Trolley) mirror
+      trolleyRecipientId: row.trolleyRecipientId ?? null,
+      trolleyRecipientStatus: row.trolleyRecipientStatus ?? null,
+      trolleyPayoutMethodReady: !!row.trolleyPayoutMethodReady,
+      trolleyPayoutCurrency: row.trolleyPayoutCurrency ?? null,
+      trolleyTaxFormStatus: row.trolleyTaxFormStatus ?? null,
+      trolleyLastSyncAt: row.trolleyLastSyncAt ?? null,
       // Derived "ready to receive payouts" used by the auto-transfer code
       // path. Centralised so server + client agree on the predicate.
-      readyForPayouts: !!row.payoutsEnabled && !!row.stripeConnectAccountId,
+      readyForPayouts: row.payoutMethod === "TROLLEY"
+        ? !!row.trolleyRecipientId && !!row.trolleyPayoutMethodReady
+        : !!row.payoutsEnabled && !!row.stripeConnectAccountId,
     };
   }
 }

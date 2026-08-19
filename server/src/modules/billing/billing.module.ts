@@ -11,12 +11,14 @@ import { LegalIdentityController } from "./legal-identity.controller";
 import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
 import { CostSheetAutoDraftController } from "./cost-sheet-auto-draft.controller";
 import { FxController } from "./fx.controller";
+import { TrolleyService } from "./trolley.service";
+import { TrolleyController } from "./trolley.controller";
 import { NotificationModule } from "../notifications/notification.module";
 import { SponsorshipModule } from "../sponsorship/sponsorship.module";
 
 @Module({
   imports: [NotificationModule, SponsorshipModule],
-  providers: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService],
+  providers: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService, TrolleyService],
   controllers: [
     BillingController,
     CostSheetController,
@@ -26,7 +28,8 @@ import { SponsorshipModule } from "../sponsorship/sponsorship.module";
     LegalIdentityController,
     CostSheetAutoDraftController,
     FxController,
+    TrolleyController,
   ],
-  exports: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService],
+  exports: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService, TrolleyService],
 })
 export class BillingModule {}

@@ -37,7 +37,13 @@ interface PayoutsState {
   payoutRail?: "STRIPE" | "INTERNATIONAL";
   payoutCurrency?: string;
   customFormAvailable?: boolean;
-  payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null;
+  payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | "TROLLEY" | null;
+  trolleyRecipientId?: string | null;
+  trolleyRecipientStatus?: string | null;
+  trolleyPayoutMethodReady?: boolean;
+  trolleyPayoutCurrency?: string | null;
+  trolleyTaxFormStatus?: string | null;
+  trolleyLastSyncAt?: string | null;
   stripeConnectAccountId: string | null;
   payoutsEnabled: boolean;
   chargesEnabled: boolean;
@@ -117,7 +123,7 @@ export function ProviderPayoutsTab() {
     "STRIPE_CONNECT_CUSTOM",
   );
   useEffect(() => {
-    if (state?.payoutMethod) setSelectedMethod(state.payoutMethod);
+    if (state?.payoutMethod && state.payoutMethod !== "TROLLEY") setSelectedMethod(state.payoutMethod);
     // Non-US entities never get the in-app US bank form - Stripe-hosted
     // onboarding is the only Stripe path for them.
     else if (state && state.customFormAvailable === false) setSelectedMethod("STRIPE_CONNECT_EXPRESS");
@@ -180,24 +186,10 @@ export function ProviderPayoutsTab() {
       )}
 
       {/* International rail: every non-US legal entity is paid through
-          GoStork's international payout partner (one flow for all
-          international providers); the Stripe options are hidden so nobody
-          creates a Stripe account that GoStork will not pay through. */}
-      {state?.payoutRail === "INTERNATIONAL" && !state.payoutMethod && (
-        <section className="rounded-xl border p-6 bg-card space-y-3" data-testid="payouts-international">
-          <h3 className="font-semibold">International payouts</h3>
-          <p className="t-helper">
-            Your legal entity is registered in <strong>{state.legalCountry}</strong>. GoStork pays all
-            non-US providers through its international payout partner, in your local currency
-            {state.payoutCurrency ? ` (${state.payoutCurrency})` : ""}. Any transfer fee is deducted from
-            your share.
-          </p>
-          <p className="t-helper">
-            International payout onboarding is being connected now - GoStork will reach out with the bank
-            details form. If your legal country is wrong, fix it on the Legal tab.
-          </p>
-        </section>
-      )}
+          GoStork's international payout partner (Trolley) - one flow for
+          all international providers. The Stripe options are hidden so
+          nobody creates a Stripe account GoStork will not pay through. */}
+      {state?.payoutRail === "INTERNATIONAL" && <InternationalPayoutSection state={state} />}
 
       {/* Method picker - only when nothing has been started yet */}
       {!state?.payoutMethod && state?.payoutRail !== "INTERNATIONAL" && (
@@ -430,8 +422,12 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
         </div>
       )}
 
-      {/* Change bank account - expandable */}
-      <div className="rounded-lg border bg-card">
+      {/* International rail: bank + tax form live in the payout partner's
+          widget - reopen it to change either. */}
+      {state.payoutMethod === "TROLLEY" && <InternationalManage state={state} />}
+
+      {/* Change bank account - expandable (Stripe rails) */}
+      {state.payoutMethod !== "TROLLEY" && <div className="rounded-lg border bg-card">
         <button
           type="button"
           onClick={() => setIsChangingBank(v => !v)}
@@ -465,7 +461,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Disconnect */}
       <div className="rounded-lg border bg-card p-3 flex items-center justify-between gap-3">
@@ -980,5 +976,152 @@ function PayoutHistoryTable() {
       </div>
       <PayoutTable payouts={payouts} mode="open" testIdPrefix="settings-payout" />
     </section>
+  );
+}
+
+
+// ─── International rail (Trolley) ───────────────────────────────────────────
+
+/**
+ * Non-US providers: one embedded widget (GoStork's international payout
+ * partner) collects the bank account in their local currency and the
+ * W-8BEN-E tax form. Readiness is mirrored by webhook onto the payouts row;
+ * "Refresh status" re-pulls it when the provider just finished.
+ */
+function InternationalPayoutSection({ state }: { state: PayoutsState }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [widgetUrl, setWidgetUrl] = useState<string | null>(null);
+
+  const openWidget = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/provider/payouts/trolley/widget-url", { credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Could not open international payout setup");
+      return res.json() as Promise<{ url: string; recipientId: string }>;
+    },
+    onSuccess: (d) => {
+      setWidgetUrl(d.url);
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/payouts"] });
+    },
+    onError: (e: any) => toast({ title: "Could not start setup", description: e?.message, variant: "destructive" }),
+  });
+  const refresh = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/provider/payouts/trolley/refresh", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Refresh failed");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/provider/payouts"] }),
+  });
+
+  const started = !!state.trolleyRecipientId;
+  return (
+    <section className="rounded-xl border p-6 bg-card space-y-4" data-testid="payouts-international">
+      <div>
+        <h3 className="font-semibold">International payouts</h3>
+        <p className="t-helper mt-1">
+          Your legal entity is registered in <strong>{state.legalCountry}</strong>. GoStork pays all
+          non-US providers through its international payout partner, in your local currency
+          {state.payoutCurrency ? ` (${state.payoutCurrency})` : ""}. Any transfer fee is deducted from
+          your share. Setup takes a few minutes: your bank account plus the W-8BEN-E tax form, both
+          collected securely by the payout partner - GoStork never sees your account numbers.
+        </p>
+      </div>
+
+      {started && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <StatusTile label="Payout account" ok={!!state.trolleyPayoutMethodReady} okText={`Ready${state.trolleyPayoutCurrency ? ` (${state.trolleyPayoutCurrency})` : ""}`} pendingText="Bank details not complete" />
+          <StatusTile label="Tax form (W-8BEN-E)" ok={state.trolleyTaxFormStatus === "submitted" || state.trolleyTaxFormStatus === "reviewed"} okText={state.trolleyTaxFormStatus === "reviewed" ? "Reviewed" : "Submitted"} pendingText={state.trolleyTaxFormStatus ? state.trolleyTaxFormStatus : "Not submitted"} />
+          <StatusTile label="Verification" ok={state.trolleyRecipientStatus === "active"} okText="Active" pendingText={state.trolleyRecipientStatus || "Pending"} />
+        </div>
+      )}
+
+      {!widgetUrl ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => openWidget.mutate()}
+            disabled={openWidget.isPending}
+            style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
+            data-testid="international-setup-btn"
+          >
+            {openWidget.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Building2 className="w-4 h-4 mr-2" />}
+            {started ? "Open payout setup" : "Set up international payouts"}
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+          {started && (
+            <Button variant="outline" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+              {refresh.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Refresh status
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {/* The partner's widget, inline (no modal - mobile-first rule). The
+              signed URL is only valid for ~30s, so it is minted on click. */}
+          <div className="rounded-lg border overflow-hidden bg-background" style={{ minHeight: 640 }}>
+            <iframe
+              title="International payout setup"
+              src={widgetUrl}
+              className="w-full"
+              style={{ height: 640, border: 0 }}
+              allow="clipboard-write"
+              data-testid="international-widget"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <Button variant="outline" onClick={() => { setWidgetUrl(null); refresh.mutate(); }}>
+              I'm done - refresh status
+            </Button>
+            <span className="t-helper">Finished in the widget? Click to pull the latest status.</span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StatusTile({ label, ok, okText, pendingText }: { label: string; ok: boolean; okText: string; pendingText: string }) {
+  return (
+    <div className="rounded-lg border p-3 bg-secondary/40">
+      <p className="t-micro-label">{label}</p>
+      <p className="mt-1 font-medium flex items-center gap-1.5">
+        {ok
+          ? <CheckCircle2 className="w-4 h-4" style={{ color: "hsl(var(--brand-success))" }} />
+          : <Loader2 className="w-4 h-4" style={{ color: "hsl(var(--brand-warning))" }} />}
+        {ok ? okText : pendingText}
+      </p>
+    </div>
+  );
+}
+
+/** Ready-state helper for Trolley providers: reopen the widget to change bank/tax details. */
+function InternationalManage({ state }: { state: PayoutsState }) {
+  const { toast } = useToast();
+  const [widgetUrl, setWidgetUrl] = useState<string | null>(null);
+  const openWidget = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/provider/payouts/trolley/widget-url", { credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Could not open payout settings");
+      return res.json() as Promise<{ url: string }>;
+    },
+    onSuccess: (d) => setWidgetUrl(d.url),
+    onError: (e: any) => toast({ title: "Could not open payout settings", description: e?.message, variant: "destructive" }),
+  });
+  return (
+    <div className="rounded-lg border bg-card p-3 space-y-3">
+      <p className="text-sm">
+        You are paid in <strong>{state.trolleyPayoutCurrency || state.payoutCurrency || "your local currency"}</strong> through
+        GoStork's international payout partner. Tax form: {state.trolleyTaxFormStatus || "-"}.
+      </p>
+      {!widgetUrl ? (
+        <Button variant="outline" onClick={() => openWidget.mutate()} disabled={openWidget.isPending}>
+          {openWidget.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ExternalLink className="w-4 h-4 mr-2" />}
+          Change bank account or tax form
+        </Button>
+      ) : (
+        <iframe title="Payout settings" src={widgetUrl} className="w-full rounded-lg border" style={{ height: 640, border: 0 }} />
+      )}
+    </div>
   );
 }

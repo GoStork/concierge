@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { prisma as prismaClient } from "../../../db";
 import { normalizeCountry, payoutRailFor } from "../../../../shared/payout-countries";
+import { TrolleyService } from "./trolley.service";
 import {
   createConnectAccount,
   createConnectAccountLink,
@@ -72,6 +73,7 @@ export interface CustomPayoutFormData {
 export class ConnectService {
   private readonly logger = new Logger(ConnectService.name);
   private readonly prisma = prismaClient;
+  constructor(private readonly trolleyService: TrolleyService) {}
 
   // ── Read current state for UI ──────────────────────────────────────────────
 
@@ -752,6 +754,7 @@ export class ConnectService {
         currency: true,
         status: true,
         stripeTransferId: true,
+        trolleyPaymentId: true,
         payoutInitiatedAt: true,
         payoutAttemptCount: true,
         medicalClearanceStatus: true,
@@ -777,6 +780,9 @@ export class ConnectService {
     if (invoice.stripeTransferId) {
       return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already transferred via ${invoice.stripeTransferId}` };
     }
+    if ((invoice as any).trolleyPaymentId) {
+      return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already paid out via Trolley ${(invoice as any).trolleyPaymentId}` };
+    }
     if (!invoice.providerPayoutAmount || invoice.providerPayoutAmount <= 0) {
       return { status: "skipped", reason: "ZERO_PAYOUT", message: "Nothing to transfer (provider payout = 0)" };
     }
@@ -784,6 +790,13 @@ export class ConnectService {
     const payoutAccount = await this.prisma.providerBankAccount.findUnique({
       where: { providerId: invoice.providerId },
     });
+    // International rail: non-US providers are paid through Trolley. Same
+    // gates above, different mover below. (Every caller - payment webhook,
+    // capture, admin mark-paid, retry sweep, admin retry - comes through
+    // here, so the rail switch lives in exactly one place.)
+    if (payoutAccount?.payoutMethod === "TROLLEY") {
+      return await this.trolleyService.createPayoutForInvoice(invoice as any);
+    }
     if (!payoutAccount?.stripeConnectAccountId || !payoutAccount.payoutsEnabled) {
       return {
         status: "skipped",

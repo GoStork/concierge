@@ -43,6 +43,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerBankAccount;
   }
 
+  get trolleyWebhookEvent() {
+    return prisma.trolleyWebhookEvent;
+  }
+
   get providerLegalIdentity() {
     return prisma.providerLegalIdentity;
   }

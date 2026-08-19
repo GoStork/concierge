@@ -2436,6 +2436,12 @@ model Invoice {
   stripeConnectPaymentId  String?   @unique
   stripeBankPayoutId      String?
   bankPayoutCompletedAt   DateTime?
+  // International rail: the Trolley payment that carried this invoice's
+  // provider share (P-xxxx) and its batch (B-xxxx). Mutually exclusive with
+  // stripeTransferId - one rail per invoice.
+  trolleyPaymentId        String?   @unique
+  trolleyBatchId          String?
+  trolleyPaymentStatus    String?   // pending | processing | processed | failed | returned
   bankPayoutFailedAt      DateTime?
   bankPayoutFailureReason String?
 
@@ -2664,6 +2670,17 @@ model ProviderBankAccount {
   accountType                String? // "checking" | "savings"
   onboardingStartedAt        DateTime?
   onboardingCompletedAt      DateTime? // first time payoutsEnabled flipped to true
+  // ── International rail (Trolley) - payoutMethod "TROLLEY" ──
+  // Every non-US legal entity is paid through Trolley (shared/payout-
+  // countries.ts). The provider onboards in Trolley's embedded widget (bank
+  // details + W-8BEN-E tax form); these mirror what Trolley tells us by
+  // webhook so the Payouts page and the auto-payout gate need no round-trip.
+  trolleyRecipientId         String?   @unique // R-xxxx
+  trolleyRecipientStatus     String?   // active | incomplete | disabled | archived | suspended | blocked
+  trolleyPayoutMethodReady   Boolean   @default(false) // a primary, enabled recipient account exists
+  trolleyPayoutCurrency      String?   // currency of that account (MXN, EUR, ...)
+  trolleyTaxFormStatus       String?   // incomplete | submitted | reviewed | voided (Trolley tax module)
+  trolleyLastSyncAt          DateTime?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
 
@@ -3611,4 +3628,19 @@ model AutomationDefaults {
   invoiceAutomation   String   @default("auto_send")
   agreementAutomation String   @default("off")
   updatedAt           DateTime @updatedAt
+}
+
+
+// Trolley webhook deliveries, keyed by x-paymentrails-delivery, so a retried
+// delivery is idempotent (Trolley retries on non-200 and we never want to
+// double-stamp a payout). Payload kept for audit/debugging.
+model TrolleyWebhookEvent {
+  id         String   @id @default(uuid())
+  deliveryId String   @unique
+  model      String
+  action     String
+  payload    Json
+  status     String   @default("received") // received | processed | ignored | error
+  error      String?
+  createdAt  DateTime @default(now())
 }
