@@ -638,8 +638,18 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   created: the Express start from /account/payouts now passes the
   platform gate but live KYC rejects the test agency's dummy EIN
   (00-0000000) and .example.com URL (fixed to gostork.com) - we do not
-  fabricate tax IDs on live Stripe, so [ ] the first real provider's
-  Connect onboarding is the remaining proof. Live charge + refund: done
+  fabricate tax IDs on live Stripe. DECISION 2026-08-19 (Eran): do NOT
+  create a GoStork-as-its-own-provider connected account to fake this;
+  the proof is the first real provider.
+  [ ] **LAUNCH TASK - first real provider Connect onboarding**: pick a
+  friendly agency as the beta provider; they complete Express onboarding
+  from /account/payouts with their real EIN + bank; then run ONE token
+  invoice ($5) end-to-end with Eran watching: invoice PAID -> auto
+  transfer (stripeTransferId) -> Connect payout -> money lands in their
+  bank; confirm the connected-account webhooks (account.updated,
+  payout.*) reach gostork-2-connect; then refund that invoice and verify
+  the transfer reversal (the clawback path never ran in testing). Only
+  after this is green do real invoices start. Live charge + refund: done
   twice (section 12). Note: the two $5 refunds left the live balance
   slightly negative ("Add funds to cover your negative balance" banner) -
   Stripe recoups from the next payment; no action needed.
