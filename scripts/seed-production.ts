@@ -23,6 +23,10 @@
  *   and the dry-run report lists any mismatches so drift is visible.
  * - USER_REF_NULL_COLUMNS: content tables that carry optional references to
  *   User rows (which are NOT copied) get those columns nulled.
+ * - PROD WAS PRUNED 2026-08-19: prod keeps ONLY the GoStork house provider +
+ *   platform config; all dev providers / scraped profiles / CDC data were
+ *   deleted on purpose. Do NOT --execute this against prod again without
+ *   trimming CONTENT_TABLES to config tables (see runbook 0.5).
  * - Idempotent: ON CONFLICT (id) DO NOTHING by default (content edits made in
  *   prod after a first seed are never clobbered by a re-run).
  */

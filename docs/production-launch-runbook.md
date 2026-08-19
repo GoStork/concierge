@@ -145,7 +145,26 @@ DONE:
   (`reservedByUserId`; real column `reservedByParentId`) so 3 dev
   test-parent reservations came over as orphans - nulled on prod (with
   `reservationExpiresAt`) and the list fixed. Re-running the seeder is
-  safe (idempotent, never clobbers prod edits).
+  safe (idempotent, never clobbers prod edits) - BUT see the next item.
+- [x] **PROD PRUNED 2026-08-19 (Eran's decision):** dev providers, scraped
+  profiles and CDC data are NOT real and Eran wants to test every provider
+  feature from scratch in production. Deleted from prod in one transaction:
+  466 non-GoStork Providers (+ their services/locations/brand/fees/IP-form
+  overrides/provider KB chunks via cascade), all EggDonor/Surrogate/
+  SpermDonor + the 7 scraper sync configs, all IvfSuccessRate +
+  CdcDatasetMap, all PhotoFingerprint, all 42 CostProgram. KEPT: the
+  GoStork house provider `5dc90fe4-15bc-485f-a470-ea325b742072` with
+  everything inside it (1 location, brand settings, 2 ReferralFeeConfig,
+  global SilenceConfig, 72 tier-1 KnowledgeChunk, 4 playbooks) and all
+  platform config (SiteSettings, BrandTemplate, Matchmaker, 30
+  ConciergePromptSection, ConciergeAsset, ExpertGuidanceRule,
+  AutomationDefaults, 11 ProviderType, 52 CostTemplate, IpForm
+  sections/questions, SponsorshipPlan, Security*). Users = 0 - Eran signs
+  up on test-app and gets promoted to admin. **Do NOT re-run
+  `seed-production.ts --execute` against prod** - it would bring the 466 dev
+  providers and scraped profiles back (it is idempotent by id, so it would
+  re-insert the deleted rows). If a config-only top-up is ever needed,
+  run it with CONTENT_TABLES trimmed to the config tables.
 
 NEXT, in order (items marked ERAN need a human in a browser):
 1. [x] prod DB password + connection strings.
