@@ -780,9 +780,6 @@ export class ConnectService {
     if (invoice.stripeTransferId) {
       return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already transferred via ${invoice.stripeTransferId}` };
     }
-    if ((invoice as any).trolleyPaymentId) {
-      return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already paid out via Trolley ${(invoice as any).trolleyPaymentId}` };
-    }
     if (!invoice.providerPayoutAmount || invoice.providerPayoutAmount <= 0) {
       return { status: "skipped", reason: "ZERO_PAYOUT", message: "Nothing to transfer (provider payout = 0)" };
     }
@@ -795,7 +792,15 @@ export class ConnectService {
     // capture, admin mark-paid, retry sweep, admin retry - comes through
     // here, so the rail switch lives in exactly one place.)
     if (payoutAccount?.payoutMethod === "TROLLEY") {
+      // The Trolley service owns the already-transferred decision: a payment
+      // stuck in open/pending (batch never started) gets its processing
+      // re-kicked rather than skipped.
       return await this.trolleyService.createPayoutForInvoice(invoice as any);
+    }
+    // Defensive cross-rail guard: an invoice that already carries a Trolley
+    // payment must never ALSO go out via a Stripe transfer.
+    if ((invoice as any).trolleyPaymentId) {
+      return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already paid out via Trolley ${(invoice as any).trolleyPaymentId}` };
     }
     if (!payoutAccount?.stripeConnectAccountId || !payoutAccount.payoutsEnabled) {
       return {
