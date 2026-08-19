@@ -320,7 +320,13 @@ NEXT, in order (items marked ERAN need a human in a browser):
       (Dev ngrok hosts are NOT registered for Microsoft - only the old
       Replit dev URL is - so Outlook connect has not been testable on the
       Macs; test it on test-app.)
-   d. [~] Smoke tests (section 12) started 2026-08-19: Eran signed up on
+   d. [~] Smoke tests (section 12) 2026-08-19: PASSED signup/OTP, admin
+      pages, Eva chat, Google + Outlook connect, booking end-to-end with
+      email/SMS/Google event, SSE. REMAINING: provider-side W-9/agreement
+      via PandaDoc (needs a provider user + a real sign - watch
+      /api/webhooks/pandadoc on prod), payments (needs live Stripe keys),
+      email visual check, cancel/reschedule, untick-SMS signup variant,
+      provider assistant Eva. Started: Eran signed up on
       test-app (account created 09:56 UTC; the form's second submit showed
       "already exists" - first click had succeeded, minor UX rough edge),
       promoted to GOSTORK_ADMIN + providerId = GoStork house provider via
@@ -630,8 +636,17 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   first submit; login page shows "Invalid email or password" for a server
   500 (should say "something went wrong"). Note: editing the phone on
   /account does NOT re-verify via OTP (by design today - only signup does).
-- [ ] Booking flow: confirmation email (correct 2.0 design, logo loads) + SMS
-  (only if opted in).
+- [x] Booking flow (2026-08-19, public page /book/eran-amir, booker =
+  beta1 parent): Booking created PENDING -> Daily.co room provisioned ->
+  parent "submitted" email+SMS, provider "new request" email+SMS (all
+  Notification rows status=sent, bodyHtml stored, every link ->
+  test-app.gostork.com) -> live SSE toast in the provider session ->
+  provider Confirm -> CONFIRMED, Google Calendar event created
+  (googleEventId set), confirmation email+SMS to both sides, 24h/1h
+  reminders queued pending. The in-24h "Action needed soon" urgent nudge
+  fired immediately (meeting was <24h away - by design). [ ] still to
+  check visually: email design/logo in the inbox; reschedule + cancel path
+  (cancel the test meeting from the app to exercise it).
 - [ ] Provider: W-9 sign -> Home task closes without refresh; agreement flow.
 - [x] AI concierge chat on production URL (2026-08-19): Eva (Adam persona)
   greeted the beta1 parent with the onboarding-aware opener and answered the
@@ -651,7 +666,8 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   verification, same class as the Google verification item (section 7).
   [ ] reconnect email -> links to the production URL: not yet exercised.
 - [ ] Payment link end-to-end in live mode (small real charge, refund).
-- [ ] SSE in-app notifications arrive through Cloudflare.
+- [x] SSE in-app notifications arrive through Cloudflare (2026-08-19: the
+  "New meeting request" toast appeared live in the admin tab).
 - [ ] Verify NO emails/SMS originate from dev Macs anymore (Notification rows
   should all carry stored bodyHtml; bodyHtml NULL = stale/rogue sender).
 
