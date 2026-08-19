@@ -187,7 +187,13 @@ NEXT, in order (items marked ERAN need a human in a browser):
    fetch origin/main, if changed: reset --hard, npm ci, prisma generate,
    npm run build, **prisma migrate deploy**, restart (`journalctl -u
    gostork-deploy`). Same model as the Macs' auto-sync. A GitHub-Actions
-   push deploy can be layered later for visibility if wanted.
+   push deploy can be layered later for visibility if wanted. **Verified
+   2026-08-19**: push c892c74c -> deployed in ~2 min; push c434d6d4 ->
+   "No pending migrations to apply" -> restart -> 200. Lesson: the first
+   run hung in `prisma migrate deploy` because `prisma.config.ts` gave the
+   CLI DATABASE_URL (pgbouncer :6543) - fixed in c434d6d4 (CLI now uses
+   DIRECT_URL), and the deploy script wraps migrate in `timeout 300` so a
+   hang can never wedge the timer again (it logs a WARN instead).
    [x] Prod `.env` on the host: built from `.env.production.example` -
    [copy] keys from the MacBook dev .env (dotenv-parsed, round-trip
    verified), [fresh] SESSION_SECRET / JWT_SECRET / FIELD_ENCRYPTION_KEY /
