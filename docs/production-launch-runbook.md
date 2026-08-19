@@ -696,8 +696,11 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   GOTCHAS: esbuild strips decorator metadata (every Nest injection must
   be explicit @Inject); Trolley sandbox+live share api.trolley.com (keys
   decide); widget URL signature valid ~30s (mint on click).
-  [ ] AT LAUNCH: complete Trolley Business Profile activation ("Complete
-  Business Profile" banner, LIVE profile), create LIVE API keys + webhook
+  [~] Trolley LIVE activation: business profile SUBMITTED + APPROVED for
+  PayPal & Check payouts 2026-08-20 (Eran; countries declared: MX, CO, CY,
+  GE). [ ] ERAN: complete the "Bank Transfer Onboarding Form" (yellow
+  "Activate Bank Transfer" banner) - bank transfers are the rail we use.
+  [ ] AT LAUNCH: create LIVE API keys + webhook
   (same URL) and replace the sandbox values in the host .env; fund the
   Trolley balance (auto-topup or manual) since payouts draw from it;
   decide recipient-pays-fees in Trolley settings (Eran: fees come out of
