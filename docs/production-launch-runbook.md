@@ -655,12 +655,16 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   (a) `stripe-service.ts createConnectAccount` hardcodes account
   `country: "US"` - it must come from the provider's legal country
   (ProviderLegalIdentity.businessAddressCountry / a new country field);
-  (b) Mexico = Stripe-supported country (Express OK, RFC collected by
-  Stripe's hosted form, MXN payout); Colombia is NOT a Stripe account
-  country - needs Stripe CROSS-BORDER PAYOUTS to a recipient-only account
-  (`capabilities.transfers` only, recipient service agreement) - VERIFY
-  the current supported-recipient country list in Stripe docs before
-  promising it; (c) the invoice guardrail demands a Tax ID and the Legal
+  (b) VERIFIED against Stripe docs 2026-08-19: Stripe accounts exist in
+  46 countries - Mexico YES (normal connected account, RFC collected by
+  the hosted form, MXN payout); Colombia NO. Connect cross-border payouts
+  only span US/UK/EEA/CA/CH, so a US platform CANNOT pay a Colombian
+  connected account ("contact sales"). Stripe Global Payouts reaches
+  160+ countries but shifts compliance to us (possible Money Transmitter
+  licensing when we hold customers' funds) - lawyer question, not a
+  default. So: Colombia + other non-Stripe countries = manual wire (the
+  existing fallback) unless sales/legal opens another route; ask Stripe
+  sales before launch since LATAM surrogacy is a core market; (c) the invoice guardrail demands a Tax ID and the Legal
   tab is built around the W-9 - foreign entities have no EIN and file a
   W-8BEN-E, no 1099; ask the accountant about withholding; (d) show
   payout currency/FX to the provider. UNTIL BUILT: international
