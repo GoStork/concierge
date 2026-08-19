@@ -2366,6 +2366,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
         sessionId: true,
         providerId: true,
         parentUserId: true,
+        parentUser: { select: { firstName: true, name: true } },
       },
     });
     if (!invoice) {
@@ -2462,11 +2463,33 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
       );
     }
 
-    // In-chat system message so the parent sees the refund (and provider via
-    // the shared session). Best-effort - don't block on it.
+    // In-chat: flip the invoice card to the refund status (it was still
+    // showing "Paid / Payment complete" after the first real prod refund)
+    // and post a VIEWER-SPECIFIC system message - the parent reads "your
+    // payment", the provider reads "<parent>'s payment" (dual-audience
+    // rule). Best-effort - don't block on it.
     if (invoice.sessionId) {
+      const moneyStr = (params.amountRefundedCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+      const parentLabel = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
       try {
-        const moneyStr = (params.amountRefundedCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+        const existingCardMsg = await this.prisma.aiChatMessage.findFirst({
+          where: {
+            sessionId: invoice.sessionId,
+            uiCardType: "invoice",
+            uiCardData: { path: ["invoiceId"], equals: invoice.id },
+          },
+          select: { id: true, uiCardData: true },
+        });
+        if (existingCardMsg) {
+          await this.prisma.aiChatMessage.update({
+            where: { id: existingCardMsg.id },
+            data: { uiCardData: { ...((existingCardMsg.uiCardData as any) || {}), status: newStatus, refundedAmount: params.amountRefundedCents } },
+          });
+        }
+      } catch (e: any) {
+        this.logger.warn(`Failed to update invoice card status after refund for invoice ${invoice.id}: ${e?.message}`);
+      }
+      try {
         await this.prisma.aiChatMessage.create({
           data: {
             sessionId: invoice.sessionId,
@@ -2477,7 +2500,15 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
             senderType: "system",
             senderName: "GoStork",
             uiCardType: "text",
-            uiCardData: Prisma.DbNull,
+            uiCardData: {
+              providerContent: params.fullyRefunded
+                ? `${parentLabel}'s payment of ${moneyStr} has been fully refunded by GoStork. ${
+                    reversalDelta ? `Your share (${(reversalDelta / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}) was reversed from your payout.` : "No payout had been made to you for this invoice."
+                  }`
+                : `A partial refund of ${moneyStr} was issued to ${parentLabel} by GoStork.${
+                    reversalDelta ? ` ${(reversalDelta / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} was reversed from your payout.` : ""
+                  }`,
+            },
           },
         });
       } catch (e: any) {

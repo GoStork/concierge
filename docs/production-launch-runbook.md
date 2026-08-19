@@ -806,6 +806,15 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   Refund Completed, like No Show off the call), `Invoice.refundRequestedAt`
   stamped by the admin refund endpoint, and the Match Status badge/filter
   carry both values. Verified on prod: parent record ladder + Parents table.
+  Also found in the agency's chat after the refund: the system message
+  showed the PARENT wording ("Your payment has been fully refunded") to the
+  provider and the invoice card still said "Paid / Payment complete" -
+  fixed (providerContent + card status/refundedAmount stamped by the
+  charge.refunded handler; today's prod rows patched by hand).
+- [x] Provider-assistant Eva (Ariel) on prod (2026-08-19): agency asked
+  "What needs my attention today?" -> answered in seconds from real
+  pipeline data (no pending whispers, no upcoming calls, the Eran Amir
+  consultation thread). PASS.
 - [ ] LEFTOVER 1.0 TRAFFIC on test-app: something polls
   `GET /api/v1/surrogates/list-to-update?agencyName=familycreations` every
   ~30 s (404 on 2.0). A 1.0 scraper/cron still targets the test hostname -

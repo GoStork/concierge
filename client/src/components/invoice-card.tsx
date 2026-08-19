@@ -5,7 +5,7 @@
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Shield, Clock, CheckCircle2, Pencil, X } from "lucide-react";
+import { ExternalLink, Shield, Clock, CheckCircle2, Pencil, X, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
@@ -54,6 +54,8 @@ interface InvoiceCardData {
   providerPayoutAmount: number;
   currency: string;
   status: string;
+  /** Running refund total in cents (stamped on the card by the charge.refunded handler). */
+  refundedAmount?: number | null;
   isProtected: boolean;
   dueAt?: string | null;
   description?: string | null;
@@ -92,6 +94,7 @@ interface InvoiceCardProps {
 
 export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, onCancel, actionPending = false }: InvoiceCardProps) {
   const isPaid = data.status === "PAID" || data.status === "AUTHORIZED";
+  const isRefunded = data.status === "REFUNDED" || data.status === "PARTIALLY_REFUNDED";
 
   return (
     <div className="rounded-xl border overflow-hidden max-w-sm" style={{ background: "hsl(var(--background))" }}>
@@ -159,6 +162,18 @@ export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, 
           <div className="flex items-center gap-1.5 text-xs" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>{data.status === "AUTHORIZED" ? "Funds securely held" : "Payment complete"}</span>
+          </div>
+        )}
+        {/* Refunded state - the card used to keep saying "Payment complete"
+            after a refund because only the badge read the status. */}
+        {isRefunded && (
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: "hsl(var(--brand-warning))" }}>
+            <Undo2 className="w-3.5 h-3.5" />
+            <span>
+              {data.status === "REFUNDED"
+                ? "Payment refunded"
+                : `Partially refunded${data.refundedAmount ? ` (${formatCents(data.refundedAmount, data.currency)})` : ""}`}
+            </span>
           </div>
         )}
       </div>
