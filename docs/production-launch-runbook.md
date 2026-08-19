@@ -649,7 +649,24 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   bank; confirm the connected-account webhooks (account.updated,
   payout.*) reach gostork-2-connect; then refund that invoice and verify
   the transfer reversal (the clawback path never ran in testing). Only
-  after this is green do real invoices start. Live charge + refund: done
+  after this is green do real invoices start.
+  [ ] **INTERNATIONAL PROVIDERS (Mexico, Colombia, ...) - before the first
+  non-US payout** (raised 2026-08-19): the Connect path is US-shaped.
+  (a) `stripe-service.ts createConnectAccount` hardcodes account
+  `country: "US"` - it must come from the provider's legal country
+  (ProviderLegalIdentity.businessAddressCountry / a new country field);
+  (b) Mexico = Stripe-supported country (Express OK, RFC collected by
+  Stripe's hosted form, MXN payout); Colombia is NOT a Stripe account
+  country - needs Stripe CROSS-BORDER PAYOUTS to a recipient-only account
+  (`capabilities.transfers` only, recipient service agreement) - VERIFY
+  the current supported-recipient country list in Stripe docs before
+  promising it; (c) the invoice guardrail demands a Tax ID and the Legal
+  tab is built around the W-9 - foreign entities have no EIN and file a
+  W-8BEN-E, no 1099; ask the accountant about withholding; (d) show
+  payout currency/FX to the provider. UNTIL BUILT: international
+  providers still work on GoStork - the transfer simply has no Connect
+  account, `notifyAdminTransferFailed` fires and the payout is a manual
+  wire (how 1.0 paid them). Live charge + refund: done
   twice (section 12). Note: the two $5 refunds left the live balance
   slightly negative ("Add funds to cover your negative balance" banner) -
   Stripe recoups from the next payment; no action needed.
