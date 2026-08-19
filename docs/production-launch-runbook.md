@@ -729,9 +729,18 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   provider Confirm -> CONFIRMED, Google Calendar event created
   (googleEventId set), confirmation email+SMS to both sides, 24h/1h
   reminders queued pending. The in-24h "Action needed soon" urgent nudge
-  fired immediately (meeting was <24h away - by design). [ ] still to
-  check visually: email design/logo in the inbox; reschedule + cancel path
-  (cancel the test meeting from the app to exercise it).
+  fired immediately (meeting was <24h away - by design). Reschedule +
+  cancel (2026-08-19, admin calendar): Reschedule -> old booking
+  RESCHEDULED, new PENDING booking with its own Google event, reschedule
+  email+SMS to the parent + email to the host; host Confirm -> CONFIRMED,
+  confirmation email+SMS both sides, reminders queued; Cancel Booking ->
+  CANCELLED, cancellation email+SMS to parent + email to host, the queued
+  reminders stay "pending" but the sender skips CANCELLED/RESCHEDULED
+  bookings (notification.service ~L2008). PASS. Observed: after a HOST
+  reschedule the new PENDING slot shows in the host's own Pending list
+  with Confirm/Decline - the host proposed it, so the parent should be the
+  one confirming; review that flow. [ ] still to check visually: email
+  design/logo in the inbox.
 - [~] Provider side (2026-08-19): test org "Beta Test Surrogacy Agency"
   (3650c7cb-457c-4431-9565-0c5e5857758e) + PROVIDER_ADMIN
   eran.amir+agency1@gostork.com created via admin UI; provider login OK,
