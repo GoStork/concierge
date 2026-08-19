@@ -1480,27 +1480,40 @@ async function getSiteSettingsOrThrow() {
  * Upload the global W-9 file to PandaDoc as a reusable template.
  * Stores the resulting template UUID on SiteSettings.w9PandaDocTemplateId.
  */
-export async function syncW9TemplateToPandaDoc(): Promise<string> {
-  const settings = await getSiteSettingsOrThrow();
-  if (!settings.w9TemplateUrl) throw new Error("No W-9 file uploaded yet");
+/**
+ * The two GoStork tax-form templates live side by side on SiteSettings:
+ * `w9*` (US entities) and `w8bene*` (foreign entities). These helpers map a
+ * form type to its column set so the sync / editor / roles code is written
+ * once.
+ */
+export type TaxFormType = "W9" | "W8BENE";
+export const TAX_FORM_SETTINGS_FIELDS: Record<TaxFormType, { url: string; originalName: string; templateId: string; roles: string; updatedAt: string; label: string; pandaName: string }> = {
+  W9: { url: "w9TemplateUrl", originalName: "w9TemplateOriginalName", templateId: "w9PandaDocTemplateId", roles: "w9PandaDocRoles", updatedAt: "w9TemplateUpdatedAt", label: "W-9", pandaName: "GoStork W-9 Template" },
+  W8BENE: { url: "w8beneTemplateUrl", originalName: "w8beneTemplateOriginalName", templateId: "w8benePandaDocTemplateId", roles: "w8benePandaDocRoles", updatedAt: "w8beneTemplateUpdatedAt", label: "W-8BEN-E", pandaName: "GoStork W-8BEN-E Template" },
+};
+
+export async function syncW9TemplateToPandaDoc(formType: TaxFormType = "W9"): Promise<string> {
+  const settings: any = await getSiteSettingsOrThrow();
+  const F = TAX_FORM_SETTINGS_FIELDS[formType];
+  if (!settings[F.url]) throw new Error(`No ${F.label} file uploaded yet`);
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
   // Reuse an existing template if still present in PandaDoc - preserves field assignments.
-  if (settings.w9PandaDocTemplateId) {
-    const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${settings.w9PandaDocTemplateId}`, {
+  if (settings[F.templateId]) {
+    const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${settings[F.templateId]}`, {
       headers: { "Authorization": `API-Key ${apiKey}` },
     });
     if (checkRes.ok) {
-      console.log(`[W-9] Reusing existing template: ${settings.w9PandaDocTemplateId}`);
-      return settings.w9PandaDocTemplateId;
+      console.log(`[${F.label}] Reusing existing template: ${settings[F.templateId]}`);
+      return settings[F.templateId];
     }
-    console.log(`[W-9] Template ${settings.w9PandaDocTemplateId} not found in PandaDoc, creating new one`);
-    await prisma.siteSettings.update({ where: { id: settings.id }, data: { w9PandaDocTemplateId: null } });
+    console.log(`[${F.label}] Template ${settings[F.templateId]} not found in PandaDoc, creating new one`);
+    await prisma.siteSettings.update({ where: { id: settings.id }, data: { [F.templateId]: null } as any });
   }
 
-  const fileUrl = settings.w9TemplateUrl;
+  const fileUrl: string = settings[F.url];
   let buffer: Buffer;
   let contentType: string;
   const filename = decodeURIComponent(fileUrl.split("/").pop()?.split("?")[0] || "w9-template");
@@ -1530,7 +1543,7 @@ export async function syncW9TemplateToPandaDoc(): Promise<string> {
   }
 
   const formData = new FormData();
-  formData.append("data", JSON.stringify({ name: "GoStork W-9 Template" }));
+  formData.append("data", JSON.stringify({ name: F.pandaName }));
   formData.append("file", new Blob([buffer as unknown as ArrayBuffer], { type: contentType }), filename);
 
   const createRes = await fetch("https://api.pandadoc.com/public/v1/templates", {
@@ -1540,13 +1553,13 @@ export async function syncW9TemplateToPandaDoc(): Promise<string> {
   });
   if (!createRes.ok) {
     const errBody = await createRes.text();
-    throw new Error(`PandaDoc W-9 template upload failed: ${createRes.status} - ${errBody}`);
+    throw new Error(`PandaDoc ${F.label} template upload failed: ${createRes.status} - ${errBody}`);
   }
 
   const created = await createRes.json();
   const templateId: string = created.uuid || created.id;
   if (!templateId) throw new Error("PandaDoc did not return a template ID");
-  console.log(`[W-9] Template created: ${templateId}`);
+  console.log(`[${F.label}] Template created: ${templateId}`);
 
   for (let i = 0; i < 15; i++) {
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1561,27 +1574,28 @@ export async function syncW9TemplateToPandaDoc(): Promise<string> {
 
   await prisma.siteSettings.update({
     where: { id: settings.id },
-    data: { w9PandaDocTemplateId: templateId, w9TemplateUpdatedAt: new Date() } as any,
+    data: { [F.templateId]: templateId, [F.updatedAt]: new Date() } as any,
   });
   return templateId;
 }
 
 /** Create an embedded editing session for the global W-9 template. */
-export async function createW9TemplateEditingSession(userEmail: string): Promise<string> {
-  const settings = await getSiteSettingsOrThrow();
-  if (!settings.w9PandaDocTemplateId) throw new Error("W-9 template not synced to PandaDoc yet");
+export async function createW9TemplateEditingSession(userEmail: string, formType: TaxFormType = "W9"): Promise<string> {
+  const settings: any = await getSiteSettingsOrThrow();
+  const F = TAX_FORM_SETTINGS_FIELDS[formType];
+  if (!settings[F.templateId]) throw new Error(`${F.label} template not synced to PandaDoc yet`);
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${settings.w9PandaDocTemplateId}/editing-sessions`, {
+  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${settings[F.templateId]}/editing-sessions`, {
     method: "POST",
     headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ email: userEmail }),
   });
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`PandaDoc W-9 editing session failed: ${res.status} - ${errBody}`);
+    throw new Error(`PandaDoc ${F.label} editing session failed: ${res.status} - ${errBody}`);
   }
   const data = await res.json();
   const eToken: string = data.token || data.key || data.id;
@@ -1590,20 +1604,21 @@ export async function createW9TemplateEditingSession(userEmail: string): Promise
 }
 
 /** Refresh cached role names from the global W-9 template. */
-export async function refreshW9TemplateRoles(): Promise<{ roles: string[] }> {
-  const settings = await getSiteSettingsOrThrow();
-  if (!settings.w9PandaDocTemplateId) return { roles: [] };
+export async function refreshW9TemplateRoles(formType: TaxFormType = "W9"): Promise<{ roles: string[] }> {
+  const settings: any = await getSiteSettingsOrThrow();
+  const F = TAX_FORM_SETTINGS_FIELDS[formType];
+  if (!settings[F.templateId]) return { roles: [] };
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  const { roles, fieldCountByRoleId } = await fetchTemplateRolesAndFields(apiKey, settings.w9PandaDocTemplateId);
+  const { roles, fieldCountByRoleId } = await fetchTemplateRolesAndFields(apiKey, settings[F.templateId]);
   const rolesWithFields = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) > 0);
-  const w9PandaDocRoles = rolesWithFields.length > 0 ? JSON.stringify(rolesWithFields.map(r => r.name)) : null;
+  const rolesJson = rolesWithFields.length > 0 ? JSON.stringify(rolesWithFields.map(r => r.name)) : null;
 
   await prisma.siteSettings.update({
     where: { id: settings.id },
-    data: { w9PandaDocRoles, w9TemplateUpdatedAt: new Date() } as any,
+    data: { [F.roles]: rolesJson, [F.updatedAt]: new Date() } as any,
   });
   return { roles: rolesWithFields.map(r => r.name) };
 }
@@ -1639,12 +1654,37 @@ async function resolveW9Signer(providerId: string): Promise<{ email: string; use
  * row plus the resolved signer. Used by both the admin "send request" path and
  * the provider self-fill path.
  */
+/**
+ * Which IRS tax form a provider signs, from the Legal tab's country: W-9 for
+ * US entities, W-8BEN-E for foreign ones. The SiteSettings carry one PandaDoc
+ * template set per form; this returns the set to use plus the label.
+ */
+export async function resolveTaxFormTemplate(providerId: string, settings?: any): Promise<{
+  formType: "W9" | "W8BENE";
+  label: string;
+  templateUrl: string | null;
+  templateId: string | null;
+  roles: string | null;
+  templateUpdatedAt: Date | null;
+}> {
+  const s = settings || (await getSiteSettingsOrThrow());
+  const legal = await prisma.providerLegalIdentity.findUnique({ where: { providerId }, select: { businessAddressCountry: true } });
+  const formType = (legal?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE";
+  if (formType === "W9") {
+    return { formType, label: "W-9", templateUrl: s.w9TemplateUrl || null, templateId: s.w9PandaDocTemplateId || null, roles: s.w9PandaDocRoles || null, templateUpdatedAt: s.w9TemplateUpdatedAt || null };
+  }
+  return { formType, label: "W-8BEN-E", templateUrl: s.w8beneTemplateUrl || null, templateId: s.w8benePandaDocTemplateId || null, roles: s.w8benePandaDocRoles || null, templateUpdatedAt: s.w8beneTemplateUpdatedAt || null };
+}
+
 export async function ensureW9Document(params: { providerId: string; requestedByUserId?: string | null }): Promise<{ w9: any; signer: { email: string; userId: string | null; name: string }; created: boolean }> {
   const { providerId, requestedByUserId } = params;
 
   const settings = await getSiteSettingsOrThrow();
-  if (!settings.w9TemplateUrl) throw new Error("No W-9 template has been uploaded by GoStork yet");
-  if (!settings.w9PandaDocTemplateId) throw new Error("The W-9 template has not been configured. Open the editor, assign the signature field, and click Save first.");
+  // W-9 or W-8BEN-E, by the provider's legal country. Everything below is
+  // the same PandaDoc plumbing; only the template set and the label differ.
+  const tpl = await resolveTaxFormTemplate(providerId, settings);
+  if (!tpl.templateUrl) throw new Error(`No ${tpl.label} template has been uploaded by GoStork yet`);
+  if (!tpl.templateId) throw new Error(`The ${tpl.label} template has not been configured. Open the editor, assign the signature field, and click Save first.`);
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
@@ -1658,7 +1698,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
   // never auto-regenerated (the signed copy stands as a record); admin or
   // provider must explicitly resubmit to invalidate one.
   const existing = await (prisma as any).providerW9.findUnique({ where: { providerId } });
-  const currentTemplateUpdatedAt: Date | null = (settings as any).w9TemplateUpdatedAt || null;
+  const currentTemplateUpdatedAt: Date | null = tpl.templateUpdatedAt;
   const existingTemplateUpdatedAt: Date | null = existing?.templateUpdatedAt || null;
   const templateIsStale =
     !!existing &&
@@ -1666,20 +1706,23 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
     (!existingTemplateUpdatedAt ||
       new Date(currentTemplateUpdatedAt).getTime() > new Date(existingTemplateUpdatedAt).getTime());
 
-  if (existing && existing.pandaDocDocumentId && existing.status === "COMPLETED") {
+  // A row signed for the OTHER form (provider moved country, or legacy
+  // row before form types existed) does not satisfy this one - regenerate.
+  const formMismatch = !!existing && (existing.formType || "W9") !== tpl.formType;
+  if (existing && existing.pandaDocDocumentId && existing.status === "COMPLETED" && !formMismatch) {
     // Signed docs are immutable records - never regenerate automatically.
     return { w9: existing, signer: { email: signer.email, userId: signer.userId, name: `${signer.firstName} ${signer.lastName}`.trim() }, created: false };
   }
-  if (existing && existing.pandaDocDocumentId && existing.status === "SENT" && !templateIsStale) {
+  if (existing && existing.pandaDocDocumentId && existing.status === "SENT" && !templateIsStale && !formMismatch) {
     return { w9: existing, signer: { email: signer.email, userId: signer.userId, name: `${signer.firstName} ${signer.lastName}`.trim() }, created: false };
   }
   if (templateIsStale) {
     console.log(`[W-9] Template is newer than provider ${providerId} doc - regenerating from current template`);
   }
 
-  const { roles } = await fetchTemplateRolesAndFields(apiKey, settings.w9PandaDocTemplateId);
+  const { roles } = await fetchTemplateRolesAndFields(apiKey, tpl.templateId);
   if (roles.length === 0) {
-    throw new Error("No roles found on the W-9 template. Open the editor, assign the signature field to a role, and click Save.");
+    throw new Error(`No roles found on the ${tpl.label} template. Open the editor, assign the signature field to a role, and click Save.`);
   }
   const signerRole = roles[0];
 
@@ -1687,8 +1730,8 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
     method: "POST",
     headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      name: `W-9 - ${(await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } }))?.name || "Provider"}`,
-      template_uuid: settings.w9PandaDocTemplateId,
+      name: `${tpl.label} - ${(await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } }))?.name || "Provider"}`,
+      template_uuid: tpl.templateId,
       recipients: [{
         email: signer.email,
         first_name: signer.firstName,
@@ -1697,7 +1740,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
         signing_order: signerRole.signingOrder,
       }],
       metadata: { gostork_w9_provider_id: providerId },
-      tags: ["gostork", "w9"],
+      tags: ["gostork", tpl.formType === "W9" ? "w9" : "w8bene"],
     }),
   });
   if (!createResponse.ok) {
@@ -1710,13 +1753,13 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
   console.log(`[W-9] Document created for provider ${providerId}: ${pandaDocDocumentId}`);
 
   const isReady = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.draft");
-  if (!isReady) throw new Error("W-9 document did not reach draft state");
+  if (!isReady) throw new Error(`${tpl.label} document did not reach draft state`);
 
   const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
     method: "POST",
     headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      message: "Please complete and sign your W-9 form for GoStork.",
+      message: `Please complete and sign your ${tpl.label} form for GoStork.`,
       silent: true,
     }),
   });
@@ -1733,6 +1776,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
     where: { providerId },
     create: {
       providerId,
+      formType: tpl.formType,
       pandaDocDocumentId,
       pandaDocViewUrl,
       status: "SENT",
@@ -1743,6 +1787,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
       templateUpdatedAt: currentTemplateUpdatedAt,
     },
     update: {
+      formType: tpl.formType,
       pandaDocDocumentId,
       pandaDocViewUrl,
       status: "SENT",

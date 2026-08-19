@@ -1,6 +1,7 @@
 import { asJson } from "../../../../shared/prisma-json";
 import { serviceTypeOfSession } from "../../../service-lines";
 import { platformPrimaryColor } from "../../../brand-color";
+import { taxFormFor, isUsEntity, TAX_FORM_LABELS } from "../../../../shared/payout-countries";
 import { Prisma } from "@prisma/client";
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
@@ -286,8 +287,8 @@ export class BillingService {
       include: {
         referralFeeConfigs: true,
         services: { include: { providerType: true } },
-        legalIdentity: { select: { legalName: true, taxId: true } },
-        w9: { select: { status: true } },
+        legalIdentity: { select: { legalName: true, taxId: true, businessAddressCountry: true } },
+        w9: { select: { status: true, formType: true } },
       },
     });
     if (!provider) throw new NotFoundException("Provider not found");
@@ -308,13 +309,20 @@ export class BillingService {
     // automatic) can be issued: Legal Name, Tax ID, and a signed W-9 are
     // all required. (Legal Name + Tax ID come from ProviderLegalIdentity;
     // W-9 status still lives on ProviderW9.)
+    // Country-aware: a non-US entity has a local tax ID (RFC, NIT, VAT...)
+    // and signs a W-8BEN-E instead of a W-9 - same ProviderW9 row, formType
+    // tells which form it was.
+    const legalCountry = provider.legalIdentity?.businessAddressCountry || "US";
+    const requiredForm = taxFormFor(legalCountry);
     const missingIdentity: string[] = [];
     if (!provider.legalIdentity?.legalName?.trim()) missingIdentity.push("Legal Name");
-    if (!provider.legalIdentity?.taxId?.trim()) missingIdentity.push("Tax ID");
-    if (provider.w9?.status !== "COMPLETED") missingIdentity.push("W-9");
+    if (!provider.legalIdentity?.taxId?.trim()) missingIdentity.push(isUsEntity(legalCountry) ? "Tax ID" : "Tax ID (local tax number)");
+    if (provider.w9?.status !== "COMPLETED" || ((provider.w9 as any)?.formType || "W9") !== requiredForm) {
+      missingIdentity.push(`a signed ${TAX_FORM_LABELS[requiredForm]}`);
+    }
     if (missingIdentity.length > 0) {
       throw new BadRequestException(
-        `Legal Identity is incomplete - please add ${missingIdentity.join(", ")} in the Legal Identity tab before sending an invoice.`,
+        `Legal Identity is incomplete - please add ${missingIdentity.join(", ")} in the Legal tab before sending an invoice.`,
       );
     }
 

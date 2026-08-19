@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { normalizeCountry, payoutRailFor, currencyFor } from "../../../../shared/payout-countries";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { ConnectService, type CustomPayoutFormData } from "./connect.service";
 import { prisma } from "../../../db";
@@ -51,7 +52,7 @@ export class ConnectController {
     const user = req.user as any;
     const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const row = await this.connectService.getOrCreatePayoutAccount(user.providerId);
-    return this.shapeForUi(row);
+    return this.shapeForUi(row, await this.railInfo(user.providerId));
   }
 
   @Get("api/admin/providers/:providerId/payouts")
@@ -60,7 +61,27 @@ export class ConnectController {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const row = await this.connectService.getOrCreatePayoutAccount(providerId);
-    return this.shapeForUi(row);
+    return this.shapeForUi(row, await this.railInfo(providerId));
+  }
+
+  /**
+   * Which payout rail the provider's legal country allows, plus the
+   * currency they would be paid in - the Payouts page shows the matching
+   * options and the "you receive approx." estimate from this.
+   */
+  private async railInfo(providerId: string) {
+    const legal = await prisma.providerLegalIdentity.findUnique({
+      where: { providerId },
+      select: { businessAddressCountry: true },
+    });
+    const country = normalizeCountry(legal?.businessAddressCountry);
+    return {
+      legalCountry: country,
+      payoutRail: payoutRailFor(country),
+      payoutCurrency: currencyFor(country),
+      // The in-app bank form (Custom account) is US-only.
+      customFormAvailable: country === "US",
+    };
   }
 
   /**
@@ -213,6 +234,7 @@ export class ConnectController {
       taxId: legalIdentity?.taxId || null,
       businessType: legalIdentity?.businessType === "individual" ? "individual" : "company",
       phone: provider.phone || null,
+      country: legalIdentity?.businessAddressCountry || "US",
       address: legalIdentity?.businessAddressLine1 ? {
         line1: legalIdentity.businessAddressLine1,
         line2: legalIdentity.businessAddressLine2 || undefined,
@@ -510,8 +532,9 @@ export class ConnectController {
    * implementation details (createdAt, internal ids) and provides
    * derived flags the frontend wants.
    */
-  private shapeForUi(row: any) {
+  private shapeForUi(row: any, rail?: { legalCountry: string; payoutRail: string; payoutCurrency: string; customFormAvailable: boolean }) {
     return {
+      ...(rail || {}),
       payoutMethod: row.payoutMethod ?? null,
       stripeConnectAccountId: row.stripeConnectAccountId ?? null,
       payoutsEnabled: !!row.payoutsEnabled,

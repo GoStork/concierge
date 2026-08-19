@@ -18,6 +18,8 @@ import { useConfirm } from "@/components/ui/confirm-bar";
 import { W9TemplateConfig } from "./w9-template-config";
 
 interface W9Status {
+  formType?: "W9" | "W8BENE";
+  formLabel?: string;
   templateConfigured: boolean;
   templateNeedsFields?: boolean;
   templateName: string | null;
@@ -31,9 +33,13 @@ interface ProviderW9SectionProps {
   providerId: string;
   /** "admin" - admin editing a provider. "provider" - provider editing own row. */
   mode: "admin" | "provider";
+  /** Which form the provider owes per the Legal tab's country (the server
+   *  answers the same in w9.formType; this lets the label update the moment
+   *  the country dropdown changes, before save). */
+  formType?: "W9" | "W8BENE";
 }
 
-export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) {
+export function ProviderW9Section({ providerId, mode, formType }: ProviderW9SectionProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const isProviderMode = mode === "provider";
@@ -49,6 +55,8 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
       return res.json();
     },
   });
+  const effectiveForm = formType || w9?.formType || "W9";
+  const FORM = effectiveForm === "W9" ? "W-9" : "W-8BEN-E";
 
   // Auto-open the inline template-setup panel when the admin lands on a
   // provider whose template is uploaded but missing the signature field.
@@ -96,18 +104,18 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
 
   return (
     <div className="space-y-1.5">
-      <Label>W-9 <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
+      <Label>{FORM} <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
       {/* Stacks on mobile - one horizontal row starves the title into
           letter-wrap once the completed-state action cluster appears. */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-[var(--radius)] border p-3 bg-secondary/40">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <FileText className="w-4 h-4 text-primary shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">W-9 Form</p>
+            <p className="text-sm font-medium">{FORM} Form</p>
           <p className="t-helper">
             {w9Loading ? "Loading..."
               : !w9?.templateConfigured && w9?.templateNeedsFields ? (isProviderMode ? "Not available yet" : "Template uploaded - assign signature field to finish setup")
-              : !w9?.templateConfigured ? (isProviderMode ? "Not available yet" : "No W-9 template configured")
+              : !w9?.templateConfigured ? (isProviderMode ? "Not available yet" : `No ${FORM} template configured`)
               : w9.status === "COMPLETED" ? `Completed${w9.completedAt ? ` ${new Date(w9.completedAt).toLocaleDateString()}` : ""}`
               : w9.status === "SENT" ? (isProviderMode ? "Awaiting your signature" : "Sent - awaiting signature")
               : w9.status === "ERROR" ? "Something went wrong - try again"
@@ -140,10 +148,10 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
                 className="bg-card"
                 disabled={w9ResubmitMutation.isPending}
                 onClick={() => w9ResubmitMutation.mutate()}
-                title="Submit a new W-9"
+                title={`Submit a new ${FORM}`}
               >
                 {w9ResubmitMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-                Submit new W-9
+                Submit new {FORM}
               </Button>
             )}
             {!isProviderMode && (
@@ -154,17 +162,17 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
                 disabled={w9SendMutation.isPending}
                 onClick={async () => {
                   const ok = await confirm({
-                    title: "Request a new W-9 from this provider?",
-                    message: "The current signed W-9 will no longer be the active version. It stays in PandaDoc's archive for record-keeping.",
-                    confirmLabel: "Request new W-9",
+                    title: `Request a new ${FORM} from this provider?`,
+                    message: `The current signed ${FORM} will no longer be the active version. It stays in PandaDoc's archive for record-keeping.`,
+                    confirmLabel: `Request new ${FORM}`,
                     tone: "warning",
                   });
                   if (ok) w9SendMutation.mutate(true);
                 }}
-                title="Ask the provider to fill out a new W-9"
+                title={`Ask the provider to fill out a new ${FORM}`}
               >
                 {w9SendMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                Request new W-9
+                Request new {FORM}
               </Button>
             )}
           </div>
@@ -184,7 +192,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
               onClick={() => w9SendMutation.mutate(false)}
             >
               {w9SendMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-              {w9.status === "SENT" ? "Resend" : "Send W-9 request"}
+              {w9.status === "SENT" ? "Resend" : `Send ${FORM} request`}
             </Button>
           </div>
         )}
@@ -208,7 +216,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
             size="sm"
             onClick={() => setShowW9Setup(s => !s)}
             className="shrink-0 self-start sm:self-auto text-muted-foreground"
-            title={showW9Setup ? "Hide template setup" : "Edit W-9 template"}
+            title={showW9Setup ? "Hide template setup" : `Edit ${FORM} template`}
           >
             {showW9Setup ? <ChevronUp className="w-4 h-4 mr-1.5" /> : <ChevronDown className="w-4 h-4 mr-1.5" />}
             {showW9Setup ? "Hide template" : "Edit template"}
@@ -223,7 +231,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
             className="shrink-0 self-start sm:self-auto"
           >
             {w9FillMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-            Fill out W-9
+            Fill out {FORM}
           </Button>
         )}
       </div>
@@ -238,13 +246,13 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
       )}
       <p className="t-helper">
         {isProviderMode
-          ? "Complete and sign your W-9 - GoStork needs it before any payouts can be processed. Fields above auto-fill when you sign."
-          : "Send the W-9 to the agency to fill and sign, or download it once completed."}
+          ? (effectiveForm === "W9" ? "Complete and sign your W-9 - GoStork needs it before any payouts can be processed. Fields above auto-fill when you sign." : "Complete and sign your W-8BEN-E - GoStork needs it before any payouts can be processed. It certifies your foreign status; no US tax ID is required.")
+          : `Send the ${FORM} to the agency to fill and sign, or download it once completed.`}
       </p>
 
       {!isProviderMode && showW9Setup && (
         <div className="pt-2">
-          <W9TemplateConfig onChange={() => queryClient.invalidateQueries({ queryKey: [w9GetUrl] })} />
+          <W9TemplateConfig formType={effectiveForm} onChange={() => queryClient.invalidateQueries({ queryKey: [w9GetUrl] })} />
         </div>
       )}
 

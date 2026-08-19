@@ -6,6 +6,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { prisma as prismaClient } from "../../../db";
+import { normalizeCountry, payoutRailFor } from "../../../../shared/payout-countries";
 import {
   createConnectAccount,
   createConnectAccountLink,
@@ -114,6 +115,9 @@ export class ConnectService {
     taxId?: string | null;
     businessType?: "company" | "individual";
     phone?: string | null;
+    /** ISO-3166 alpha-2 of the legal entity (Legal tab). Decides the Stripe
+     *  account country - US when unset. */
+    country?: string | null;
     address?: {
       line1: string;
       line2?: string;
@@ -125,6 +129,16 @@ export class ConnectService {
     returnUrl: string;
     refreshUrl: string;
   }): Promise<{ url: string }> {
+    const country = normalizeCountry(params.country);
+    // A US platform can only transfer to connected accounts in a fixed set
+    // of countries (shared/payout-countries.ts). Anyone else is paid through
+    // the international rail - creating a Stripe account for them would only
+    // strand it.
+    if (payoutRailFor(country) !== "STRIPE") {
+      throw new BadRequestException(
+        `Stripe payouts are not available for businesses in ${country}. GoStork pays providers in this country through its international payout partner - use that option on the Payouts page.`,
+      );
+    }
     let account = await this.getOrCreatePayoutAccount(params.providerId);
 
     // If the provider had previously started a Custom-method setup and is
@@ -143,10 +157,14 @@ export class ConnectService {
       const { accountId } = await createConnectAccount({
         type: "EXPRESS",
         email: params.providerEmail,
+        country,
         businessName: params.providerName,
         legalName: params.legalName || undefined,
         businessUrl: params.businessUrl || undefined,
-        taxId: params.taxId || undefined,
+        // Only a US EIN is pre-filled: Stripe validates tax_id per country
+        // and a foreign identifier in the wrong format would reject the
+        // whole account creation. The hosted form collects the local one.
+        taxId: country === "US" ? params.taxId || undefined : undefined,
         businessType: params.businessType,
         phone: params.phone || undefined,
         address: params.address || undefined,
@@ -203,6 +221,13 @@ export class ConnectService {
     const legalIdentity = await this.prisma.providerLegalIdentity.findUnique({
       where: { providerId: params.providerId },
     });
+    // The in-app bank form is the US path (routing number, SSN-last-4, USD):
+    // non-US entities use Stripe-hosted onboarding or the international rail.
+    if (normalizeCountry(legalIdentity?.businessAddressCountry) !== "US") {
+      throw new BadRequestException(
+        "The in-app bank form is for US businesses only. Non-US providers connect through Stripe-hosted onboarding (where available) or GoStork's international payout partner.",
+      );
+    }
     const missingLegal: string[] = [];
     if (!legalIdentity?.legalName?.trim()) missingLegal.push("legal name");
     if (!legalIdentity?.businessName?.trim()) missingLegal.push("legal business name");

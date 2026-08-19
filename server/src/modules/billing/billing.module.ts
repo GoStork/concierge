@@ -10,6 +10,7 @@ import { LegalIdentityService } from "./legal-identity.service";
 import { LegalIdentityController } from "./legal-identity.controller";
 import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
 import { CostSheetAutoDraftController } from "./cost-sheet-auto-draft.controller";
+import { FxController } from "./fx.controller";
 import { NotificationModule } from "../notifications/notification.module";
 import { SponsorshipModule } from "../sponsorship/sponsorship.module";
 
@@ -24,6 +25,7 @@ import { SponsorshipModule } from "../sponsorship/sponsorship.module";
     ConnectController,
     LegalIdentityController,
     CostSheetAutoDraftController,
+    FxController,
   ],
   exports: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService],
 })

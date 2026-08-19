@@ -6232,7 +6232,10 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
   // tax classification, and business address auto-fill (only into empty
   // fields - manual edits win). Best-effort: a failure here doesn't
   // affect the W-9 completion itself.
-  try {
+  // W-8BEN-E layouts differ and carry no EIN/SSN - the W-9 extractor's
+  // field map does not apply, so foreign forms are stored as signed
+  // records only (the provider typed their details into the Legal tab).
+  if ((w9.formType || "W9") === "W9") try {
     const { getNestApp } = await import("./nest-app-ref");
     const nestApp = getNestApp();
     if (nestApp) {
@@ -6272,7 +6275,7 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
         data: {
           userId: admin.id,
           eventType: "W9_COMPLETED",
-          payload: { providerId: w9.providerId, message: `${w9.provider?.name || "A provider"} has completed their W-9` },
+          payload: { providerId: w9.providerId, message: `${w9.provider?.name || "A provider"} has completed their ${(w9.formType || "W9") === "W9" ? "W-9" : "W-8BEN-E"}` },
         },
       }).catch(() => {});
     }

@@ -19,6 +19,8 @@ import { W9TemplateConfig } from "./w9-template-config";
 import { AdminW9Table } from "./admin-w9-table";
 import { GoStorkAgreementSection } from "./gostork-agreement-section";
 import { useAuth } from "@/hooks/use-auth";
+import { ALL_COUNTRIES, POPULAR_COUNTRIES } from "@/lib/phone-countries";
+import { isUsEntity, taxIdLabelFor, taxFormFor, TAX_FORM_LABELS, payoutRailFor } from "@shared/payout-countries";
 
 interface LegalIdentityState {
   id: string;
@@ -126,7 +128,11 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
   const [businessUrl, setBusinessUrl] = useState("");
   const [taxClassification, setTaxClassification] = useState("");
   const [taxId, setTaxId] = useState("");
-  const [taxIdType, setTaxIdType] = useState<"ssn" | "ein">("ein");
+  const [taxIdType, setTaxIdType] = useState<"ssn" | "ein" | "foreign">("ein");
+  // Country of the legal entity. Drives everything below: which IRS form
+  // (W-9 vs W-8BEN-E), how the tax ID is labelled/validated, the address
+  // shape, and which payout rail the Payouts page offers.
+  const [country, setCountry] = useState("US");
   const [addrLine1, setAddrLine1] = useState("");
   const [addrLine2, setAddrLine2] = useState("");
   const [addrCity, setAddrCity] = useState("");
@@ -140,7 +146,9 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     setBusinessUrl(state.businessUrl || "");
     setTaxClassification(state.taxClassification || "");
     setTaxId(state.taxId || "");
-    setTaxIdType((state.taxIdType as "ssn" | "ein") || "ein");
+    const c = (state.businessAddressCountry || "US").toUpperCase();
+    setCountry(c);
+    setTaxIdType((state.taxIdType as "ssn" | "ein" | "foreign") || (c === "US" ? "ein" : "foreign"));
     setAddrLine1(state.businessAddressLine1 || "");
     setAddrLine2(state.businessAddressLine2 || "");
     setAddrCity(state.businessAddressCity || "");
@@ -148,6 +156,8 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     setAddrPostal(state.businessAddressPostalCode || "");
   }, [state?.id, state?.lastW9SyncAt, state?.updatedAt]);
 
+  const isUs = isUsEntity(country);
+  const taxForm = TAX_FORM_LABELS[taxFormFor(country)];
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!legalName.trim()) throw new Error("Legal name is required.");
@@ -163,12 +173,13 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           businessUrl: businessUrl.trim() || null,
           taxClassification: taxClassification || null,
           taxId: taxId.trim() || null,
-          taxIdType,
+          taxIdType: isUs ? taxIdType : "foreign",
           businessAddressLine1: addrLine1.trim() || null,
           businessAddressLine2: addrLine2.trim() || null,
           businessAddressCity: addrCity.trim() || null,
-          businessAddressState: addrState.trim().toUpperCase() || null,
+          businessAddressState: (isUs ? addrState.trim().toUpperCase() : addrState.trim()) || null,
           businessAddressPostalCode: addrPostal.trim() || null,
+          businessAddressCountry: country,
         }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to save");
@@ -232,9 +243,9 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     return (
       <div className="space-y-6">
         <header>
-          <h2 className="text-2xl font-heading">W-9</h2>
+          <h2 className="text-2xl font-heading">Tax forms (W-9 / W-8BEN-E)</h2>
           <p className="t-helper mt-1">
-            GoStork-wide W-9 template configuration and per-provider tracking. Per-provider
+            GoStork-wide W-9 and W-8BEN-E template configuration and per-provider tracking. Per-provider
             legal details are edited on each provider's admin page
             (<code className="text-xs bg-muted px-1 rounded">/admin/providers/:id</code> → Legal tab).
           </p>
@@ -250,6 +261,17 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
             </p>
           </div>
           <W9TemplateConfig />
+        </section>
+        <section className="space-y-3 rounded-xl border bg-card p-5">
+          <div>
+            <h3 className="font-semibold">W-8BEN-E PandaDoc template (non-US providers)</h3>
+            <p className="t-helper mt-0.5">
+              Foreign entities (Mexico, Colombia, Ukraine, Cyprus...) cannot sign a W-9 - US tax law
+              has them certify foreign status on a W-8BEN-E instead. Upload that form here; a provider
+              whose Legal tab country is not the US is sent this template automatically.
+            </p>
+          </div>
+          <W9TemplateConfig formType="W8BENE" />
         </section>
         <AdminW9Table />
       </div>
@@ -274,7 +296,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
             )}
           </p>
         </div>
-        <Button
+        {isUs && <Button
           variant="outline"
           size="sm"
           className="bg-card"
@@ -286,7 +308,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
             ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
             : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
           Sync from W-9
-        </Button>
+        </Button>}
       </header>
       {syncMutation.isSuccess && (
         <p className="text-xs" style={{ color: "hsl(var(--brand-success))" }}>
@@ -307,13 +329,14 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       {effectiveProviderId && (
         <section className="space-y-3 rounded-xl border bg-card p-5">
           <div>
-            <h3 className="font-semibold">W-9 Form</h3>
+            <h3 className="font-semibold">{taxForm} Form</h3>
             <p className="t-helper mt-0.5">
-              Required by US tax law for any provider receiving payments. When you sign it via PandaDoc,
-              the fields below auto-fill from the form.
+              {isUs
+                ? "Required by US tax law for any provider receiving payments. When you sign it via PandaDoc, the fields below auto-fill from the form."
+                : "Required by US tax law for any NON-US business receiving payments from a US company (it certifies your foreign status - no US tax ID needed). Sign it via PandaDoc."}
             </p>
           </div>
-          <ProviderW9Section providerId={effectiveProviderId} mode={isAdmin ? "admin" : "provider"} />
+          <ProviderW9Section providerId={effectiveProviderId} mode={isAdmin ? "admin" : "provider"} formType={taxFormFor(country)} />
         </section>
       )}
 
@@ -328,6 +351,33 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         <div>
           <h3 className="font-semibold">Business identity</h3>
         </div>
+
+        <Field
+          label="Country of the legal entity"
+          required
+          hint={payoutRailFor(country) === "STRIPE"
+            ? "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. Stripe payouts are available for this country."
+            : "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. This country is paid through GoStork's international payout partner."}
+        >
+          <select
+            value={country}
+            onChange={e => {
+              const c = e.target.value;
+              setCountry(c);
+              if (c !== "US" && taxIdType !== "foreign") setTaxIdType("foreign");
+              if (c === "US" && taxIdType === "foreign") setTaxIdType("ein");
+            }}
+            className="w-full h-10 rounded-md border bg-background px-3 text-sm font-ui"
+            data-testid="legal-country-select"
+          >
+            <optgroup label="Common">
+              {POPULAR_COUNTRIES.map(c => <option key={c.isoCode} value={c.isoCode}>{c.flag} {c.name}</option>)}
+            </optgroup>
+            <optgroup label="All countries">
+              {ALL_COUNTRIES.map(c => <option key={c.isoCode} value={c.isoCode}>{c.flag} {c.name}</option>)}
+            </optgroup>
+          </select>
+        </Field>
 
         <Field
           label="Legal name"
@@ -359,6 +409,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         </Field>
 
 
+        {isUs ? (
         <Field label="Federal tax classification" required hint="W-9 Line 3a.">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {TAX_CLASSIFICATIONS.map(opt => (
@@ -378,6 +429,31 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           </div>
         </Field>
 
+        ) : (
+        <Field label="Entity type" required hint="W-8BEN-E is for entities; an individual signs a W-8BEN instead.">
+          <div className="flex gap-6">
+            {[
+              { value: "C_CORPORATION", label: "Company / organization" },
+              { value: "INDIVIDUAL_SOLE_PROPRIETOR", label: "Individual" },
+            ].map(opt => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="taxClassification"
+                  value={opt.value}
+                  checked={taxClassification === opt.value || (opt.value === "C_CORPORATION" && !!taxClassification && taxClassification !== "INDIVIDUAL_SOLE_PROPRIETOR")}
+                  onChange={() => setTaxClassification(opt.value)}
+                  className="accent-primary"
+                />
+                {opt.value === "INDIVIDUAL_SOLE_PROPRIETOR" ? <UserIcon className="w-3.5 h-3.5" /> : <Building2 className="w-3.5 h-3.5" />}
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </Field>
+        )}
+
+        {isUs && (
         <Field label="Tax ID type" required>
           <div className="flex gap-6">
             {[
@@ -398,12 +474,19 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
             ))}
           </div>
         </Field>
+        )}
 
-        <Field label={taxIdType === "ssn" ? "SSN" : "EIN / Tax ID"} required hint={taxIdType === "ssn" ? "9 digits" : "9 digits, with or without dash"}>
+        <Field
+          label={isUs ? (taxIdType === "ssn" ? "SSN" : "EIN / Tax ID") : taxIdLabelFor(country)}
+          required
+          hint={isUs
+            ? (taxIdType === "ssn" ? "9 digits" : "9 digits, with or without dash")
+            : "Your local business tax identifier, exactly as registered. No US EIN is needed."}
+        >
           <Input
             value={taxId}
             onChange={e => setTaxId(e.target.value)}
-            placeholder={taxIdType === "ssn" ? "123-45-6789" : "12-3456789"}
+            placeholder={isUs ? (taxIdType === "ssn" ? "123-45-6789" : "12-3456789") : ""}
           />
         </Field>
       </section>
@@ -411,7 +494,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       {/* Address */}
       <section className="space-y-3 rounded-xl border bg-card p-5">
         <h3 className="font-semibold">Business address</h3>
-        <Field label="Street address" required hint="W-9 Line 5.">
+        <Field label="Street address" required hint={isUs ? "W-9 Line 5." : undefined}>
           <Input value={addrLine1} onChange={e => setAddrLine1(e.target.value)} />
         </Field>
         <Field label="Apt / suite / floor (optional)">
@@ -419,8 +502,12 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="City" required><Input value={addrCity} onChange={e => setAddrCity(e.target.value)} /></Field>
-          <Field label="State" required hint="2-letter code"><Input value={addrState} onChange={e => setAddrState(e.target.value.toUpperCase())} maxLength={2} /></Field>
-          <Field label="ZIP" required><Input value={addrPostal} onChange={e => setAddrPostal(e.target.value)} /></Field>
+          {isUs ? (
+            <Field label="State" required hint="2-letter code"><Input value={addrState} onChange={e => setAddrState(e.target.value.toUpperCase())} maxLength={2} /></Field>
+          ) : (
+            <Field label="State / province / region"><Input value={addrState} onChange={e => setAddrState(e.target.value)} /></Field>
+          )}
+          <Field label={isUs ? "ZIP" : "Postal code"} required={isUs}><Input value={addrPostal} onChange={e => setAddrPostal(e.target.value)} /></Field>
         </div>
       </section>
 

@@ -32,6 +32,11 @@ import { useConfirm } from "@/components/ui/confirm-bar";
 import { useToast } from "@/hooks/use-toast";
 
 interface PayoutsState {
+  /** From the Legal tab's country: which rail can pay this provider. */
+  legalCountry?: string;
+  payoutRail?: "STRIPE" | "INTERNATIONAL";
+  payoutCurrency?: string;
+  customFormAvailable?: boolean;
   payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null;
   stripeConnectAccountId: string | null;
   payoutsEnabled: boolean;
@@ -113,7 +118,10 @@ export function ProviderPayoutsTab() {
   );
   useEffect(() => {
     if (state?.payoutMethod) setSelectedMethod(state.payoutMethod);
-  }, [state?.payoutMethod]);
+    // Non-US entities never get the in-app US bank form - Stripe-hosted
+    // onboarding is the only Stripe path for them.
+    else if (state && state.customFormAvailable === false) setSelectedMethod("STRIPE_CONNECT_EXPRESS");
+  }, [state?.payoutMethod, state?.customFormAvailable]);
 
   // ── Express path: start onboarding ────────────────────────────────────────
   const startExpressMutation = useMutation({
@@ -160,6 +168,9 @@ export function ProviderPayoutsTab() {
         <h2 className="text-2xl font-heading">Payouts</h2>
         <p className="t-helper mt-1">
           Tell GoStork how to send you the money parents pay. One-time setup.
+          {state?.payoutCurrency && state.payoutCurrency !== "USD" && (
+            <> Invoices to parents are in USD; you are paid in <strong>{state.payoutCurrency}</strong> at the payout partner's exchange rate.</>
+          )}
         </p>
       </header>
 
@@ -168,11 +179,33 @@ export function ProviderPayoutsTab() {
         <StatusBanner state={state} />
       )}
 
+      {/* International rail: the legal country is outside what a US Stripe
+          platform can pay (Stripe's own cross-border rules). Payouts go
+          through GoStork's international payout partner instead; the
+          Stripe options are hidden so nobody creates an account that can
+          never be paid. */}
+      {state?.payoutRail === "INTERNATIONAL" && !state.payoutMethod && (
+        <section className="rounded-xl border p-6 bg-card space-y-3" data-testid="payouts-international">
+          <h3 className="font-semibold">International payouts</h3>
+          <p className="t-helper">
+            Your legal entity is registered in <strong>{state.legalCountry}</strong>, which Stripe cannot pay
+            from a US platform. GoStork pays providers in your country through its international payout
+            partner, in your local currency{state.payoutCurrency ? ` (${state.payoutCurrency})` : ""}. Any
+            transfer fee is deducted from your share.
+          </p>
+          <p className="t-helper">
+            International payout onboarding is being connected now - GoStork will reach out with the bank
+            details form. If your legal country is wrong, fix it on the Legal tab.
+          </p>
+        </section>
+      )}
+
       {/* Method picker - only when nothing has been started yet */}
-      {!state?.payoutMethod && (
+      {!state?.payoutMethod && state?.payoutRail !== "INTERNATIONAL" && (
         <section className="space-y-3">
           <Label >How do you want to receive payouts?</Label>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {state?.customFormAvailable !== false && (
             <MethodCard
               selected={selectedMethod === "STRIPE_CONNECT_CUSTOM"}
               onSelect={() => setSelectedMethod("STRIPE_CONNECT_CUSTOM")}
@@ -181,20 +214,23 @@ export function ProviderPayoutsTab() {
               body="Fill in your bank routing + account number on this page. Quick. Stays inside GoStork."
               tag="Recommended for most"
             />
+            )}
             <MethodCard
               selected={selectedMethod === "STRIPE_CONNECT_EXPRESS"}
               onSelect={() => setSelectedMethod("STRIPE_CONNECT_EXPRESS")}
               icon={<ExternalLink className="w-5 h-5" />}
               title="Connect with Stripe"
-              body="Open Stripe's secure onboarding in a new page. Stripe collects your info and links your bank."
-              tag="For tech-comfortable users"
+              body={state?.customFormAvailable === false
+                ? `Open Stripe's secure onboarding in a new page. Stripe collects your business details and bank account for ${state.legalCountry} and pays you in ${state.payoutCurrency || "your local currency"}.`
+                : "Open Stripe's secure onboarding in a new page. Stripe collects your info and links your bank."}
+              tag={state?.customFormAvailable === false ? "Non-US businesses" : "For tech-comfortable users"}
             />
           </div>
         </section>
       )}
 
       {/* Express path: just a button */}
-      {selectedMethod === "STRIPE_CONNECT_EXPRESS" && (
+      {selectedMethod === "STRIPE_CONNECT_EXPRESS" && state?.payoutRail !== "INTERNATIONAL" && (
         <section className="rounded-xl border p-6 bg-card space-y-3">
           <h3 className="font-semibold">Stripe Connect onboarding</h3>
           <p className="t-helper">
@@ -223,8 +259,8 @@ export function ProviderPayoutsTab() {
         </section>
       )}
 
-      {/* Custom path: inline form */}
-      {selectedMethod === "STRIPE_CONNECT_CUSTOM" && <CustomPayoutForm state={state} />}
+      {/* Custom path: inline form (US only) */}
+      {selectedMethod === "STRIPE_CONNECT_CUSTOM" && state?.customFormAvailable !== false && <CustomPayoutForm state={state} />}
     </div>
   );
 }

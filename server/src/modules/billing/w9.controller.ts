@@ -37,6 +37,8 @@ import {
   createW9TemplateEditingSession,
   refreshW9TemplateRoles,
   ensureW9Document,
+  resolveTaxFormTemplate,
+  TAX_FORM_SETTINGS_FIELDS,
   getW9SigningSession,
 } from "../../../pandadoc-service";
 
@@ -49,24 +51,37 @@ function appBaseUrl(): string {
 }
 
 async function buildW9Status(providerId: string) {
-  const [settings, w9] = await Promise.all([
-    prisma.siteSettings.findFirst({ select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true } }),
+  // W-9 or W-8BEN-E per the provider's legal country - the template set
+  // and the labels follow. A row signed for the other form reads as
+  // NOT_SENT for this one (formMismatch), so the UI asks for the right form.
+  const [tpl, w9raw] = await Promise.all([
+    resolveTaxFormTemplate(providerId),
     (prisma as any).providerW9.findUnique({ where: { providerId } }),
   ]);
+  const settings: any = await prisma.siteSettings.findFirst({ select: { [TAX_FORM_SETTINGS_FIELDS[tpl.formType].originalName]: true } as any });
+  const w9 = w9raw && (w9raw.formType || "W9") === tpl.formType ? w9raw : null;
   // "Configured" means: file uploaded, synced to PandaDoc, AND at least one field
-  // assigned to a role (w9PandaDocRoles set by refreshW9TemplateRoles after Save).
-  // Without the field assignment step, sending the W-9 produces an unsignable doc.
-  const templateUploaded = !!(settings?.w9TemplateUrl && settings?.w9PandaDocTemplateId);
-  const fieldsConfigured = !!settings?.w9PandaDocRoles;
+  // assigned to a role (roles set by refreshW9TemplateRoles after Save).
+  // Without the field assignment step, sending the form produces an unsignable doc.
+  const templateUploaded = !!(tpl.templateUrl && tpl.templateId);
+  const fieldsConfigured = !!tpl.roles;
   return {
+    formType: tpl.formType,
+    formLabel: tpl.label,
     templateConfigured: templateUploaded && fieldsConfigured,
     templateNeedsFields: templateUploaded && !fieldsConfigured,
-    templateName: settings?.w9TemplateOriginalName || null,
+    templateName: settings?.[TAX_FORM_SETTINGS_FIELDS[tpl.formType].originalName] || null,
     w9Id: w9?.id || null,
     status: w9?.status || "NOT_SENT",
     requestedAt: w9?.requestedAt || null,
     completedAt: w9?.completedAt || null,
   };
+}
+
+/** ?form=W9|W8BENE on the admin template endpoints; W9 when absent. */
+function formTypeOf(req: Request): "W9" | "W8BENE" {
+  const f = String((req.query as any)?.form || "W9").toUpperCase();
+  return f === "W8BENE" ? "W8BENE" : "W9";
 }
 
 // Raise (or reopen) the "Complete your W-9 form" task on the provider's Home
@@ -113,10 +128,20 @@ export class W9Controller {
   @UseGuards(SessionOrJwtGuard)
   async getTemplate(@Req() req: Request) {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
-    const settings = await prisma.siteSettings.findFirst({
-      select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
+    // Always answered in the W-9 field names so the shared template-config
+    // component reads one shape for either form (?form=W8BENE maps the
+    // w8bene* columns onto them).
+    const F = TAX_FORM_SETTINGS_FIELDS[formTypeOf(req)];
+    const settings: any = await prisma.siteSettings.findFirst({
+      select: { [F.url]: true, [F.originalName]: true, [F.templateId]: true, [F.roles]: true } as any,
     });
-    return settings || {};
+    if (!settings) return {};
+    return {
+      w9TemplateUrl: settings[F.url] || null,
+      w9TemplateOriginalName: settings[F.originalName] || null,
+      w9PandaDocTemplateId: settings[F.templateId] || null,
+      w9PandaDocRoles: settings[F.roles] || null,
+    };
   }
 
   @Post("api/admin/w9/template")
@@ -130,17 +155,18 @@ export class W9Controller {
     try {
       const existing = await prisma.siteSettings.findFirst({ select: { id: true } });
       if (!existing) throw new HttpException("Site settings not initialized", HttpStatus.BAD_REQUEST);
+      const F = TAX_FORM_SETTINGS_FIELDS[formTypeOf(req)];
       await prisma.siteSettings.update({
         where: { id: existing.id },
         data: {
-          w9TemplateUrl: url,
-          w9TemplateOriginalName: originalName || null,
-          w9PandaDocTemplateId: null,
-          w9PandaDocRoles: null,
+          [F.url]: url,
+          [F.originalName]: originalName || null,
+          [F.templateId]: null,
+          [F.roles]: null,
           // Mark template version: per-provider docs created from the prior
           // template will be detected as stale and regenerated on next access.
-          w9TemplateUpdatedAt: new Date(),
-        },
+          [F.updatedAt]: new Date(),
+        } as any,
       });
       return { success: true };
     } catch (e: any) {
@@ -156,15 +182,16 @@ export class W9Controller {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const existing = await prisma.siteSettings.findFirst({ select: { id: true } });
     if (existing) {
+      const F = TAX_FORM_SETTINGS_FIELDS[formTypeOf(req)];
       await prisma.siteSettings.update({
         where: { id: existing.id },
         data: {
-          w9TemplateUrl: null,
-          w9TemplateOriginalName: null,
-          w9PandaDocTemplateId: null,
-          w9PandaDocRoles: null,
-          w9TemplateUpdatedAt: new Date(),
-        },
+          [F.url]: null,
+          [F.originalName]: null,
+          [F.templateId]: null,
+          [F.roles]: null,
+          [F.updatedAt]: new Date(),
+        } as any,
       });
     }
     return { success: true };
@@ -175,7 +202,7 @@ export class W9Controller {
   async syncTemplate(@Req() req: Request) {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     try {
-      const templateId = await syncW9TemplateToPandaDoc();
+      const templateId = await syncW9TemplateToPandaDoc(formTypeOf(req));
       return { templateId };
     } catch (e: any) {
       this.logger.error(`W-9 sync template error: ${e.message}`);
@@ -189,7 +216,7 @@ export class W9Controller {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     try {
       const user = req.user as any;
-      const eToken = await createW9TemplateEditingSession(user.email);
+      const eToken = await createW9TemplateEditingSession(user.email, formTypeOf(req));
       return { eToken };
     } catch (e: any) {
       this.logger.error(`W-9 template editor session error: ${e.message}`);
@@ -202,7 +229,7 @@ export class W9Controller {
   async refreshRoles(@Req() req: Request) {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     try {
-      return await refreshW9TemplateRoles();
+      return await refreshW9TemplateRoles(formTypeOf(req));
     } catch (e: any) {
       this.logger.error(`W-9 refresh roles error: ${e.message}`);
       throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -232,8 +259,9 @@ export class W9Controller {
           select: { providerType: { select: { name: true } } },
         },
         w9: {
-          select: { id: true, status: true, requestedAt: true, completedAt: true, signerEmail: true },
+          select: { id: true, status: true, requestedAt: true, completedAt: true, signerEmail: true, formType: true },
         },
+        legalIdentity: { select: { businessAddressCountry: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -248,8 +276,13 @@ export class W9Controller {
         providerId: p.id,
         name: p.name,
         serviceTypes: Array.from(new Set(p.services.map((s: any) => s.providerType.name))),
+        // Which form this provider owes (by legal country) and which one the
+        // row actually is - a mismatch renders as NOT_SENT for the owed form.
+        country: p.legalIdentity?.businessAddressCountry || "US",
+        requiredForm: (p.legalIdentity?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE",
+        formType: p.w9?.formType || null,
         w9Id: p.w9?.id || null,
-        status: p.w9?.status || "NOT_SENT",
+        status: p.w9 && (p.w9.formType || "W9") === ((p.legalIdentity?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE") ? p.w9.status : "NOT_SENT",
         requestedAt: p.w9?.requestedAt || null,
         completedAt: p.w9?.completedAt || null,
         signerEmail: p.w9?.signerEmail || null,
@@ -295,14 +328,12 @@ export class W9Controller {
 
     // Block send if the template isn't fully configured - otherwise providers
     // get a W-9 with no signature field to fill in.
-    const settings = await prisma.siteSettings.findFirst({
-      select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
-    });
-    if (!settings?.w9TemplateUrl || !settings?.w9PandaDocTemplateId) {
-      throw new HttpException("Upload a W-9 template first.", HttpStatus.BAD_REQUEST);
+    const tpl = await resolveTaxFormTemplate(providerId);
+    if (!tpl.templateUrl || !tpl.templateId) {
+      throw new HttpException(`Upload a ${tpl.label} template first.`, HttpStatus.BAD_REQUEST);
     }
-    if (!settings.w9PandaDocRoles) {
-      throw new HttpException("Configure the W-9 signature field before sending.", HttpStatus.BAD_REQUEST);
+    if (!tpl.roles) {
+      throw new HttpException(`Configure the ${tpl.label} signature field before sending.`, HttpStatus.BAD_REQUEST);
     }
 
     // `force: true` wipes any existing ProviderW9 row first - used when admin
@@ -362,11 +393,9 @@ export class W9Controller {
     const roles = user?.roles || [];
     if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
-    const settings = await prisma.siteSettings.findFirst({
-      select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
-    });
-    if (!settings?.w9TemplateUrl || !settings?.w9PandaDocTemplateId || !settings.w9PandaDocRoles) {
-      throw new HttpException("W-9 template is not ready yet. Please contact GoStork.", HttpStatus.BAD_REQUEST);
+    const tpl = await resolveTaxFormTemplate(user.providerId);
+    if (!tpl.templateUrl || !tpl.templateId || !tpl.roles) {
+      throw new HttpException(`${tpl.label} template is not ready yet. Please contact GoStork.`, HttpStatus.BAD_REQUEST);
     }
 
     try {
@@ -395,11 +424,9 @@ export class W9Controller {
     const roles = user?.roles || [];
     if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
-    const settings = await prisma.siteSettings.findFirst({
-      select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
-    });
-    if (!settings?.w9TemplateUrl || !settings?.w9PandaDocTemplateId || !settings.w9PandaDocRoles) {
-      throw new HttpException("W-9 template is not ready yet. Please contact GoStork.", HttpStatus.BAD_REQUEST);
+    const tpl = await resolveTaxFormTemplate(user.providerId);
+    if (!tpl.templateUrl || !tpl.templateId || !tpl.roles) {
+      throw new HttpException(`${tpl.label} template is not ready yet. Please contact GoStork.`, HttpStatus.BAD_REQUEST);
     }
 
     try {

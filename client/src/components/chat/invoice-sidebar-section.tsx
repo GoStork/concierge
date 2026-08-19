@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocalEstimate } from "@/hooks/use-fx-estimate";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -704,6 +705,9 @@ export function InvoiceSidebarSection({
                     <span>You receive</span>
                     <span>{formatCents(preview.providerPayoutAmount, preview.currency)}</span>
                   </div>
+                  {/* Non-USD providers: invoices are USD, the payout lands in
+                      their local currency - show the approximate amount. */}
+                  <PayoutLocalEstimate usdCents={preview.providerPayoutAmount} />
                 </>
               )}
             </div>
@@ -752,6 +756,31 @@ export function InvoiceSidebarSection({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * "≈ MX$81 (estimate)" under "You receive" for providers paid in a non-USD
+ * currency (from their Legal tab country via /api/provider/payouts). Renders
+ * nothing for USD providers or when no rate is available.
+ */
+function PayoutLocalEstimate({ usdCents }: { usdCents: number }) {
+  const { data } = useQuery<{ payoutCurrency?: string }>({
+    queryKey: ["/api/provider/payouts"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/payouts", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load payout settings");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const estimate = useLocalEstimate(usdCents, data?.payoutCurrency);
+  if (!estimate) return null;
+  return (
+    <div className="flex justify-end t-helper" data-testid="payout-local-estimate">
+      {estimate} in {data?.payoutCurrency}
     </div>
   );
 }

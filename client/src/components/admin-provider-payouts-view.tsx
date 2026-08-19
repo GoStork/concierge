@@ -12,6 +12,9 @@ import { Button } from "@/components/ui/button";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 
 interface PayoutsState {
+  legalCountry?: string;
+  payoutRail?: "STRIPE" | "INTERNATIONAL";
+  payoutCurrency?: string;
   payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null;
   stripeConnectAccountId: string | null;
   payoutsEnabled: boolean;
@@ -126,7 +129,8 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
         <header>
           <h3 className="font-semibold">Payouts</h3>
           <p className="t-helper mt-0.5">
-            Provider hasn't started Stripe Connect setup yet.
+            Provider hasn't started payout setup yet.
+            {state.legalCountry && <> Legal entity country: <strong>{state.legalCountry}</strong> - {state.payoutRail === "INTERNATIONAL" ? `outside Stripe's reach for a US platform; paid via the international payout partner in ${state.payoutCurrency || "local currency"}.` : `Stripe Connect eligible (payouts in ${state.payoutCurrency || "USD"}).`}</>}
           </p>
         </header>
         <div className="rounded-lg border p-4 bg-secondary/40">

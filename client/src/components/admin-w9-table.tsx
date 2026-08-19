@@ -30,6 +30,8 @@ interface W9Row {
   providerId: string;
   name: string;
   serviceTypes: string[];
+  country?: string;
+  requiredForm?: "W9" | "W8BENE";
   w9Id: string | null;
   status: "NOT_SENT" | "SENT" | "COMPLETED" | "ERROR";
   requestedAt: string | null;
@@ -144,7 +146,7 @@ export function AdminW9Table() {
   return (
     <section className="space-y-3">
       <div>
-        <h3 className="font-semibold">Provider W-9s</h3>
+        <h3 className="font-semibold">Provider tax forms (W-9 / W-8BEN-E)</h3>
         <p className="t-helper mt-0.5">
           Every approved provider with a user account, and where their W-9 stands. Download
           completed forms, or nudge the ones still outstanding - a reminder shows up as a task
@@ -187,6 +189,7 @@ export function AdminW9Table() {
                 <TableRow>
                   <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={handleSort} />
                   <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={handleSort} />
+                  <TableHead>Form</TableHead>
                   <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} />
                   <SortableTableHead label="Requested" sortKey="requested" currentSort={sortConfig} onSort={handleSort} />
                   <SortableTableHead label="Completed" sortKey="completed" currentSort={sortConfig} onSort={handleSort} />
@@ -203,6 +206,11 @@ export function AdminW9Table() {
                         {r.signerEmail && <div className="t-helper">{r.signerEmail}</div>}
                       </TableCell>
                       <TableCell className="text-sm">{r.serviceTypes.join(", ") || "-"}</TableCell>
+                      {/* Which IRS form this provider owes, from the Legal tab's country. */}
+                      <TableCell className="text-sm whitespace-nowrap" title={r.country ? `Legal entity country: ${r.country}` : undefined}>
+                        {r.requiredForm === "W8BENE" ? "W-8BEN-E" : "W-9"}
+                        {r.country && r.country !== "US" && <span className="t-helper ml-1">({r.country})</span>}
+                      </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLES[r.status] || STATUS_STYLES.NOT_SENT}`}>
                           {STATUS_LABELS[r.status] || r.status}

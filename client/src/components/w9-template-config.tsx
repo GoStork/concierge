@@ -10,6 +10,9 @@ interface W9TemplateConfigProps {
   /** Called after any successful mutation - lets parent screens refresh
    *  dependent W-9 status queries (e.g. the W-9 row strip on the billing tab). */
   onChange?: () => void;
+  /** W9 (US entities, default) or W8BENE (foreign entities). Same endpoints,
+   *  `?form=` selects the SiteSettings template set. */
+  formType?: "W9" | "W8BENE";
 }
 
 interface W9Template {
@@ -19,14 +22,17 @@ interface W9Template {
   w9PandaDocRoles: string | null;
 }
 
-export function W9TemplateConfig({ onChange }: W9TemplateConfigProps = {}) {
+export function W9TemplateConfig({ onChange, formType = "W9" }: W9TemplateConfigProps = {}) {
   const queryClient = useQueryClient();
+  const label = formType === "W9" ? "W-9" : "W-8BEN-E";
+  const q = `?form=${formType}`;
+  const templateKey = `/api/admin/w9/template${q}`;
 
   const { data: template, isLoading } = useQuery<W9Template>({
-    queryKey: ["/api/admin/w9/template"],
+    queryKey: [templateKey],
     queryFn: async () => {
-      const res = await fetch("/api/admin/w9/template", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load W-9 template");
+      const res = await fetch(templateKey, { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load ${label} template`);
       return res.json();
     },
   });
@@ -38,17 +44,19 @@ export function W9TemplateConfig({ onChange }: W9TemplateConfigProps = {}) {
 
   return (
     <PandaDocTemplateEditor
-      templateLabel="W-9 Template"
-      uploadHeading="Step 1 - Upload W-9 Form"
-      description="Upload the W-9 form (PDF or Word) and assign the signature field. Every provider signs their own copy from their Billing tab."
+      templateLabel={`${label} Template`}
+      uploadHeading={`Step 1 - Upload ${label} Form`}
+      description={formType === "W9"
+        ? "Upload the W-9 form (PDF or Word) and assign the signature field. Every US provider signs their own copy from their Legal tab."
+        : "Upload the W-8BEN-E form (PDF or Word) and assign the signature field. Every NON-US provider signs their own copy from their Legal tab - it certifies foreign status so no US tax ID is needed."}
       fieldInstructions="Open the editor and drag a signature field onto the form, assigning it to the signer role. Click Save when done."
-      containerId="pandadoc-w9-editor-container"
+      containerId={`pandadoc-${formType.toLowerCase()}-editor-container`}
       templateUrl={templateUrl}
       pandaDocTemplateId={pandaDocTemplateId}
       templateFilename={templateFilename}
       isLoading={isLoading}
       saveTemplate={async ({ url, originalName }) => {
-        const res = await fetch("/api/admin/w9/template", {
+        const res = await fetch(templateKey, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -57,13 +65,13 @@ export function W9TemplateConfig({ onChange }: W9TemplateConfigProps = {}) {
         if (!res.ok) throw new Error("Failed to save template");
       }}
       deleteTemplate={async () => {
-        await fetch("/api/admin/w9/template", { method: "DELETE", credentials: "include" });
+        await fetch(templateKey, { method: "DELETE", credentials: "include" });
       }}
-      syncEndpoint="/api/admin/w9/sync-template"
-      editorSessionEndpoint="/api/admin/w9/template-editor-session"
-      refreshRolesEndpoint="/api/admin/w9/refresh-roles"
+      syncEndpoint={`/api/admin/w9/sync-template${q}`}
+      editorSessionEndpoint={`/api/admin/w9/template-editor-session${q}`}
+      refreshRolesEndpoint={`/api/admin/w9/refresh-roles${q}`}
       onAfterChange={() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/admin/w9/template"] });
+        queryClient.invalidateQueries({ queryKey: [templateKey] });
         onChange?.();
       }}
     />

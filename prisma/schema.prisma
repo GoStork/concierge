@@ -1599,6 +1599,13 @@ model SiteSettings {
   w9TemplateOriginalName String?
   w9PandaDocTemplateId   String?
   w9PandaDocRoles        String? // JSON array of role names in signing order
+  // W-8BEN-E (foreign entities) - same shape as the W-9 template set; the
+  // provider's legal country decides which one ensureW9Document uses.
+  w8beneTemplateUrl          String?
+  w8beneTemplateOriginalName String?
+  w8benePandaDocTemplateId   String?
+  w8benePandaDocRoles        String?
+  w8beneTemplateUpdatedAt    DateTime?
   // Bumped whenever the W-9 template changes (file upload, field re-assignment,
   // delete). Used to detect stale per-provider PandaDoc documents that were
   // created from an earlier version of the template.
@@ -2668,6 +2675,10 @@ model ProviderBankAccount {
 model ProviderW9 {
   id                 String    @id @default(uuid())
   providerId         String    @unique
+  // Which IRS form this row tracks: "W9" (US entity) or "W8BENE" (foreign
+  // entity). Picked from the Legal tab's country; the template used comes
+  // from the matching SiteSettings.w9* / w8bene* fields.
+  formType           String    @default("W9")
   pandaDocDocumentId String?   @unique
   pandaDocViewUrl    String?
   status             String    @default("NOT_SENT") // NOT_SENT | SENT | COMPLETED | ERROR

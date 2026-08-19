@@ -46,7 +46,7 @@ export interface LegalIdentityFormData {
   // businessType is auto-derived from taxClassification, so the form
   // doesn't accept it directly - we recompute on every save.
   taxId?: string | null;
-  taxIdType?: "ssn" | "ein" | null;
+  taxIdType?: "ssn" | "ein" | "foreign" | null;
   businessAddressLine1?: string | null;
   businessAddressLine2?: string | null;
   businessAddressCity?: string | null;
@@ -140,7 +140,11 @@ export class LegalIdentityService {
         businessAddressCity: form.businessAddressCity ?? existing.businessAddressCity,
         businessAddressState: form.businessAddressState ?? existing.businessAddressState,
         businessAddressPostalCode: form.businessAddressPostalCode ?? existing.businessAddressPostalCode,
-        businessAddressCountry: form.businessAddressCountry ?? existing.businessAddressCountry,
+        // ISO-3166 alpha-2, upper-cased; US when unset. Non-US entities
+        // carry a "foreign" tax id (no EIN/SSN shape is enforced for them -
+        // Stripe / Trolley validate the real identifier during their own
+        // onboarding).
+        businessAddressCountry: (form.businessAddressCountry ?? existing.businessAddressCountry ?? "US").toUpperCase(),
         source: "MANUAL",
       },
     });
@@ -292,6 +296,9 @@ export class LegalIdentityService {
     const missing: string[] = [];
     if (!row?.legalName?.trim()) missing.push("Legal Name");
     if (!row?.businessName?.trim()) missing.push("Legal Business Name");
+    // Any country's tax identifier counts (EIN, RFC, NIT, VAT, ...): the
+    // guardrail exists so receipts carry a tax ID, not to force a US EIN
+    // on a Mexican agency.
     if (!row?.taxId?.trim()) missing.push("Tax ID");
     return { complete: missing.length === 0, missing };
   }
