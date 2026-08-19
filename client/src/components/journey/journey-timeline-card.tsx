@@ -301,8 +301,12 @@ function StageColumn({ stage, isFirst, isLast, branches, widthPct }: {
                   </div>
                   {isLastBranch ? <div className="flex-1" /> : <div className="flex-1" style={branchRail} />}
                 </div>
+                {/* Branch labels never wrap: the row below the main line is
+                    empty either side, and a column-width that fits "Refund
+                    Requested" but breaks "Refund Completed" onto two lines
+                    made the two steps of one fork read as different things. */}
                 <div className="px-1 pt-1 text-center">
-                  <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(b)}`}>{b.label}</p>
+                  <p className={`text-[11px] font-ui leading-tight whitespace-nowrap ${stageLabelClass(b)}`}>{b.label}</p>
                   {b.reachedAt && <p className="t-helper leading-4">{fmtDate(b.reachedAt)}</p>}
                 </div>
               </div>
