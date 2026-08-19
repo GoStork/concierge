@@ -43,7 +43,7 @@ export default function SmsConsentPage() {
             sends a single one-time verification code that the user has explicitly
             requested. Immediately above the button, every user sees this notice:
           </p>
-          <SmsTransactionalNotice />
+          <SmsTransactionalNotice className="rounded-[var(--radius)] bg-secondary p-4" />
         </div>
 
         <div className="space-y-3">

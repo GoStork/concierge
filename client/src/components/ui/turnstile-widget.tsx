@@ -12,6 +12,20 @@ import { useEffect, useRef, useState } from "react";
  *
  * Tokens are single-use and expire (~5 min), so the parent bumps `resetSignal`
  * after each send-otp attempt to mint a fresh one for a possible resend.
+ *
+ * appearance:"interaction-only" - the widget draws NOTHING for the (large)
+ * majority of visitors that Cloudflare clears from browser signals alone, and
+ * only paints the "Verify you are human" checkbox for the ones it actually
+ * wants an interaction from. That keeps the signup phone step visually light
+ * without the failure mode of a fully invisible widget, where a legitimate
+ * visitor on a hardened browser or VPN gets silently refused with nothing on
+ * screen to retry. This is a render-time parameter, so the site key stays in
+ * Managed mode - no Cloudflare dashboard change is involved.
+ *
+ * Consequence for callers: on the happy path there is no visible widget and no
+ * user action, so the token can still be in flight when the user taps the
+ * submit button. The parent MUST wait for the token rather than posting null -
+ * send-otp rejects a missing token with a hard 400.
  */
 
 declare global {
@@ -80,6 +94,7 @@ export function TurnstileWidget({ onToken, onEnabledChange, resetSignal = 0 }: T
         if (cancelled || !containerRef.current || !window.turnstile) return;
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
+          appearance: "interaction-only",
           callback: (token: string) => onToken(token),
           "expired-callback": () => {
             onToken(null);

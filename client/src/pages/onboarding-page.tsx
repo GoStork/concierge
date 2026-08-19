@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -186,8 +186,28 @@ export default function OnboardingPage() {
   const [otpSending, setOtpSending] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpChannel, setOtpChannel] = useState<"sms" | "whatsapp">("sms");
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // Turnstile draws nothing on the happy path (interaction-only), so its token can
+  // still be in flight when the user taps Verify. Refs, not state, so the send-otp
+  // handler reads the live value instead of a stale render closure.
+  const turnstileTokenRef = useRef<string | null>(null);
+  const turnstileEnabledRef = useRef(false);
   const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
+
+  /**
+   * Resolve the Turnstile token for a send-otp call. A missing token is a hard 400
+   * server-side, and with no widget on screen the user has no cue that the check is
+   * still running - so wait for it instead of losing the signup to a race. Returns
+   * as soon as the token lands; after the timeout we post what we have and let the
+   * server's own error surface rather than hanging the button forever.
+   */
+  const awaitTurnstileToken = async (timeoutMs = 8000): Promise<string | null> => {
+    if (!turnstileEnabledRef.current) return null;
+    const deadline = Date.now() + timeoutMs;
+    while (!turnstileTokenRef.current && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return turnstileTokenRef.current;
+  };
 
   const [data, setData] = useState<OnboardingData>({
     email: "",
@@ -371,6 +391,7 @@ export default function OnboardingPage() {
       setOtpError(null);
       try {
         const fullPhone = data.phoneE164;
+        const turnstileToken = await awaitTurnstileToken();
         const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone, turnstileToken });
         const result = await res.json();
         if (result.devCode) {
@@ -653,9 +674,17 @@ export default function OnboardingPage() {
               error={otpError}
             />
           )}
-          {step === 4 && (
-            <div className="mt-4">
-              <TurnstileWidget onToken={setTurnstileToken} resetSignal={turnstileResetSignal} />
+          {/* Mounted across BOTH the phone step and the code step: Turnstile tokens are
+              single-use, so "Resend code" on step 5 needs the widget still alive to mint
+              a fresh one. Unmounting it at step 4 left resend posting a consumed token.
+              Costs nothing visually - interaction-only draws nothing unless challenged. */}
+          {(step === 4 || step === 5) && (
+            <div className={step === 4 ? "mt-4" : ""}>
+              <TurnstileWidget
+                onToken={token => { turnstileTokenRef.current = token; }}
+                onEnabledChange={enabled => { turnstileEnabledRef.current = enabled; }}
+                resetSignal={turnstileResetSignal}
+              />
             </div>
           )}
           {step === 5 && (
@@ -666,6 +695,7 @@ export default function OnboardingPage() {
               channel={otpChannel}
               onResend={async () => {
                 setOtpError(null);
+                const turnstileToken = await awaitTurnstileToken();
                 const res = await apiRequest("POST", "/api/auth/send-otp", { phone: data.phoneE164, turnstileToken });
                 const result = await res.json();
                 if (result.channel === "whatsapp" || result.channel === "sms") {
@@ -1019,7 +1049,7 @@ function StepPhone({
         </p>
       )}
 
-      <SmsTransactionalNotice className="mb-4" />
+      <SmsTransactionalNotice className="mb-5" />
 
       {/* A2P 10DLC: the ongoing-notifications opt-in is a SEPARATE, genuinely optional
           consent. The box starts unticked and the Verify button works either way -

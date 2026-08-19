@@ -25,16 +25,19 @@ import { useBrandSettings } from "@/hooks/use-brand-settings";
 /**
  * Transactional notice for the one-time verification code. Shown above the
  * Verify button. No opt-in semantics - the tap itself is the request.
+ *
+ * Renders as plain helper text and carries NO container chrome of its own: the
+ * signup step wants this to recede next to the opt-in checkbox, while the public
+ * evidence page wants it boxed as a quoted UI sample. Pass the surface-specific
+ * background/padding via className. The WORDING is the carrier-registered part
+ * and never varies; presentation is the caller's.
  */
 export function SmsTransactionalNotice({ className = "" }: { className?: string }) {
   const { data: brand } = useBrandSettings();
   const brandName = brand?.companyName || "GoStork";
 
   return (
-    <div
-      className={`rounded-[var(--radius)] bg-secondary p-4 ${className}`}
-      data-testid="sms-transactional-notice"
-    >
+    <div className={className} data-testid="sms-transactional-notice">
       <p className="t-helper">
         When you tap Verify phone number, {brandName} will text a one-time verification
         code to the number above. This is a single message sent because you requested it.
