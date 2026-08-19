@@ -647,7 +647,24 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   fired immediately (meeting was <24h away - by design). [ ] still to
   check visually: email design/logo in the inbox; reschedule + cancel path
   (cancel the test meeting from the app to exercise it).
-- [ ] Provider: W-9 sign -> Home task closes without refresh; agreement flow.
+- [~] Provider side (2026-08-19): test org "Beta Test Surrogacy Agency"
+  (3650c7cb-457c-4431-9565-0c5e5857758e) + PROVIDER_ADMIN
+  eran.amir+agency1@gostork.com created via admin UI; provider login OK,
+  /provider/home renders (work queue, payouts, funnel), pinned Eva (Ariel)
+  present. W-9: "Fill out W-9" -> PandaDoc doc e5uZG3K4EZLwV8PMpKsHdT
+  created from the template, sent, signing session issued
+  (`POST /api/provider/w9/fill 201`, ProviderW9 4e903a3e... SENT), and the
+  STAGING WEBHOOK DELIVERED document_state_changed events to test-app
+  through Cloudflare (first events pre-date the W-9 row - expected, the
+  poller covers creation). [ ] Eran signs it in a real browser (embedded
+  PandaDoc editor does not render in the sandboxed preview pane) -> verify
+  recipient_completed -> ProviderW9 COMPLETED + legal identity auto-fill
+  + Home task closes. [ ] agreement flow. Note: as a PROVIDER_ADMIN,
+  /home shows the PARENT home ("Welcome back, Agency", a journey card)
+  while the nav Home goes to /provider/home - routing quirk to fix.
+- [x] Nightly-sync pinger: repo secret updated to the prod value (it
+  existed from the Replit era); manual workflow_dispatch -> 202 "Nightly
+  sync started" on test-app -> server ran (0 configs) -> complete.
 - [x] AI concierge chat on production URL (2026-08-19): Eva (Adam persona)
   greeted the beta1 parent with the onboarding-aware opener and answered the
   first message in 1.5s with a rich card - Gemini + MCP + prompt assembly
