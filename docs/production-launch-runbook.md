@@ -310,8 +310,16 @@ NEXT, in order (items marked ERAN need a human in a browser):
       (Dev ngrok hosts are NOT registered for Microsoft - only the old
       Replit dev URL is - so Outlook connect has not been testable on the
       Macs; test it on test-app.)
-   d. [ ] Smoke tests (section 12) once Eran has signed up on test-app and
-      been promoted to admin.
+   d. [~] Smoke tests (section 12) started 2026-08-19: Eran signed up on
+      test-app (account created 09:56 UTC; the form's second submit showed
+      "already exists" - first click had succeeded, minor UX rough edge),
+      promoted to GOSTORK_ADMIN + providerId = GoStork house provider via
+      MCP. **First login failed with 500 "Login session error"**: root cause
+      = connect-pg-simple `createTableIfMissing` looks for its `table.sql`
+      next to the bundle (`/srv/gostork/app/dist/table.sql`, ENOENT) - dev
+      never hit it because the dev DB already had `session`. Fixed for
+      good with migration `20260819_session_table` (CREATE TABLE IF NOT
+      EXISTS "session" ...), applied to prod immediately via MCP too.
    Note: `systemctl restart gostork` = ~10s of 502 at the edge (seen when
    setting the PandaDoc secret). Fine for beta; a zero-downtime restart
    (second port + Caddy upstream switch) is a later improvement.
