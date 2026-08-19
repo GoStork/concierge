@@ -693,6 +693,17 @@ Rule: exactly ONE environment runs schedulers against the production DB.
 
 ### Phase B - the flip to app.gostork.com
 
+0. **GATE PRODUCTION DEPLOYS (pre-req, Eran's rule 2026-08-19):** today the
+   VM's `gostork-deploy` timer tracks `origin/main`, so EVERY push deploys to
+   production automatically - fine while prod holds only test data, NOT
+   allowed once real families are on it. Before the flip: create a
+   `production` branch, point `deploy/gostork-deploy.sh` (and the installed
+   `/usr/local/bin/gostork-deploy`) at `origin/production`, and promote
+   only by explicit instruction: `git push origin main:production` when
+   Eran says "deploy to production" in the conversation, logging what went
+   out here. `main` stays the dev branch (both Macs). Amend the CLAUDE.md
+   "always push to main" rule to say exactly this so no session bypasses
+   it. Code must be tested on dev first; no prod deploy without permission.
 1. Freeze pushes during the window.
 2. Cloudflare: repoint `app.gostork.com` A record to the same GCP origin.
 3. On the host: `APP_URL=https://app.gostork.com`; restart.
