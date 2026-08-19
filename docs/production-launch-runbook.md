@@ -624,11 +624,13 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   synthetic event signed with the installed secrets (Stripe's
   generateTestHeaderString) POSTed to both routes on the host: 200
   {received:true} signed, 400 with a bad signature - secrets match.
-  Refunds/chargebacks liability acknowledgement: Completed. [ ] ERAN:
-  "Ongoing seller compliance" acknowledgement still pending; the connect
-  destination shows Requires setup until Connect is fully set up (may also
-  clear when the first connected account is created). First real end-to-
-  end charge + refund (section 12) still to do with a small amount.
+  Refunds/chargebacks liability acknowledgement: Completed. "Ongoing
+  seller compliance" acknowledgement: Completed 2026-08-19 (Settings >
+  Connect > Platform profile). [ ] Platform onboarding questionnaire
+  ("View onboarding" on that page) still incomplete - gates the first
+  provider's Connect bank onboarding; do it with Eran before the first
+  real provider connects. The connect destination shows Requires setup
+  until then. Live charge + refund: done twice (section 12).
 - [ ] Phase B: repoint both destinations to app.gostork.com (or add a
   second pair) - the description on each says so.
 - [ ] Stripe Connect (provider payouts) redirect/return URLs on production
