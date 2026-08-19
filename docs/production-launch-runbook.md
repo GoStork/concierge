@@ -656,10 +656,12 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   (`POST /api/provider/w9/fill 201`, ProviderW9 4e903a3e... SENT), and the
   STAGING WEBHOOK DELIVERED document_state_changed events to test-app
   through Cloudflare (first events pre-date the W-9 row - expected, the
-  poller covers creation). [ ] Eran signs it in a real browser (embedded
-  PandaDoc editor does not render in the sandboxed preview pane) -> verify
-  recipient_completed -> ProviderW9 COMPLETED + legal identity auto-fill
-  + Home task closes. [ ] agreement flow. Note: as a PROVIDER_ADMIN,
+  poller covers creation). Signed in Chrome with dummy data ->
+  `recipient_completed` webhook hit prod -> ProviderW9 COMPLETED ->
+  Legal Identity auto-filled (8 fields, source W9_AUTO_FILL) -> Legal tab
+  shows "Completed 8/19/2026" + download. **W-9 chain PASS end-to-end on
+  production.** [ ] agreement flow (ProviderAgreement / parent
+  Agreement) - same PandaDoc plumbing, not yet exercised on prod. Note: as a PROVIDER_ADMIN,
   /home shows the PARENT home ("Welcome back, Agency", a journey card)
   while the nav Home goes to /provider/home - routing quirk to fix.
 - [x] Nightly-sync pinger: repo secret updated to the prod value (it
