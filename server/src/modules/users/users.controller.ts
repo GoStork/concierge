@@ -22,7 +22,7 @@ import { checkEmailForSignup, normalizeEmail } from "../../../email-security";
 import { evaluateSignupRisk } from "../../../signup-risk";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { serviceLineOfSubject } from "../../../journey-timeline";
-import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE, CALL_EXPIRED_STAGE, nextJourneyStep } from "../../../../shared/journey-ladder";
+import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE, CALL_EXPIRED_STAGE, nextJourneyStep, PAID_INVOICE_STATUSES, refundBranchOf } from "../../../../shared/journey-ladder";
 import {
   winnersByLine, matchedElsewhereAt, PRE_ENGAGEMENT_STAGES,
   type CommitmentArtifact, type LineWinner,
@@ -1046,6 +1046,7 @@ export class UsersController {
             select: {
               id: true, parentUserId: true, serviceType: true, serviceAmount: true,
               status: true, providerId: true, paidAt: true, createdAt: true,
+              refundRequestedAt: true, refundedAt: true,
             },
             orderBy: { createdAt: "desc" },
           })
@@ -1154,7 +1155,21 @@ export class UsersController {
      * Applied at the very end of this builder, after every rank-based rollup
      * has run on the real rungs - a branch must never compete with a rung.
      */
+    const refundBranchByAcct = new Map<string, string | null>();
+    {
+      const byAcct = new Map<string, any[]>();
+      for (const inv of invoices) {
+        const k = acctOf(inv.parentUserId);
+        const list = byAcct.get(k) || [];
+        list.push(inv);
+        byAcct.set(k, list);
+      }
+      for (const [k, list] of Array.from(byAcct.entries())) refundBranchByAcct.set(k, refundBranchOf(list));
+    }
     const displayStageOverview = (stage: string | null, userId: string): string | null => {
+      // Refund branch: the paid rung holds, the badge says Refund Requested /
+      // Refund Completed - same treatment as the lapsed-call branch below.
+      if (stage === "invoice_paid") return refundBranchByAcct.get(acctOf(userId)) || stage;
       if (stage !== "consult_scheduled") return stage;
       const k = acctOf(userId);
       if (consultLiveAccts.has(k) || consultCompletedAccts.has(k)) return stage;
@@ -1237,7 +1252,9 @@ export class UsersController {
     for (const inv of invoices) {
       // A voided invoice is not a rung - same rule as a superseded agreement.
       if (inv.status === "CANCELLED") continue;
-      bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType), (inv as any).providerId);
+      // A refunded invoice was still paid - the rung holds and the refund
+      // branch (displayStageOverview) says how it ended.
+      bump(inv.parentUserId, PAID_INVOICE_STATUSES.includes(inv.status) ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType), (inv as any).providerId);
     }
     for (const a of agreements) {
       // A superseded draft is not an open rung - the agreement that replaced
@@ -1994,7 +2011,8 @@ export class UsersController {
      * call lapsed - then the branch outcome, same treatment matched_elsewhere
      * gets. `journeyStatus` keeps the rung for ranking, sorting and filters.
      */
-    const displayStage = (stage: string | null, key: string, line: string | null): string | null => {
+    const displayStage = (stage: string | null, key: string, line: string | null, rowInvoices: any[] = []): string | null => {
+      if (stage === "invoice_paid") return refundBranchOf(rowInvoices) || stage;
       if (stage !== "consult_scheduled") return stage;
       if (consultLiveAccounts.has(key, line) || consultCompletedAccounts.has(key, line)) return stage;
       return consultLapsedAccounts.has(key, line) ? CALL_EXPIRED_STAGE : stage;
@@ -2021,6 +2039,8 @@ export class UsersController {
           stripeTransferId: true,
           payoutFailedAt: true,
           paidAt: true,
+          refundRequestedAt: true,
+          refundedAt: true,
           createdAt: true,
           sessionId: true,
           parentUserId: true,
@@ -2185,7 +2205,7 @@ export class UsersController {
         handedOff: !!cs.handoffCompletedAt || (!cs.subjectProfileId && handedOffAccounts.has(key, rowLine)),
         agreementSigned: rowAgreements.some((a: any) => a.status === "SIGNED"),
         agreementSent: rowAgreements.length > 0,
-        invoicePaid: rowInvoices.some((inv: any) => inv.status === "PAID"),
+        invoicePaid: rowInvoices.some((inv: any) => PAID_INVOICE_STATUSES.includes(inv.status)),
         invoiceSent: rowInvoices.length > 0,
         matched: !!(cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId)
           && accountKey(matchedSurrogateById.get(cs.subjectProfileId) as string) === key),
@@ -2215,7 +2235,7 @@ export class UsersController {
         // The loss IS the current state, exactly as the ladder renders it -
         // a row still reading "Consultation Completed" invites the agency to
         // keep chasing a family that has already signed with someone else.
-        matchStatus: lostAt ? MATCHED_ELSEWHERE_STAGE : displayStage(journeyStatus, key, rowLine),
+        matchStatus: lostAt ? MATCHED_ELSEWHERE_STAGE : displayStage(journeyStatus, key, rowLine, rowInvoices),
         // Kept so the row can still say how far this org actually got, and
         // so filters/sorts on real stages are not silently rewritten.
         journeyStatus,

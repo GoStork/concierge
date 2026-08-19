@@ -41,6 +41,10 @@ import {
   winnersByLine, matchedElsewhereAt, isCommittingInvoice, isCommittingAgreement,
   PRE_ENGAGEMENT_STAGES, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL,
 } from "./matched-elsewhere";
+import {
+  PAID_INVOICE_STATUSES, refundBranchOf,
+  REFUND_REQUESTED_STAGE, REFUND_REQUESTED_LABEL, REFUND_COMPLETED_STAGE, REFUND_COMPLETED_LABEL,
+} from "../shared/journey-ladder";
 
 export interface JourneyStageOut {
   id: string;
@@ -211,7 +215,7 @@ export async function buildJourneyTimelines(
     }),
     prisma.invoice.findMany({
       where: { parentUserId: { in: memberIds } },
-      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, paidAt: true, triggerSource: true, medicalClearanceStatus: true, authorizedAt: true, clearanceConfirmedAt: true },
+      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, paidAt: true, triggerSource: true, medicalClearanceStatus: true, authorizedAt: true, clearanceConfirmedAt: true, refundRequestedAt: true, refundedAt: true },
     }),
     prisma.agreement.findMany({
       where: { parentUserId: { in: memberIds } },
@@ -580,8 +584,27 @@ export async function buildJourneyTimelines(
     // was sent; the window merely lapsed).
     const nonBankInvoices = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT" && i.status !== "CANCELLED");
     const invoiceSentAt = nonBankInvoices.length > 0 ? nonBankInvoices.reduce<Date | null>((min, i) => (!min || i.createdAt < min ? i.createdAt : min), null) : null;
-    const paidInvoice = scopedInvoices.filter((i) => i.status === "PAID" && i.paidAt);
+    // A refunded invoice WAS paid - the rung stays ticked and the refund
+    // branch below says how it ended (same shape as a no-show call keeping
+    // "Consultation Scheduled" done).
+    const paidInvoice = scopedInvoices.filter((i) => PAID_INVOICE_STATUSES.includes(i.status) && i.paidAt);
     const paidAt = paidInvoice.length > 0 ? paidInvoice.reduce<Date | null>((min, i) => (!min || (i.paidAt && i.paidAt < min) ? i.paidAt : min), null) : null;
+    // Refund branch (two steps): Refund Requested (admin issued it) ->
+    // Refund Completed (charge.refunded landed). Shown while the family's
+    // payment is refunded / being refunded and nothing is cleanly paid.
+    const refundBranch = refundBranchOf(nonBankInvoices);
+    const refundRequestedAt = refundBranch
+      ? nonBankInvoices.map((i) => i.refundRequestedAt || i.refundedAt).filter(Boolean).sort((a: any, z: any) => new Date(a).getTime() - new Date(z).getTime())[0] || null
+      : null;
+    const refundCompletedAt = refundBranch === REFUND_COMPLETED_STAGE
+      ? nonBankInvoices.map((i) => i.refundedAt).filter(Boolean).sort((a: any, z: any) => new Date(z).getTime() - new Date(a).getTime())[0] || null
+      : null;
+    const refundRungs = (): Rung[] => refundBranch
+      ? [
+          { id: REFUND_REQUESTED_STAGE, label: REFUND_REQUESTED_LABEL, at: refundRequestedAt, tone: "warning" as const, branch: true },
+          { id: REFUND_COMPLETED_STAGE, label: REFUND_COMPLETED_LABEL, at: refundCompletedAt, tone: "warning" as const, branch: true },
+        ]
+      : [];
     const signed = scopedAgreements.filter((a) => a.status === "SIGNED");
     const signedAt = signed.length > 0 ? signed[0].signedAt || signed[0].createdAt : null;
     // "Sent" evidence: any agreement that left draft (SENT covers rejected /
@@ -594,7 +617,7 @@ export async function buildJourneyTimelines(
 
     const bankInvoices = scopedInvoices.filter((i) => i.triggerSource === "BANK_CHECKOUT");
     const checkoutAt = bankInvoices.length > 0 ? bankInvoices[0].createdAt : null;
-    const bankPaidAt = bankInvoices.find((i) => i.status === "PAID")?.paidAt || null;
+    const bankPaidAt = bankInvoices.find((i) => PAID_INVOICE_STATUSES.includes(i.status))?.paidAt || null;
 
     // Hybrid escrow (AT_CLEARANCE) evidence. An escrow journey gets a
     // "Deposit Secured" rung (card hold placed OR funds captured into the
@@ -634,6 +657,7 @@ export async function buildJourneyTimelines(
     const moneyRungs = (optionalAgreement: boolean): Rung[] => [
       { id: "invoice_sent", label: "Invoice Sent", at: invoiceSentAt },
       { id: "invoice_paid", label: "Invoice Paid", at: paidAt },
+      ...refundRungs(),
       { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt, ...(optionalAgreement ? { optional: true } : {}) },
       { id: "agreement_signed", label: "Agreement Signed", at: signedAt, ...(optionalAgreement ? { optional: true } : {}) },
     ];
@@ -667,6 +691,12 @@ export async function buildJourneyTimelines(
         { id: "donor_selected", label: "Donor Selected", at: b.events.find((e) => e.eventType === "BANK_CHECKOUT_STARTED")?.createdAt || checkoutAt },
         { id: "checkout", label: "Checkout", at: checkoutAt },
         { id: "invoice_paid", label: "Invoice Paid", at: bankPaidAt },
+        ...(refundBranchOf(bankInvoices)
+          ? [
+              { id: REFUND_REQUESTED_STAGE, label: REFUND_REQUESTED_LABEL, at: bankInvoices.map((i) => i.refundRequestedAt || i.refundedAt).filter(Boolean).sort()[0] || null, tone: "warning" as const, branch: true },
+              { id: REFUND_COMPLETED_STAGE, label: REFUND_COMPLETED_LABEL, at: bankInvoices.map((i) => i.refundedAt).filter(Boolean).sort().reverse()[0] || null, tone: "warning" as const, branch: true },
+            ]
+          : []),
         { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt, optional: true },
         { id: "agreement_signed", label: "Agreement Signed", at: signedAt, optional: true },
         { id: "handed_off", label: "Handed Off", at: handoffAt },
@@ -713,6 +743,7 @@ export async function buildJourneyTimelines(
       const escrowMoneyRungs: Rung[] = [
         { id: "invoice_sent", label: "Invoice Sent", at: invoiceSentAt },
         { id: "deposit_secured", label: "Deposit Secured", at: depositSecuredAt },
+        ...refundRungs(),
         { id: "medical_clearance", label: "Medical Clearance", at: clearanceClearedAt, ...(clearanceFailed ? { tone: "warning" as const } : {}) },
         { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt },
         { id: "agreement_signed", label: "Agreement Signed", at: signedAt },

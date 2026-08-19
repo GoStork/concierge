@@ -21,7 +21,7 @@
 
 import { serviceKeysFromLabels } from "../shared/service-keys";
 import { prisma } from "./db";
-import { JOURNEY_STAGE_ORDER, resolveJourneyStage, CALL_EXPIRED_STAGE } from "../shared/journey-ladder";
+import { JOURNEY_STAGE_ORDER, resolveJourneyStage, CALL_EXPIRED_STAGE, PAID_INVOICE_STATUSES, refundBranchOf } from "../shared/journey-ladder";
 import { serviceLineOfSubject } from "./journey-timeline";
 import {
   GATES_OPEN,
@@ -709,6 +709,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         id: true, providerId: true, sessionId: true, serviceType: true, serviceAmount: true,
         status: true, paidAt: true, createdAt: true, dueAt: true,
         description: true, medicalClearanceStatus: true,
+        refundRequestedAt: true, refundedAt: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -886,7 +887,16 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       matchCallOrgs.add(b.providerUser.providerId, bookingLineOf(b));
     }
   }
-  const paidSessions = new Set(invoices.filter((i) => i.status === "PAID").map((i) => i.sessionId).filter(Boolean) as string[]);
+  // A refunded invoice was paid - the rung holds; the refund branch is the
+  // DISPLAY state (displayBranchFor below), same as a lapsed call.
+  const paidSessions = new Set(invoices.filter((i) => PAID_INVOICE_STATUSES.includes(i.status)).map((i) => i.sessionId).filter(Boolean) as string[]);
+  const invoicesBySessionId = new Map<string, typeof invoices>();
+  for (const i of invoices) {
+    if (!i.sessionId) continue;
+    const list = invoicesBySessionId.get(i.sessionId) || [];
+    list.push(i);
+    invoicesBySessionId.set(i.sessionId, list);
+  }
   const signedSessions = new Set(agreements.filter((a) => a.status === "SIGNED").map((a) => a.sessionId).filter(Boolean) as string[]);
   const agreementSessions = new Set(agreements.map((a) => a.sessionId).filter(Boolean) as string[]);
   const invoiceSessions = new Set(invoices.map((i) => i.sessionId).filter(Boolean) as string[]);
@@ -931,6 +941,15 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
    * Only consult_scheduled can go stale this way - every rung above it is
    * proven by an artifact (form, invoice, agreement) that does not lapse.
    */
+  /**
+   * The branch outcome that replaces the rung on the badge, or null when the
+   * rung stands: a lapsed call under consult_scheduled (CALL_EXPIRED), or a
+   * refund under invoice_paid (REFUND_REQUESTED / REFUND_COMPLETED).
+   */
+  function displayBranchFor(s: (typeof sessions)[number], stage: string | null): string | null {
+    if (stage === "invoice_paid") return refundBranchOf(invoicesBySessionId.get(s.id) || []);
+    return stageIsStale(s, stage) ? CALL_EXPIRED_STAGE : null;
+  }
   function stageIsStale(s: (typeof sessions)[number], stage: string | null): boolean {
     if (stage !== "consult_scheduled") return false;
     const org = s.providerId as string | null;
@@ -980,8 +999,11 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     const best = mostAdvanced(rows.map((r) => r.journeyStatus).filter(Boolean) as string[]);
     if (!best) return null;
     const atBest = rows.filter((r) => r.journeyStatus === best);
-    return atBest.length > 0 && atBest.every((r) => r.matchStatus === CALL_EXPIRED_STAGE)
-      ? CALL_EXPIRED_STAGE
+    // Any branch (lapsed call, refund requested/completed): it wins the
+    // rollup only when EVERY thread at the best rung shows that same branch.
+    const branch = atBest[0]?.matchStatus;
+    return atBest.length > 0 && branch && branch !== best && atBest.every((r) => r.matchStatus === branch)
+      ? branch
       : best;
   }
 
@@ -1122,7 +1144,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       // same words the timeline's branch rung uses. A badge still reading
       // "Consultation Scheduled" beside a forked ladder tells someone to wait
       // for a call that is not coming.
-      matchStatus: stageIsStale(s, stage) ? CALL_EXPIRED_STAGE : stage,
+      matchStatus: displayBranchFor(s, stage) || stage,
       // The rung underneath, unchanged - rollups, filters and sorts rank on
       // this so a branch never competes with a milestone.
       journeyStatus: stage,

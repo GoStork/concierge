@@ -174,11 +174,12 @@ function stageLabelClass(stage: StageOut): string {
  * a ladder. The caller's job is to give this enough room; below `lg` the
  * record page switches to the vertical ladder instead of squeezing.
  */
-function StageColumn({ stage, isFirst, isLast, branch, widthPct }: {
+function StageColumn({ stage, isFirst, isLast, branches, widthPct }: {
   stage: StageOut;
   isFirst: boolean;
   isLast: boolean;
-  branch?: StageOut;
+  /** Branch rungs hanging under this column, in order (a chain stacks). */
+  branches?: StageOut[];
   /**
    * Fixed share of the strip, computed from the LONGEST ladder on the page
    * so the same rung index lands on the same vertical line on every ladder
@@ -200,6 +201,8 @@ function StageColumn({ stage, isFirst, isLast, branch, widthPct }: {
   // pt-3), which also makes the elbow's vertical run 22px on both - the same
   // fork drawn the same way, rotated.
   const BRANCH_GAP = 12;
+  const branch = branches && branches.length > 0 ? branches[0] : undefined;
+  const chained = branches && branches.length > 1 ? branches.slice(1) : [];
   return (
     // Fixed width (see widthPct) so rung indexes align across ladders;
     // min-w-0 lets a long label wrap under its dot instead of widening it.
@@ -283,6 +286,19 @@ function StageColumn({ stage, isFirst, isLast, branch, widthPct }: {
             <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(branch)}`}>{branch.label}</p>
             {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
           </div>
+          {/* The rest of the chain continues straight DOWN from the first
+              branch dot - a short stem, then the next dot, centred on the
+              column like its predecessor. */}
+          {chained.map((b) => (
+            <div key={b.id} className="flex flex-col items-center" data-testid={`journey-stage-${b.id}`}>
+              <span className="w-px" style={{ height: `${BRANCH_GAP}px`, backgroundColor: line }} />
+              <StageMark stage={b.tone === "destructive" ? b : { ...b, tone: undefined }} />
+              <div className="px-1 pt-1 text-center">
+                <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(b)}`}>{b.label}</p>
+                {b.reachedAt && <p className="t-helper leading-4">{fmtDate(b.reachedAt)}</p>}
+              </div>
+            </div>
+          ))}
         </>
       )}
     </div>
@@ -297,7 +313,7 @@ function StageColumn({ stage, isFirst, isLast, branch, widthPct }: {
  * branch node's dot. Both children are FULL standard stage rows - identical
  * dot / label / date anatomy, states rendered exactly like any other rung.
  */
-function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; isLast: boolean }) {
+function ForkRow({ main, branches, isLast }: { main: StageOut; branches: StageOut[]; isLast: boolean }) {
   return (
     <div className="relative grid grid-cols-2 pt-3">
       {/* spine continuation down to the main child */}
@@ -316,7 +332,13 @@ function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; i
         }}
       />
       <StageRow stage={main} isLast={isLast} />
-      <StageRow stage={branch} isLast stripMarkTone />
+      {/* The branch column is itself a short ladder when the fork has more
+          than one step (Refund Requested -> Refund Completed). */}
+      <div>
+        {branches.map((b, i) => (
+          <StageRow key={b.id} stage={b} isLast={i === branches.length - 1} stripMarkTone />
+        ))}
+      </div>
     </div>
   );
 }
@@ -342,13 +364,18 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
   // FOLLOWS it in the server order (the fork's sibling rung - e.g. no_show
   // sits between consult_scheduled and consult_completed, so it renders
   // beside consult_completed; not_matched renders beside matched).
+  // A sibling can carry a CHAIN of branch rungs (Refund Requested -> Refund
+  // Completed both fork off Invoice Paid), so branches attach to the next
+  // NON-branch stage and render stacked, in server order.
   const mainStages: StageOut[] = [];
-  const branchBySibling = new Map<string, StageOut>();
+  const branchBySibling = new Map<string, StageOut[]>();
   for (let i = 0; i < journey.stages.length; i++) {
     const st = journey.stages[i];
     if (isBranchStage(st)) {
-      const sibling = journey.stages[i + 1];
-      if (sibling) branchBySibling.set(sibling.id, st);
+      let j = i + 1;
+      while (j < journey.stages.length && isBranchStage(journey.stages[j])) j++;
+      const sibling = journey.stages[j];
+      if (sibling) branchBySibling.set(sibling.id, [...(branchBySibling.get(sibling.id) || []), st]);
       continue;
     }
     mainStages.push(st);
@@ -418,7 +445,7 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
                 stage={st}
                 isFirst={i === 0}
                 isLast={i === mainStages.length - 1}
-                branch={branchBySibling.get(st.id)}
+                branches={branchBySibling.get(st.id)}
                 widthPct={cols ? 100 / cols : undefined}
               />
             ))}
@@ -427,9 +454,9 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
       ) : (
         <div>
           {mainStages.map((st, i) => {
-            const branch = branchBySibling.get(st.id);
-            return branch ? (
-              <ForkRow key={st.id} main={st} branch={branch} isLast={i === mainStages.length - 1} />
+            const branches = branchBySibling.get(st.id);
+            return branches && branches.length > 0 ? (
+              <ForkRow key={st.id} main={st} branches={branches} isLast={i === mainStages.length - 1} />
             ) : (
               <StageRow key={st.id} stage={st} isLast={i === mainStages.length - 1} />
             );

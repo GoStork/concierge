@@ -24,6 +24,7 @@ import {
   JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE,
   MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL,
   CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL,
+  REFUND_REQUESTED_STAGE, REFUND_REQUESTED_LABEL, REFUND_COMPLETED_STAGE, REFUND_COMPLETED_LABEL,
 } from "@shared/journey-ladder";
 import { ServiceTag, normalizeServiceKey } from "@/components/ui/service-tag";
 
@@ -77,6 +78,10 @@ export const JOURNEY_STATUS_LABELS: Record<string, string> = {
   // The other branch outcome that reaches this badge: the call the rung
   // rested on expired unconfirmed (or was canceled with nothing rebooked).
   [CALL_EXPIRED_STAGE]: CALL_EXPIRED_LABEL,
+  // The refund branch off "Invoice Paid" - two steps, both reach the badge
+  // because a refunded family is not a paid one.
+  [REFUND_REQUESTED_STAGE]: REFUND_REQUESTED_LABEL,
+  [REFUND_COMPLETED_STAGE]: REFUND_COMPLETED_LABEL,
   CONSULTATION_BOOKED: JOURNEY_STAGE_LABELS.consult_scheduled,
   PROVIDER_CONNECTED: JOURNEY_STAGE_LABELS.consult_scheduled,
   MATCH_CALL: JOURNEY_STAGE_LABELS.match_call_scheduled,
@@ -261,6 +266,9 @@ const STAGE_TONE_FOR: Record<string, { bg: string; fg: string }> = {
   // Amber, not muted: unlike a family lost to another provider, this one is
   // still winnable - it needs a chase.
   [CALL_EXPIRED_STAGE]: STAGE_TONE.call,
+  // Amber like the other "went sideways but still a relationship" branches.
+  [REFUND_REQUESTED_STAGE]: STAGE_TONE.call,
+  [REFUND_COMPLETED_STAGE]: STAGE_TONE.call,
   doctor_call_completed: STAGE_TONE.early,
   match_call_scheduled: STAGE_TONE.call,
   matched: STAGE_TONE.match,
@@ -299,7 +307,12 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
     <span
       className="inline-flex items-center text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
       style={{ background: entry.bg, color: entry.fg }}
-      title={(stage as string) === CALL_EXPIRED_STAGE ? "The call request expired unconfirmed (or was canceled) and nothing was rebooked" : undefined}
+      title={
+        (stage as string) === CALL_EXPIRED_STAGE ? "The call request expired unconfirmed (or was canceled) and nothing was rebooked"
+        : (stage as string) === REFUND_REQUESTED_STAGE ? "A refund was issued and is being processed by Stripe"
+        : (stage as string) === REFUND_COMPLETED_STAGE ? "The payment was refunded to the parent"
+        : undefined
+      }
     >
       {entry.label}
     </span>

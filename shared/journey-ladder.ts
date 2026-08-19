@@ -144,6 +144,45 @@ export const CALL_EXPIRED_STAGE = "call_expired";
 export const CALL_EXPIRED_LABEL = "Expired - not confirmed";
 
 /**
+ * Refund branch - two steps, both OUTSIDE JOURNEY_STAGE_ORDER like the other
+ * branches: "Refund Requested" (an admin issued the refund, Stripe is
+ * processing it - Invoice.refundRequestedAt) and "Refund Completed" (the
+ * charge.refunded webhook landed - Invoice.refundedAt). They hang off
+ * "Invoice Paid" the way No Show hangs off the call: the payment DID happen,
+ * so the rung stays ticked, and the branch says how it ended. A refunded
+ * family reading "Invoice Paid" on the badge would be chased for an
+ * agreement they are not going to sign.
+ *
+ * The rung underneath stays invoice_paid and travels as `journeyStatus`.
+ * Both clear when a later invoice is paid cleanly (the family re-committed).
+ */
+export const REFUND_REQUESTED_STAGE = "refund_requested";
+export const REFUND_REQUESTED_LABEL = "Refund Requested";
+export const REFUND_COMPLETED_STAGE = "refund_completed";
+export const REFUND_COMPLETED_LABEL = "Refund Completed";
+
+/** Invoice statuses that prove the parent PAID (even if the money later went back). */
+export const PAID_INVOICE_STATUSES: readonly string[] = ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"];
+
+/**
+ * Which refund branch (if any) a set of invoices is on. The payment that
+ * counts is the most recent paid one; if it is refunded (or has a refund in
+ * flight) and no other invoice is cleanly paid, the branch shows.
+ * `refundRequestedAt` is stamped by the admin refund endpoint; legacy refunds
+ * (before the stamp existed) only carry refundedAt and still resolve.
+ */
+export function refundBranchOf(
+  invoices: ReadonlyArray<{ status: string; refundRequestedAt?: Date | string | null; refundedAt?: Date | string | null }>,
+): typeof REFUND_REQUESTED_STAGE | typeof REFUND_COMPLETED_STAGE | null {
+  const paid = invoices.filter((i) => PAID_INVOICE_STATUSES.includes(i.status));
+  if (paid.length === 0) return null;
+  const cleanlyPaid = paid.some((i) => i.status === "PAID" && !i.refundRequestedAt);
+  if (cleanlyPaid) return null;
+  if (paid.some((i) => i.status === "REFUNDED" || i.status === "PARTIALLY_REFUNDED" || i.refundedAt)) return REFUND_COMPLETED_STAGE;
+  return REFUND_REQUESTED_STAGE;
+}
+
+/**
  * The pre-ladder step a freshly registered family is actually on: finishing
  * the AI concierge's intake questions. Not a rung (the ladder starts at
  * Registered and intake completion is chat state, not journey evidence), but
@@ -187,6 +226,11 @@ export function nextJourneyStep(
   // family would be told their next step is "Registered". The real next step
   // is the call they were waiting on, rebooked.
   if (stage === CALL_EXPIRED_STAGE) return { id: "consult_scheduled", label: JOURNEY_STAGE_LABELS.consult_scheduled };
+  // A refund in flight is waiting on Stripe; a completed one means the family
+  // needs a fresh invoice if they are to continue - "Invoice Paid" again would
+  // point at money that already went back.
+  if (stage === REFUND_REQUESTED_STAGE) return { id: REFUND_COMPLETED_STAGE, label: REFUND_COMPLETED_LABEL };
+  if (stage === REFUND_COMPLETED_STAGE) return { id: "invoice_sent", label: JOURNEY_STAGE_LABELS.invoice_sent };
   if (stage === "registered" && opts?.onboardingPending) return ONBOARDING_STEP;
   const ladder = (lineKey && LINE_NEXT_LADDERS[lineKey]) || JOURNEY_STAGE_ORDER;
   // Rank through the FULL order rather than indexOf on the line ladder: the
@@ -203,6 +247,8 @@ export function journeyStageLabel(id: string | null | undefined): string | null 
   if (!id) return null;
   if (id === MATCHED_ELSEWHERE_STAGE) return MATCHED_ELSEWHERE_LABEL;
   if (id === CALL_EXPIRED_STAGE) return CALL_EXPIRED_LABEL;
+  if (id === REFUND_REQUESTED_STAGE) return REFUND_REQUESTED_LABEL;
+  if (id === REFUND_COMPLETED_STAGE) return REFUND_COMPLETED_LABEL;
   return JOURNEY_STAGE_LABELS[id as JourneyStageId] ?? null;
 }
 

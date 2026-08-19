@@ -14,7 +14,7 @@ import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { FilterRow, FilterSearch, FilterDropdown, FilterDate } from "@/components/ui/filter-controls";
 import { SERVICE_LABELS, IP_FORM_FILTER_LABELS } from "./parent-cells";
 import { ServiceDot } from "@/components/ui/service-tag";
-import { JOURNEY_STAGE_LABELS, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL, CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL } from "@shared/journey-ladder";
+import { JOURNEY_STAGE_LABELS, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL, CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL, REFUND_REQUESTED_STAGE, REFUND_REQUESTED_LABEL, REFUND_COMPLETED_STAGE, REFUND_COMPLETED_LABEL } from "@shared/journey-ladder";
 
 export interface ParentsFilterState {
   q: string;
@@ -102,6 +102,8 @@ export function ParentsFilterBar({
               ...Object.entries(JOURNEY_STAGE_LABELS),
               [MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL] as [string, string],
               [CALL_EXPIRED_STAGE, CALL_EXPIRED_LABEL] as [string, string],
+              [REFUND_REQUESTED_STAGE, REFUND_REQUESTED_LABEL] as [string, string],
+              [REFUND_COMPLETED_STAGE, REFUND_COMPLETED_LABEL] as [string, string],
             ]}
             selected={state.statuses}
             onChange={(next) => setParam("status", next.join(","))}

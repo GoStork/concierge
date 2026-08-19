@@ -2445,6 +2445,10 @@ model Invoice {
   // proportional Transfer reversal so GoStork doesn't eat the loss. Stripe
   // reverses from the connected account's balance, or debits it negative if
   // the funds already swept to bank (Stripe recoups on the next payout).
+  // Stamped the moment an admin issues a refund (Stripe refunds.create
+  // succeeded) - the "Refund Requested" branch on the journey ladder. The
+  // charge.refunded webhook then stamps refundedAt ("Refund Completed").
+  refundRequestedAt    DateTime?
   refundedAt           DateTime?
   refundedAmount       Int? // cents; matches charge.amount_refunded
   refundReason         String? // Stripe enum: duplicate | fraudulent | requested_by_customer | other

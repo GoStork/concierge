@@ -2305,6 +2305,15 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     this.logger.log(
       `Admin ${params.actorUserId} refunded ${finalRefundAmount} cents on invoice ${invoice.id} via ${mode} (refund=${refund.id})`,
     );
+    // "Refund Requested" on the journey ladder: the refund exists at Stripe
+    // now; charge.refunded will stamp refundedAt ("Refund Completed") when
+    // it lands. Reason/notes are stored up front so the audit trail exists
+    // even if the webhook is delayed. Keep the first request timestamp on a
+    // stacked partial refund.
+    await this.prisma.invoice.updateMany({
+      where: { id: invoice.id, refundRequestedAt: null },
+      data: { refundRequestedAt: new Date() },
+    });
     return { refundId: refund.id, amountCents: finalRefundAmount, mode, status: refund.status };
   }
 
