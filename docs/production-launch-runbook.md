@@ -676,7 +676,9 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   real connected account (acct_1U6GTfFmrxto5Gu4, deleted after the test)
   and reached Stripe-hosted Express onboarding; MX shows the international
   card. International rail = Trolley (decided 2026-08-19, manual Chase
-  step dropped) - next build. Old item (c) the invoice guardrail demands a Tax ID and the Legal
+  step dropped) - next build. RULE (Eran 2026-08-20): US entities =
+  Stripe Connect, ALL non-US entities = Trolley, even Stripe-reachable
+  countries like Cyprus/Canada/UK - one international flow. Old item (c) the invoice guardrail demands a Tax ID and the Legal
   tab is built around the W-9 - foreign entities have no EIN and file a
   W-8BEN-E, no 1099; ask the accountant about withholding; (d) show
   payout currency/FX to the provider. UNTIL BUILT: international

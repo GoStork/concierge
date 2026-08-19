@@ -179,19 +179,18 @@ export function ProviderPayoutsTab() {
         <StatusBanner state={state} />
       )}
 
-      {/* International rail: the legal country is outside what a US Stripe
-          platform can pay (Stripe's own cross-border rules). Payouts go
-          through GoStork's international payout partner instead; the
-          Stripe options are hidden so nobody creates an account that can
-          never be paid. */}
+      {/* International rail: every non-US legal entity is paid through
+          GoStork's international payout partner (one flow for all
+          international providers); the Stripe options are hidden so nobody
+          creates a Stripe account that GoStork will not pay through. */}
       {state?.payoutRail === "INTERNATIONAL" && !state.payoutMethod && (
         <section className="rounded-xl border p-6 bg-card space-y-3" data-testid="payouts-international">
           <h3 className="font-semibold">International payouts</h3>
           <p className="t-helper">
-            Your legal entity is registered in <strong>{state.legalCountry}</strong>, which Stripe cannot pay
-            from a US platform. GoStork pays providers in your country through its international payout
-            partner, in your local currency{state.payoutCurrency ? ` (${state.payoutCurrency})` : ""}. Any
-            transfer fee is deducted from your share.
+            Your legal entity is registered in <strong>{state.legalCountry}</strong>. GoStork pays all
+            non-US providers through its international payout partner, in your local currency
+            {state.payoutCurrency ? ` (${state.payoutCurrency})` : ""}. Any transfer fee is deducted from
+            your share.
           </p>
           <p className="t-helper">
             International payout onboarding is being connected now - GoStork will reach out with the bank

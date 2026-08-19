@@ -37,9 +37,19 @@ export function isUsEntity(code: string | null | undefined): boolean {
   return normalizeCountry(code) === "US";
 }
 
-/** STRIPE = Connect transfer; INTERNATIONAL = Trolley / wire. */
+/**
+ * STRIPE = Connect transfer; INTERNATIONAL = Trolley.
+ *
+ * Product rule (Eran, 2026-08-20): US entities are paid through Stripe
+ * Connect, EVERY non-US entity through the international payout partner -
+ * even countries Stripe could technically reach (Cyprus, Canada, UK...).
+ * One onboarding flow, one ops process, one fee model and one tax-form path
+ * for all international providers beats a per-country split.
+ * STRIPE_CONNECT_PAYOUT_COUNTRIES is kept as reference (and for the Stripe
+ * account-country code path) should that decision ever change.
+ */
 export function payoutRailFor(code: string | null | undefined): PayoutRail {
-  return STRIPE_CONNECT_PAYOUT_COUNTRIES.includes(normalizeCountry(code)) ? "STRIPE" : "INTERNATIONAL";
+  return isUsEntity(code) ? "STRIPE" : "INTERNATIONAL";
 }
 
 /**

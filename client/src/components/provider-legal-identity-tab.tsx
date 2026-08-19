@@ -356,8 +356,8 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           label="Country of the legal entity"
           required
           hint={payoutRailFor(country) === "STRIPE"
-            ? "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. Stripe payouts are available for this country."
-            : "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. This country is paid through GoStork's international payout partner."}
+            ? "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. US entities are paid through Stripe."
+            : "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. Non-US entities are paid through GoStork's international payout partner."}
         >
           <select
             value={country}

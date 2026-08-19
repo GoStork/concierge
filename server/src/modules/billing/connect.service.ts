@@ -130,13 +130,12 @@ export class ConnectService {
     refreshUrl: string;
   }): Promise<{ url: string }> {
     const country = normalizeCountry(params.country);
-    // A US platform can only transfer to connected accounts in a fixed set
-    // of countries (shared/payout-countries.ts). Anyone else is paid through
-    // the international rail - creating a Stripe account for them would only
-    // strand it.
+    // Product rule: US entities on Stripe, every non-US entity on the
+    // international payout partner (shared/payout-countries.ts). Creating a
+    // Stripe account for a non-US provider would only strand it.
     if (payoutRailFor(country) !== "STRIPE") {
       throw new BadRequestException(
-        `Stripe payouts are not available for businesses in ${country}. GoStork pays providers in this country through its international payout partner - use that option on the Payouts page.`,
+        `Stripe payouts are for US businesses. GoStork pays non-US providers through its international payout partner - use that option on the Payouts page.`,
       );
     }
     let account = await this.getOrCreatePayoutAccount(params.providerId);

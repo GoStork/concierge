@@ -130,7 +130,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
           <h3 className="font-semibold">Payouts</h3>
           <p className="t-helper mt-0.5">
             Provider hasn't started payout setup yet.
-            {state.legalCountry && <> Legal entity country: <strong>{state.legalCountry}</strong> - {state.payoutRail === "INTERNATIONAL" ? `outside Stripe's reach for a US platform; paid via the international payout partner in ${state.payoutCurrency || "local currency"}.` : `Stripe Connect eligible (payouts in ${state.payoutCurrency || "USD"}).`}</>}
+            {state.legalCountry && <> Legal entity country: <strong>{state.legalCountry}</strong> - {state.payoutRail === "INTERNATIONAL" ? `non-US, paid via the international payout partner in ${state.payoutCurrency || "local currency"}.` : `US entity, paid via Stripe Connect (USD).`}</>}
           </p>
         </header>
         <div className="rounded-lg border p-4 bg-secondary/40">
