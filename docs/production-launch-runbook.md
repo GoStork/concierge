@@ -727,7 +727,9 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   passed on the new hostname, OTP SMS sent via Twilio Verify (OtpAttempt
   outcome=sent x2), account created with phone + smsNotificationsOptIn=true,
   trustState TRUSTED (eran.amir@gostork.com = admin, eran.amir+beta1 = test
-  parent). [ ] still to try: box UNTICKED variant. Observed rough edges:
+  parent). UNTICKED variant (eran.amir+beta2, 2026-08-19): phone verified,
+  smsNotificationsOptIn=false, TRUSTED, zero SMS Notification rows. PASS.
+  Observed rough edges:
   signup form double-submit shows "already exists" after a successful
   first submit; login page shows "Invalid email or password" for a server
   500 (should say "something went wrong"). Note: editing the phone on
@@ -750,8 +752,12 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   bookings (notification.service ~L2008). PASS. Observed: after a HOST
   reschedule the new PENDING slot shows in the host's own Pending list
   with Confirm/Decline - the host proposed it, so the parent should be the
-  one confirming; review that flow. [ ] still to check visually: email
-  design/logo in the inbox.
+  one confirming; review that flow. Email visuals checked in the inbox
+  2026-08-19 (cancelled / confirmed / rescheduled / receipts): teal header
+  + logo + brand buttons correct. Follow-up shipped: provider/GoStork-facing
+  parent emails now carry name + "View profile" link into /parents/:id,
+  email + phone (GoStork hosts always; outside providers per Gate B), and
+  the admin commitment alert got full detail rows.
 - [~] Provider side (2026-08-19): test org "Beta Test Surrogacy Agency"
   (3650c7cb-457c-4431-9565-0c5e5857758e) + PROVIDER_ADMIN
   eran.amir+agency1@gostork.com created via admin UI; provider login OK,
@@ -765,8 +771,17 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   `recipient_completed` webhook hit prod -> ProviderW9 COMPLETED ->
   Legal Identity auto-filled (8 fields, source W9_AUTO_FILL) -> Legal tab
   shows "Completed 8/19/2026" + download. **W-9 chain PASS end-to-end on
-  production.** [ ] agreement flow (ProviderAgreement / parent
-  Agreement) - same PandaDoc plumbing, not yet exercised on prod. Note: as a PROVIDER_ADMIN,
+  production.** Parent Agreement flow (2026-08-19): test agency pointed at
+  the dev surrogacy-contract PandaDoc template (5MPnGNZocnjJhcU3i9E5yA,
+  role Client - same PandaDoc account serves both envs); 2nd $5 invoice
+  paid -> auto-draft fired -> `agreement_draft_approval` card -> agency
+  Approve & Send -> Agreement SENT (PandaDoc mUMSeP6rsunWtKacwcYwoF),
+  parent "ready to sign" email+SMS -> Eran signed in PandaDoc ->
+  `recipient_completed` webhook -> SIGNED, signed-PDF card, kickoff
+  message, ladder to Handed Off; "Agreement signed" emails to agency +
+  admin commitment alert. **Agreement chain PASS on production.** [ ]
+  ProviderAgreement (GoStork <-> provider contract) not yet exercised on
+  prod. Note: as a PROVIDER_ADMIN,
   /home shows the PARENT home ("Welcome back, Agency", a journey card)
   while the nav Home goes to /provider/home - routing quirk to fix.
 - [x] Nightly-sync pinger: repo secret updated to the prod value (it
