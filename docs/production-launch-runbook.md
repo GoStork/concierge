@@ -262,10 +262,44 @@ Useful context for the executing session:
 
 ## 4. Twilio / SMS (A2P 10DLC)
 
-Cutover happens ONLY after the resubmitted campaign shows VERIFIED
-(compliance SID QE2c6890da8086d771620e9b13fadeba0b on service
-MG6c4e651e006fe5b8a47523b244db96cd; daily watcher `twilio-a2p-campaign-watch`
-polls at 7am on the iMac). Then, in ONE sitting, in this order:
+**PARKED UNTIL LAUNCH (decided 2026-08-19). The Standard campaign has now been
+rejected THREE times and cannot be approved before the new product is actually
+serving app.gostork.com.** Rejections: 30909 (CTA not found, Aug 13), 30923
+(consent was a required condition, Aug 17 - fixed by splitting the OTP notice
+from an optional unticked notifications opt-in), then **30909 AGAIN on Aug 19**
+- CTA not verifiable. The consent split worked; the blocker is that the
+campaign's declared message-flow URL `https://app.gostork.com` still serves the
+OLD 1.0 product, which has no SMS disclosure anywhere (re-verified Aug 19: HTTP
+200, EventSoft markup, zero hits for "data rates" / "verification code" /
+"STOP"). A reviewer following the declared URL finds no CTA, so the submission
+fails no matter how good the WordPress evidence page is. Eran cannot edit the
+old signup page, so this is genuinely unfixable until the flip. Declaring
+www.gostork.com/sms-consent instead was considered and rejected - it is a static
+disclosure page, not a signup flow, and would likely draw the same 30909.
+
+Nothing is broken meanwhile: live SMS still runs on the sole-prop campaign
+CX4XS4N via service MGa6b8064464ed2c6cdd94fe2848d70255 (holds both numbers), and
+`TWILIO_MESSAGING_SERVICE_SID` still points at MGa6b8... Brand
+BN6108e1d38e5bcc6736eddd453978e389 stays APPROVED and needs no rework. The daily
+watcher `twilio-a2p-campaign-watch` was PAUSED on 2026-08-19; nobody is polling.
+
+**LAUNCH-DAY SEQUENCE (this section is now Phase B work, not pre-launch):**
+
+- [ ] AFTER app.gostork.com serves the new product (Phase B flip), confirm the
+  live signup phone step really does show `<SmsTransactionalNotice />` + the
+  unticked `<SmsNotificationsOptIn />` checkbox, and that signup completes with
+  the box unticked (if declining ever blocks Verify we are back on 30923).
+- [ ] THEN resubmit the campaign (compliance SID
+  QE2c6890da8086d771620e9b13fadeba0b, TCR CM00284c7c0bed7dca7c70129accbee03f,
+  on service MG6c4e651e006fe5b8a47523b244db96cd). The declared flow URL and the
+  stored message_flow already describe exactly what will then be live - no edit
+  needed, just resubmit. Re-enable / recreate the `twilio-a2p-campaign-watch`
+  daily watcher at that point.
+- [ ] Do NOT resubmit before the flip. Two of three rejections died on this
+  exact URL mismatch; resubmitting unchanged is the loop.
+
+Cutover happens ONLY after the campaign shows VERIFIED. Then, in ONE sitting,
+in this order:
 
 - [ ] Move +12058962077 from sole-prop service MGa6b8064464ed2c6cdd94fe2848d70255
   into MG6c4e651e006fe5b8a47523b244db96cd (a number lives in exactly one
@@ -275,8 +309,9 @@ polls at 7am on the iMac). Then, in ONE sitting, in this order:
 - [ ] Rebuild/restart affected hosts; send one real test SMS; confirm delivery.
 - [ ] Delete the old sole-prop campaign CX4XS4N and its brand.
 - [ ] Delete the `twilio-a2p-campaign-watch` scheduled task once done.
-- [ ] The campaign's declared flow URL is already https://app.gostork.com - no
-  Twilio change needed at launch BY DESIGN. Keep it that way.
+- [ ] The campaign's declared flow URL is already https://app.gostork.com -
+  keep it that way. Post-flip that URL is finally TRUE, which is the whole
+  reason the resubmission can succeed then and could not succeed before.
 - [ ] NEVER let www.gostork.com/sms-consent (WordPress page 5461) or
   /terms section 17 be unpublished or reworded except in lockstep with
   the registered copy (carrier audit risk). They must survive launch.
