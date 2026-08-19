@@ -150,10 +150,28 @@ DONE:
 NEXT, in order (items marked ERAN need a human in a browser):
 1. [x] prod DB password + connection strings.
 2. [x] Seed complete + verified (above).
-3. [ ] ERAN: `gcloud auth login` (owner account for GoStork's GCP) on the
-   MacBook, then decide the project (see discovery above) and
-   `gcloud config set project <id>`. Then provision the 2.0 host (VM vs
-   Cloud Run) + static IP + TLS + auto-deploy from main.
+3. [x] gcloud logged in on the MacBook as eran.amir@gostork.com (2026-08-19,
+   with ADC). Discovery: 1.0 runs in GCP project **`gostork`** (project
+   number 783186919206, billing account 01AAE7-19EFE9-CE6C03) as a **GKE
+   cluster** `main-cluster` (us-central1-a, 3 nodes) built by a self-hosted
+   GitLab (`gitlab-1`, `gitlab-runner-2` VMs) - the `34.28.x/35.238.x/34.46.x`
+   app IPs are ephemeral GKE load-balancer IPs. Same project also has
+   `scrapper`, `gostork-website` (us-east1-b) and `wordpress-1-vm`
+   (us-east1-c). `babies-island` is an older project with everything
+   TERMINATED. `gen-lang-client-0051391254` = GCS/Speech only.
+   **DECISION 2026-08-19 (Eran, on recommendation): 2.0 host = one Compute
+   Engine VM in project `gostork`, region us-east4 (next to the us-east-1
+   Supabase), NOT Cloud Run and NOT the 1.0 GKE cluster.** Rationale: the
+   app is a single long-lived Node process (22 in-process schedulers, WS
+   voice gateway, SSE, long Chromium scrapes) - a VM mirrors how it runs on
+   the Macs today; local `public/uploads` is only the no-GCS fallback so
+   persistence is not a concern either way; ~$50/mo; the whole GKE+GitLab
+   footprint retires with 1.0.
+   [ ] Provision: e2-standard-2, Ubuntu 24.04 LTS, static external IP,
+   Node 24 + git + Chromium deps, app as a systemd service under a
+   `gostork` user, Cloudflare Origin Certificate on the origin (Full
+   strict), GitHub Actions deploy on push to main (SSH -> pull, npm ci,
+   build, prisma migrate deploy, restart).
 4. [ ] Continue Phase A per section 11 (Cloudflare bot mode, test-app DNS,
    Turnstile, OAuth URIs, PandaDoc staging subscription, pinger).
 
