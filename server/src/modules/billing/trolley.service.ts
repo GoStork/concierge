@@ -184,8 +184,36 @@ export class TrolleyService {
         return { status: "skipped", reason: "PROVIDER_NOT_READY", message: "Provider's international payout method is not ready (bank account or verification incomplete in Trolley)" };
       }
     }
-    const existing = await this.prisma.invoice.findUnique({ where: { id: invoice.id }, select: { trolleyPaymentId: true } });
+    const existing = await this.prisma.invoice.findUnique({ where: { id: invoice.id }, select: { trolleyPaymentId: true, trolleyBatchId: true, trolleyPaymentStatus: true, payoutCompletedAt: true } });
     if (existing?.trolleyPaymentId) {
+      // A payment already exists. If it is moving (or done), we are done -
+      // but a payment stuck in "pending" means start-processing failed after
+      // the batch was created (e.g. insufficient Trolley balance on the
+      // first try). Kick processing again instead of skipping forever.
+      const live = await trolley.getPayment(existing.trolleyPaymentId).catch(() => null);
+      const liveStatus: string = live?.status || existing.trolleyPaymentStatus || "pending";
+      if (liveStatus !== "pending") {
+        await this.prisma.invoice.update({ where: { id: invoice.id }, data: { trolleyPaymentStatus: liveStatus } }).catch(() => {});
+        return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already paid out via Trolley ${existing.trolleyPaymentId} (${liveStatus})` };
+      }
+      if (existing.trolleyBatchId) {
+        try {
+          await trolley.startBatchProcessing(existing.trolleyBatchId);
+          await this.prisma.invoice.update({
+            where: { id: invoice.id },
+            data: { trolleyPaymentStatus: "processing", payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(), payoutFailedAt: null, payoutFailureReason: null, payoutNextAttemptAt: null },
+          });
+          this.logger.log(`Trolley batch ${existing.trolleyBatchId} processing re-kicked for invoice ${invoice.id} (payment ${existing.trolleyPaymentId})`);
+          return { status: "transferred", transferId: existing.trolleyPaymentId };
+        } catch (e: any) {
+          const reason = e?.message || "Trolley start-processing failed";
+          await this.prisma.invoice.update({
+            where: { id: invoice.id },
+            data: { payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(), payoutFailedAt: new Date(), payoutFailureReason: `Trolley: ${reason}` },
+          }).catch(() => {});
+          return { status: "failed", reason };
+        }
+      }
       return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already paid out via Trolley ${existing.trolleyPaymentId}` };
     }
 
