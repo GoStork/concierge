@@ -1444,6 +1444,7 @@ export async function syncAgreementStatus(agreementId: string): Promise<{ status
           : await prisma.user.findFirst({ where: { providerId: agreement.providerId }, select: { id: true, email: true, name: true } });
         if (providerUser?.email) {
           await notifService.sendAgreementSignedNotification({
+            parentUserId: (agreement as any).parentUserId || null,
             recipientUserId: providerUser.id,
             recipientEmail: providerUser.email,
             recipientName: providerUser.name || providerName,

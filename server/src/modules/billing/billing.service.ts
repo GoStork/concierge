@@ -3059,6 +3059,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     await this.notificationService.sendInvoicePaidAdminNotification({
       invoiceId: invoice.id,
       parentName: invoice.parentUser.name || invoice.parentUser.email,
+      parentUserId: invoice.parentUserId,
       providerName: invoice.providerName,
       serviceType: humanizeLineServiceType(invoice.serviceType),
       serviceAmountFormatted: formatCents(invoice.serviceAmount),

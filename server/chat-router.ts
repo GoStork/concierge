@@ -5859,6 +5859,7 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
                 adminUserId: admin.id,
                 adminEmail: admin.email,
                 parentName,
+                parentUserId: user.id,
                 providerName,
                 providerType: providerTypeName,
                 billingUrl: `${appBase}${billingUrl}`,
@@ -6657,6 +6658,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
               const notifService = nestApp.get(NotificationService);
               const providerName = agreement.provider.name || "Your Agency";
               await notifService.sendAgreementSignedNotification({
+                parentUserId: agreement.parentUserId || null,
                 recipientUserId: providerUser.id,
                 recipientEmail: providerUser.email,
                 recipientName: providerUser.name || providerName,

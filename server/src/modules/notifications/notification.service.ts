@@ -241,29 +241,96 @@ export class NotificationService implements OnModuleInit {
     try {
       const parentUserId = booking?.parentUserId || booking?.parentUser?.id;
       const host = booking?.providerUserId
-        ? await this.prisma.user.findUnique({ where: { id: booking.providerUserId }, select: { providerId: true } })
+        ? await this.prisma.user.findUnique({
+            where: { id: booking.providerUserId },
+            select: { providerId: true, roles: true, provider: { select: { name: true } } },
+          })
         : null;
       // A guest booking with no parent account has no gate to apply: the person
       // typed their own address into a public booking page for this provider.
       if (!parentUserId || !host?.providerId) {
         return attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : [];
       }
-      const parent = booking?.parentUser?.parentAccountId !== undefined
-        ? booking.parentUser
-        : await this.prisma.user.findUnique({ where: { id: parentUserId }, select: { id: true, parentAccountId: true } });
-      const gates = await resolveParentGates(host.providerId, parentAccountKey(parent), { hasBooking: true });
-      if (!gates.showContact) return [];
+      // GoStork staff and the house provider are the platform: the gates exist
+      // to keep OUTSIDE providers from taking the relationship off-platform,
+      // not to hide a family from the concierge team. Same rule as GATES_OPEN
+      // in parent-privacy.ts - the first prod booking email to the GoStork
+      // host arrived with no email/phone because this path applied Gate B to
+      // GoStork itself.
+      const isStaff = (host.roles || []).some((r: string) => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE");
+      const isHouse = process.env.GOSTORK_PROVIDER_ID
+        ? host.providerId === process.env.GOSTORK_PROVIDER_ID
+        : (host.provider?.name || "").trim().toLowerCase() === "gostork";
+      let showContact = isStaff || isHouse;
+      if (!showContact) {
+        const parent = booking?.parentUser?.parentAccountId !== undefined
+          ? booking.parentUser
+          : await this.prisma.user.findUnique({ where: { id: parentUserId }, select: { id: true, parentAccountId: true } });
+        const gates = await resolveParentGates(host.providerId, parentAccountKey(parent), { hasBooking: true });
+        showContact = gates.showContact;
+      }
+      if (!showContact) return [];
+      const phone = booking.parentUser?.mobileNumber
+        || (await this.prisma.user.findUnique({ where: { id: parentUserId }, select: { mobileNumber: true } }))?.mobileNumber;
       return [
         ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
-        ...(booking.parentUser?.mobileNumber
-          ? [{ label: "Phone", value: esc(formatPhoneDisplay(booking.parentUser.mobileNumber)) }]
-          : []),
+        ...(phone ? [{ label: "Phone", value: esc(formatPhoneDisplay(phone)) }] : []),
       ];
     } catch (e: any) {
       // Fail CLOSED: a lookup failure must not print an address we were unsure
       // about. The provider still gets the meeting, just without the contact row.
       this.logger.error(`providerContactRows failed: ${e?.message || e}`);
       return [];
+    }
+  }
+
+  /**
+   * The "Client" row of a PROVIDER-facing booking email: the parent's name
+   * plus a small link into the Parents CRM record (/parents/:id), so the
+   * provider or the GoStork team can open who this family is straight from
+   * the inbox. The record page applies the privacy gates itself, so the link
+   * is safe to print for everyone. Guest bookings (no parent account) get
+   * the plain name.
+   */
+  private clientRow(booking: any, attendeeName: string): { label: string; value: string } {
+    const parentUserId = booking?.parentUserId || booking?.parentUser?.id;
+    if (!parentUserId) return { label: "Client", value: esc(attendeeName) };
+    const url = `${getBaseUrl()}/parents/${parentUserId}`;
+    return {
+      label: "Client",
+      value: `${esc(attendeeName)}&nbsp;&nbsp;<a href="${url}" title="Open in Parents">&#8599;&#xFE0E; View profile</a>`,
+    };
+  }
+
+  /**
+   * "Parent" + Email + Phone rows for a provider- or GoStork-facing email
+   * about a family, looked up from the parent's user row. `contact: false`
+   * prints only the name + CRM link (for recipients still behind Gate B).
+   * Same "View profile" link as clientRow() so every such email opens the
+   * Parents record the same way.
+   */
+  private async parentDetailRows(
+    parentUserId: string | null | undefined,
+    fallbackName: string,
+    opts: { contact: boolean; label?: string } = { contact: true },
+  ): Promise<{ label: string; value: string }[]> {
+    const label = opts.label || "Parent";
+    if (!parentUserId) return [{ label, value: esc(fallbackName) }];
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { id: parentUserId },
+        select: { name: true, email: true, mobileNumber: true },
+      });
+      const rows = [this.clientRow({ parentUserId }, u?.name || fallbackName)];
+      rows[0].label = label;
+      if (opts.contact) {
+        if (u?.email) rows.push({ label: "Email", value: esc(u.email) });
+        if (u?.mobileNumber) rows.push({ label: "Phone", value: esc(formatPhoneDisplay(u.mobileNumber)) });
+      }
+      return rows;
+    } catch (e: any) {
+      this.logger.warn(`parentDetailRows failed for ${parentUserId}: ${e?.message}`);
+      return [{ label, value: esc(fallbackName) }];
     }
   }
 
@@ -551,7 +618,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Time", value: provTimeStr },
           { label: "Duration", value: `${booking.duration} minutes` },
           { label: "Location", value: location },
-          { label: "Client", value: esc(attendeeName) },
+          this.clientRow(booking, attendeeName),
           ...(await this.providerContactRows(booking, attendeeEmail)),
           ...(booking.notes ? [{ label: "Notes", value: esc(booking.notes) }] : []),
         ],
@@ -612,7 +679,7 @@ export class NotificationService implements OnModuleInit {
         { label: "Time", value: timeStr },
         { label: "Duration", value: `${booking.duration} minutes` },
         { label: "Location", value: location },
-        { label: "Client", value: esc(attendeeName) },
+        this.clientRow(booking, attendeeName),
         ...(await this.providerContactRows(booking, attendeeEmail)),
       ],
       alertBox: { text: alertText, type: opts.urgent ? "error" : "warning" },
@@ -865,7 +932,7 @@ export class NotificationService implements OnModuleInit {
         detailRows: [
           { label: "Requested Date", value: provDateStr },
           { label: "Requested Time", value: provTimeStr },
-          { label: "Client", value: esc(attendeeName) },
+          this.clientRow(booking, attendeeName),
           ...(await this.providerContactRows(booking, attendeeEmail)),
         ],
         alertBox: { text: "No action is needed. The request has been removed from your pending list.", type: "info" },
@@ -1003,7 +1070,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Time", value: provTimeStr },
           { label: "Duration", value: `${booking.duration} minutes` },
           { label: "Location", value: location },
-          { label: "Client", value: esc(attendeeName) },
+          this.clientRow(booking, attendeeName),
           ...(await this.providerContactRows(booking, attendeeEmail)),
         ],
         buttons: [
@@ -1122,7 +1189,7 @@ export class NotificationService implements OnModuleInit {
         detailRows: [
           { label: "Date", value: provDateStr },
           { label: "Time", value: provTimeStr },
-          { label: "Client", value: esc(attendeeName) },
+          this.clientRow(booking, attendeeName),
           ...(await this.providerContactRows(booking, attendeeEmail)),
         ],
       });
@@ -1254,7 +1321,7 @@ export class NotificationService implements OnModuleInit {
           { label: "New Date", value: provNewDateStr },
           { label: "New Time", value: provNewTimeStr },
           { label: "Duration", value: `${newBooking.duration} minutes` },
-          { label: "Client", value: esc(attendeeName) },
+          this.clientRow(newBooking, attendeeName),
           ...(await this.providerContactRows(newBooking, attendeeEmail)),
         ],
         buttons: [
@@ -2054,7 +2121,7 @@ export class NotificationService implements OnModuleInit {
                 { label: "Date", value: dateStr },
                 { label: "Time", value: timeStr },
                 { label: "Duration", value: `${booking.duration} minutes` },
-                { label: "Client", value: esc(attendeeName) },
+                this.clientRow(booking, attendeeName),
                 ...(await this.providerContactRows(booking, booking.attendeeEmails?.[0])),
               ],
               buttons: [
@@ -2659,6 +2726,7 @@ export class NotificationService implements OnModuleInit {
     providerName: string;
     /** Full name of the parent who initiated the agreement */
     parentName: string;
+    parentUserId?: string | null;
     providerId: string;
     sessionId: string;
     agreementId?: string;
@@ -2682,6 +2750,9 @@ export class NotificationService implements OnModuleInit {
       body: isProvider
         ? `The agreement with <strong>${this.escapeHtml(params.parentName)}</strong> has been signed by all parties and is now fully executed. You can download the completed document from your GoStork Documents tab.`
         : `Your agreement with <strong>${this.escapeHtml(params.providerName)}</strong> is now fully signed by all parties. The process is complete - you're one step closer on your journey.`,
+      // Provider copy: who this family is + how to reach them (a sent
+      // agreement opened Gate B) and the CRM link.
+      ...(isProvider ? { detailRows: await this.parentDetailRows(params.parentUserId, params.parentName, { contact: true }) } : {}),
       alertBox: { text: "All parties have signed. The agreement is now complete.", type: "success" },
       buttons: [{ label: isProvider ? "View Documents" : "Continue in GoStork", url: isProvider ? providerButtonUrl : parentButtonUrl }],
       footer: isProvider
@@ -3373,9 +3444,11 @@ export class NotificationService implements OnModuleInit {
 
     // ── Agency: payment-received notice + same PDF ──────────────────────
     const agencySubject = `Payment received - ${params.paidAmountFormatted} from ${params.parentName}`;
+    // Receiving an invoice opened Gate B for this provider, so the contact
+    // rows are fine here; the CRM link lets them open the family's record.
     const agencyRows: Array<{ label: string; value: string }> = [
       { label: "Receipt Number", value: params.receiptNumber },
-      { label: "Parent",         value: `${params.parentName} (${params.parentEmail})` },
+      ...(await this.parentDetailRows(params.parentUserId, params.parentName, { contact: true })),
     ];
     if (!hasLines) {
       agencyRows.push({ label: "Service", value: params.serviceType });
@@ -3493,6 +3566,7 @@ export class NotificationService implements OnModuleInit {
     adminUserId: string;
     adminEmail: string;
     parentName: string;
+    parentUserId?: string | null;
     providerName: string;
     providerType: string;
     billingUrl: string;
@@ -3505,6 +3579,7 @@ export class NotificationService implements OnModuleInit {
       title: "Parent Ready to Proceed",
       greeting: "Hi GoStork Team,",
       body: `<strong>${esc(params.parentName)}</strong> has confirmed they are ready to move forward with <strong>${esc(providerLabel)}</strong>. Please create their invoice in the billing dashboard.`,
+      detailRows: await this.parentDetailRows(params.parentUserId, params.parentName, { contact: true }),
       buttons: [{ label: "Create Invoice", url: params.billingUrl }],
       footer: "This is an automated notification from the GoStork billing system.",
     });
@@ -3522,6 +3597,7 @@ export class NotificationService implements OnModuleInit {
   async sendInvoicePaidAdminNotification(params: {
     invoiceId: string;
     parentName: string;
+    parentUserId?: string | null;
     providerName: string;
     serviceType: string;
     serviceAmountFormatted: string;
@@ -3542,7 +3618,7 @@ export class NotificationService implements OnModuleInit {
       greeting: `A parent has completed their payment for <strong>${esc(params.providerName)}</strong>.`,
       body: "",
       detailRows: [
-        { label: "Parent",          value: params.parentName },
+        ...(await this.parentDetailRows(params.parentUserId, params.parentName, { contact: true })),
         { label: "Provider",        value: params.providerName },
         { label: "Service",         value: params.serviceType },
         { label: "Total Collected", value: params.serviceAmountFormatted },
