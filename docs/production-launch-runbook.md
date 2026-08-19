@@ -827,6 +827,9 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   Stripe when the payload lacks it. No provider transfer existed yet on
   this invoice (agency has no Connect account), so the clawback path was
   not exercised - [ ] re-test refund after the first real Connect payout.
+  2nd charge+refund (agreement test, 13:40 UTC): refundRequestedAt ->
+  refundedAt 1s apart, stripeRefundId re_3U69Qj... recorded - the
+  charge.refunds fix verified live.
   Follow-up shipped same day (2b999765): the journey ladder now has a
   two-step refund BRANCH hanging off "Invoice Paid" (Refund Requested ->
   Refund Completed, like No Show off the call), `Invoice.refundRequestedAt`
