@@ -267,10 +267,42 @@ NEXT, in order (items marked ERAN need a human in a browser):
       for `/api/webhooks/*` and `/api/cron/*` (section 1) - lower priority
       now that Bot Fight Mode is off; do before the Stripe/PandaDoc
       webhooks go live.
-5. [ ] Then: Google/Microsoft OAuth redirect URIs for test-app, PandaDoc
-   staging webhook subscription (needs the host reachable over HTTPS),
-   repoint the nightly-sync pinger with the NEW NIGHTLY_SYNC_SECRET,
-   smoke tests (section 12).
+5. Step 5 (2026-08-19):
+   a. [x] **PandaDoc staging subscription created**: "GoStork - Staging
+      Agreements (test-app)" uuid `3a53a683-64e0-49f2-b932-7817dd816241`,
+      ACTIVE, url https://test-app.gostork.com/api/webhooks/pandadoc
+      ?signature={signature}, triggers document_state_changed +
+      recipient_completed (same as prod/dev subs). Its shared_key is in the
+      prod host .env as PANDADOC_WEBHOOK_SECRET (and in
+      `~/.gostork-prod-pandadoc-shared-key` on the MacBook). API note: the
+      `{signature}` placeholder must be sent URL-encoded (%7Bsignature%7D)
+      or the API returns "url: must be valid url". At Phase B: repoint or
+      deactivate this one and reactivate 2d18c09a (app.gostork.com) - and
+      switch the env secret to THAT subscription's shared_key.
+   b. [x] **Nightly-sync pinger rewired** (4bcd4a1a): `.github/workflows/
+      nightly-sync.yml` schedules 06:00 + 07:00 UTC (= 2 AM ET across DST)
+      against TARGET=https://test-app.gostork.com. [ ] ERAN: the repo secret
+      `NIGHTLY_SYNC_SECRET` must be set to the PROD host value - gh CLI and
+      the Chrome GitHub session are not repo admins. Value is in
+      `~/.gostork-prod-pinger-secret` on the MacBook (`pbcopy <
+      ~/.gostork-prod-pinger-secret`), add at
+      https://github.com/GoStork/concierge/settings/secrets/actions as the
+      `gostorky` admin. Until then the nightly job fails loudly with
+      "secret not set" (and prod has no scraper configs yet anyway).
+   c. [ ] OAuth redirect URIs - Google OAuth client lives in GCP project
+      `gen-lang-client-0051391254` (client id prefix 1053367727632):
+      add `https://test-app.gostork.com/api/calendar/google/callback` and
+      `https://app.gostork.com/api/calendar/google/callback` at
+      https://console.cloud.google.com/auth/clients?project=gen-lang-client-0051391254
+      (blocked on a passkey re-auth in Chrome at the time of writing).
+      Microsoft: add `https://test-app.gostork.com/api/calendar/microsoft/callback`
+      + the app.gostork.com twin in the Azure app registration
+      (MICROSOFT_CLIENT_ID in .env) > Authentication > Web redirect URIs.
+   d. [ ] Smoke tests (section 12) once Eran has signed up on test-app and
+      been promoted to admin.
+   Note: `systemctl restart gostork` = ~10s of 502 at the edge (seen when
+   setting the PandaDoc secret). Fine for beta; a zero-downtime restart
+   (second port + Caddy upstream switch) is a later improvement.
 
 Useful context for the executing session:
 - PandaDoc subscription uuids: production (deactivated)
