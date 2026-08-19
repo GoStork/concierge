@@ -11,7 +11,7 @@
  * enables it after a 200 - an unsigned/empty probe gets 200 without being
  * processed.
  */
-import { Controller, Get, Post, Param, Req, Res, UseGuards, HttpException, HttpStatus, Logger } from "@nestjs/common";
+import { Controller, Get, Post, Param, Req, Res, UseGuards, HttpException, HttpStatus, Logger, Inject } from "@nestjs/common";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { prisma } from "../../../db";
@@ -26,7 +26,9 @@ function providerRoleOk(user: any): boolean {
 @Controller()
 export class TrolleyController {
   private readonly logger = new Logger(TrolleyController.name);
-  constructor(private readonly trolleyService: TrolleyService) {}
+  // esbuild does not emit decorator metadata, so DI-by-type fails silently -
+  // every injection in this codebase is an explicit @Inject().
+  constructor(@Inject(TrolleyService) private readonly trolleyService: TrolleyService) {}
 
   @Get("api/provider/payouts/trolley/widget-url")
   @UseGuards(SessionOrJwtGuard)

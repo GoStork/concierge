@@ -73,7 +73,7 @@ export interface CustomPayoutFormData {
 export class ConnectService {
   private readonly logger = new Logger(ConnectService.name);
   private readonly prisma = prismaClient;
-  constructor(private readonly trolleyService: TrolleyService) {}
+  constructor(@Inject(TrolleyService) private readonly trolleyService: TrolleyService) {}
 
   // ── Read current state for UI ──────────────────────────────────────────────
 
