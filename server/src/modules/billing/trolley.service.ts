@@ -192,7 +192,10 @@ export class TrolleyService {
       // first try). Kick processing again instead of skipping forever.
       const live = await trolley.getPayment(existing.trolleyPaymentId).catch(() => null);
       const liveStatus: string = live?.status || existing.trolleyPaymentStatus || "pending";
-      if (liveStatus !== "pending") {
+      // "open" = sitting in a batch that never started processing; "pending"
+      // = queued. Both mean the money has NOT moved yet - re-kick them.
+      const stuck = liveStatus === "pending" || liveStatus === "open";
+      if (!stuck) {
         await this.prisma.invoice.update({ where: { id: invoice.id }, data: { trolleyPaymentStatus: liveStatus } }).catch(() => {});
         return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already paid out via Trolley ${existing.trolleyPaymentId} (${liveStatus})` };
       }
