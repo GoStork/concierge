@@ -235,21 +235,38 @@ NEXT, in order (items marked ERAN need a human in a browser):
    [ ] Harden later (section 10): Express sends `X-Powered-By`; restrict
    the GCE firewall 80/443 to Cloudflare IP ranges once proxied DNS is live
    (today `allow-http`/`allow-https` are 0.0.0.0/0 on the default network).
-4. [ ] ERAN in the Cloudflare dashboard (the CLOUDFLARE_API_TOKEN in .env
-   is Turnstile-scoped only - verified 2026-08-19, cannot touch DNS/SSL):
-   a. Security > Bots: turn **Bot Fight Mode OFF** (zone-wide; see section 1).
-   b. SSL/TLS > Origin Server > **Create Certificate** (RSA 2048, hostnames
-      `*.gostork.com, gostork.com`, 15 years). Save the certificate + private
-      key into two files on the MacBook (outside the repo, e.g.
-      `~/.gostork-origin.pem` / `~/.gostork-origin.key`) and tell Claude -
-      Caddy on the VM then gets a :443 site with that cert and the zone
-      moves to **Full (strict)**.
-   c. DNS: edit `test-app.gostork.com` A record -> `34.85.132.142`, proxied
-      (orange cloud). Check 1.0 test-app usage first (section 11 step 4
-      note). Also add the `/api/*` cache-bypass rule + webhook/cron WAF
-      skips (section 1).
-   d. Turnstile: add `test-app.gostork.com` + `app.gostork.com` to the
-      widget's hostnames.
+4. [x] **Cloudflare DONE 2026-08-19** (Claude drove Eran's logged-in Chrome;
+   the CLOUDFLARE_API_TOKEN in .env is Turnstile-scoped only):
+   a. [x] Security > Settings > **Bot Fight Mode OFF** (zone-wide).
+   b. [x] SSL/TLS > Origin Server: **Origin Certificate** created (RSA 2048,
+      `*.gostork.com` + `gostork.com`, valid to 2041-08-15). Files on the
+      MacBook: `~/.gostork-origin.pem` / `~/.gostork-origin.key` (chmod 600,
+      outside the repo) and on the VM at `/etc/caddy/tls/origin.{pem,key}`.
+      Caddy serves :443 with it and REQUIRES a Cloudflare client cert
+      (`/etc/caddy/tls/cloudflare-origin-pull-ca.pem`), and **Authenticated
+      Origin Pulls (Global) is ON** in the zone - so nobody but Cloudflare's
+      edge can complete a TLS handshake to the origin. :80 is still open on
+      Caddy for the transition; close it (and restrict the GCE firewall to
+      Cloudflare ranges) once app.gostork.com is on strict too.
+   c. [x] The zone encryption mode was NOT changed (1.0's origin is plain
+      HTTP). Instead a **Configuration Rule "test-app strict TLS"**
+      (`http.host eq "test-app.gostork.com"` -> SSL Full (strict)) is
+      Active. At Phase B, add app.gostork.com to that rule (or flip the zone)
+      and then the :80 listener can go.
+   d. [x] DNS: `test-app.gostork.com` A -> `34.85.132.142`, proxied.
+      Verified: https://test-app.gostork.com -> HTTP/2 200 via Cloudflare,
+      brand settings from prod, /api/user 401, http:// -> 301 https://,
+      origin :443 connections arrive from Cloudflare edge IPs. Note: 1.0's
+      test server stays reachable on `test.gostork.com` and
+      `dev2.gostork.com` (both still -> 34.46.187.88), so no parking record
+      was needed. Other 1.0 names seen: `prod2` -> 34.28.191.216.
+   e. [x] Turnstile widget "GoStork signup" (0x4AAAAAAEOXjCUeXzZCwxuu):
+      hostnames now app.gostork.com, gostork.com, gostork.ngrok.app,
+      test-app.gostork.com.
+   [ ] Still to do in Cloudflare: `/api/*` cache bypass + WAF skip rules
+      for `/api/webhooks/*` and `/api/cron/*` (section 1) - lower priority
+      now that Bot Fight Mode is off; do before the Stripe/PandaDoc
+      webhooks go live.
 5. [ ] Then: Google/Microsoft OAuth redirect URIs for test-app, PandaDoc
    staging webhook subscription (needs the host reachable over HTTPS),
    repoint the nightly-sync pinger with the NEW NIGHTLY_SYNC_SECRET,
