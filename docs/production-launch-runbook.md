@@ -474,10 +474,32 @@ watcher `twilio-a2p-campaign-watch` was PAUSED on 2026-08-19; nobody is polling.
   the box unticked (if declining ever blocks Verify we are back on 30923).
 - [ ] THEN resubmit the campaign (compliance SID
   QE2c6890da8086d771620e9b13fadeba0b, TCR CM00284c7c0bed7dca7c70129accbee03f,
-  on service MG6c4e651e006fe5b8a47523b244db96cd). The declared flow URL and the
-  stored message_flow already describe exactly what will then be live - no edit
-  needed, just resubmit. Re-enable / recreate the `twilio-a2p-campaign-watch`
-  daily watcher at that point.
+  on service MG6c4e651e006fe5b8a47523b244db96cd). The declared flow URL stays
+  https://app.gostork.com and is correct. **The stored message_flow is NOT
+  correct any more** - it quotes the long pre-2026-08-19 consent wording
+  verbatim, and the shipped UI now carries the shortened wording (commit
+  cf98c2bd). Editing that field to match is a REQUIRED step of the resubmit,
+  not an optional one; submitting the stale text guarantees a fourth rejection,
+  because the quoted copy will not match what the reviewer sees on screen.
+  Re-enable / recreate the `twilio-a2p-campaign-watch` daily watcher at that
+  point.
+- [ ] Same resubmit sitting: confirm WordPress page 5461 quotes the SHORTENED
+  wording and shows the SHORTENED screenshot. Source of truth for both strings
+  is `client/src/components/ui/sms-consent-disclosure.tsx`; copy from there, do
+  not retype.
+- [ ] Timing nuance vs section 0's staged launch: the resubmit belongs at the
+  FINAL flip (app.gostork.com -> new origin), NOT at beta start. During beta,
+  app.gostork.com still serves 1.0 while beta signups run on test-app, so the
+  declared URL is still untrue and the 30909 loop repeats. This supersedes the
+  "Acceptable - do not re-file" A2P note in section 0, which was written before
+  the Aug 19 rejection proved the reviewer does follow the declared URL.
+- [ ] Cloudflare, found 2026-08-19: `https://app.gostork.com/onboarding` returns
+  **403 with `cf-mitigated: challenge`** to a plain client. Even after the flip,
+  an automated vetter hitting the declared URL can be served a challenge page
+  instead of the signup step - a second, independent cause of "CTA could not be
+  verified". Before resubmitting, exempt the signup path from Bot Fight
+  Mode / managed challenge (or verify a clean anonymous fetch reaches the phone
+  step) and re-check with `curl -sI`.
 - [ ] Do NOT resubmit before the flip. Two of three rejections died on this
   exact URL mismatch; resubmitting unchanged is the loop.
 
@@ -499,6 +521,14 @@ in this order:
   /terms section 17 be unpublished or reworded except in lockstep with
   the registered copy (carrier audit risk). They must survive launch.
 - [ ] OTP: `TWILIO_VERIFY_SERVICE_SID` set in prod (signup verification texts).
+- [ ] Brand data hygiene: dev `SiteSettings.companyName` was stored as
+  `'GoStork '` with a TRAILING SPACE, which every `{brandName}` interpolation
+  inherited. Invisible in HTML until the shortened consent copy put a period
+  straight after it ("from GoStork . Optional."). Fixed in dev on 2026-08-19
+  (`SiteSettings` + all three `BrandTemplate.config` rows btrim'd). **Check the
+  PRODUCTION Supabase project (itlnituvybtnzmrzbkoz) for the same trailing
+  space and btrim it before launch** - otherwise the carrier-facing consent
+  string renders wrong on the very page the reviewer inspects.
 
 ## 5. PandaDoc
 
