@@ -769,7 +769,24 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   "unverified" publisher -> [ ] Microsoft Partner Center publisher
   verification, same class as the Google verification item (section 7).
   [ ] reconnect email -> links to the production URL: not yet exercised.
-- [ ] Payment link end-to-end in live mode (small real charge, refund).
+- [~] Payment link end-to-end in LIVE mode (2026-08-19): agency sent a $5
+  cost sheet, then an invoice from the chat (+ -> Invoice; blocked first by
+  the Legal Identity guardrail until Tax ID + business URL were set on the
+  test agency - correct behaviour). Invoice a6cfdf69 AWAITING_PAYMENT,
+  referral fee 10% -> GoStork keeps $0.50 / provider $4.50. Pay page
+  /pay/<token> minted a LIVE PaymentIntent (client bundle carries pk_live,
+  server sk_live). Eran paid $5 with a real card in Safari -> Stripe
+  `payment_intent.succeeded` reached the VM through Cloudflare -> Invoice
+  PAID (paymentMethod CARD, pi_3U68bECGqwxDjN6V1Zx2D0mu), parent
+  journey stage -> "Deposit Paid". Agreement auto-draft skipped (test
+  agency has no agreement template - expected). [ ] refund via admin
+  Billing tab -> `charge.refunded` -> REFUNDED (in progress).
+- [ ] LEFTOVER 1.0 TRAFFIC on test-app: something polls
+  `GET /api/v1/surrogates/list-to-update?agencyName=familycreations` every
+  ~30 s (404 on 2.0). A 1.0 scraper/cron still targets the test hostname -
+  find it in the 1.0 stack (GKE cronjobs / GitLab CI schedules) and stop
+  it before the app.gostork.com flip, otherwise the same job will hammer
+  production with 404s (or worse, hit a real 2.0 route).
 - [x] SSE in-app notifications arrive through Cloudflare (2026-08-19: the
   "New meeting request" toast appeared live in the admin tab).
 - [ ] Verify NO emails/SMS originate from dev Macs anymore (Notification rows
