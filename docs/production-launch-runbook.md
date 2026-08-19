@@ -546,11 +546,43 @@ in this order:
 
 ## 8. Payments (Stripe)
 
-- [ ] Live-mode keys in prod env.
-- [ ] Stripe webhook endpoint(s) registered for app.gostork.com with live
-  signing secret (and Cloudflare WAF bypass - see section 1).
+Decision 2026-08-19 (Eran): test-app IS production-in-waiting, so Stripe
+goes LIVE now (not sandbox) - see docs/go-live-checklist.md for the recipe.
+State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
+- [x] Live account activated (Account status: no tasks; Payments, Payouts,
+  Transfers, ACH all Active). Payout schedule already **Manual**.
+- [x] Live webhook destinations created (API 2026-04-22.dahlia):
+  `gostork-2-main-billing` we_1U67fGCGqwxDjN6VLCLn2AqY -> 
+  https://test-app.gostork.com/api/webhooks/stripe (Your account, 8
+  events) **Active**; `gostork-2-connect` we_1U67iLCGqwxDjN6VGNbnHZCI ->
+  https://test-app.gostork.com/api/webhooks/stripe-connect (Connected
+  accounts, 3 events: account.updated, payout.paid, payout.failed) -
+  **Requires setup** until Connect platform onboarding completes. Stripe
+  no longer offers `account.application.deauthorized` on a Connected-
+  accounts destination (platform-level event) - if needed, add it to the
+  main destination (handler lives in connect.controller; verify routing).
+  Both routes answered 400 (signature rejected) unsigned through
+  Cloudflare before creation, per the checklist.
+- [ ] ERAN: **Connect platform onboarding is INCOMPLETE on live**
+  (Settings > Connect > Platform profile shows "Onboarding incomplete" +
+  two acknowledgements: refunds/chargebacks liability, ongoing seller
+  compliance). Without it NO provider payouts in live. Complete at
+  https://dashboard.stripe.com/acct_1TYZ1aCGqwxDjN6V/settings/connect/platform-profile
+  ("View onboarding" + both "Acknowledge"). Found because the live account
+  had never been a Connect platform (sandbox was).
+- [ ] ERAN: live keys + both signing secrets into `~/.gostork-stripe-live.env`
+  on the MacBook (STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY,
+  STRIPE_WEBHOOK_SECRET, STRIPE_CONNECT_WEBHOOK_SECRET) -> Claude installs
+  into the host .env (+ VITE_STRIPE_PUBLISHABLE_KEY = pk_live), `sudo
+  gostork-deploy --force` (client rebuild - VITE key is baked in), sends a
+  test event per destination, verifies delivery.
+- [ ] Phase B: repoint both destinations to app.gostork.com (or add a
+  second pair) - the description on each says so.
 - [ ] Stripe Connect (provider payouts) redirect/return URLs on production
-  domain.
+  domain - verify after Connect onboarding; the app builds them from
+  APP_URL.
+- [ ] Cloudflare: `/api/webhooks/*` WAF skip + cache bypass (section 1)
+  before the first real payment.
 
 ## 9. Schedulers & background jobs
 
