@@ -51,9 +51,14 @@ Decided 2026-08-18 (Eran):
     reactivate/repoint the production one at the flip.
   - Bot Fight Mode is ZONE-wide, so it must come off BEFORE the beta starts,
     not at the final flip (it would kill staging webhooks too).
-  - A2P note: the campaign declares app.gostork.com as the flow URL; beta
+  - A2P note: ~~the campaign declares app.gostork.com as the flow URL; beta
     signups happen on test-app with identical consent UI. Substance matches;
-    the declared URL is the permanent home. Acceptable - do not re-file.
+    the declared URL is the permanent home. Acceptable - do not re-file.~~
+    **SUPERSEDED 2026-08-19 by the third rejection (30909).** The reviewer does
+    follow the declared URL, and finding 1.0 there (or a Cloudflare challenge)
+    is what fails the submission. "Substance matches" is not enough. The
+    resubmit therefore belongs at the FINAL flip, not at beta start - see
+    section 4.
 
 - [x] **Environment architecture: TWO isolated environments** (decided
   2026-08-18). Dev (Macs + dev Supabase) and Production (GCP + prod Supabase).
@@ -465,6 +470,8 @@ CX4XS4N via service MGa6b8064464ed2c6cdd94fe2848d70255 (holds both numbers), and
 `TWILIO_MESSAGING_SERVICE_SID` still points at MGa6b8... Brand
 BN6108e1d38e5bcc6736eddd453978e389 stays APPROVED and needs no rework. The daily
 watcher `twilio-a2p-campaign-watch` was PAUSED on 2026-08-19; nobody is polling.
+(It was found still ENABLED and firing daily on 2026-08-19 despite this note -
+actually disabled that day. Re-enable it at resubmit time, not before.)
 
 **LAUNCH-DAY SEQUENCE (this section is now Phase B work, not pre-launch):**
 
