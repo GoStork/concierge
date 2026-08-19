@@ -676,7 +676,35 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   real connected account (acct_1U6GTfFmrxto5Gu4, deleted after the test)
   and reached Stripe-hosted Express onboarding; MX shows the international
   card. International rail = Trolley (decided 2026-08-19, manual Chase
-  step dropped) - next build. RULE (Eran 2026-08-20): US entities =
+  step dropped) - BUILT 2026-08-20 (82a2e852..): trolley.client (prsign
+  auth, signed widget URL, batches/payments, webhook signature t=..,v1=..
+  HMAC), TrolleyService (recipient ensure by referenceId=providerId,
+  readiness sync, invoice payout via one batch), signature-verified
+  idempotent webhook (/api/webhooks/trolley, TrolleyWebhookEvent log),
+  payout choke point routes payoutMethod=TROLLEY providers to Trolley,
+  Payouts page embeds the widget (brand-colored) with readiness tiles.
+  SANDBOX config: keys in ~/.gostork-trolley-sandbox.env + host .env
+  (TROLLEY_ACCESS_KEY/SECRET_KEY/WEBHOOK_SECRET); webhook registered All
+  Models/All Actions -> test-app, VALID+ENABLED. VERIFIED END-TO-END in
+  sandbox on prod code: MX test agency onboarded in the embedded widget
+  (Trolley enforced real KYC: valid RFC checksum required, CLABE, SWIFT
+  lookup -> BBVA Mexico), recipient active, webhooks
+  recipient/recipientAccount processed, Payouts page flipped to
+  "Payouts are enabled" (MXN); invoice marked PAID (wire path) -> payout
+  sweep adopted it -> Trolley batch/payment created (first attempt failed
+  honestly on $0 sandbox balance -> added $100 sandbox funds, retried).
+  GOTCHAS: esbuild strips decorator metadata (every Nest injection must
+  be explicit @Inject); Trolley sandbox+live share api.trolley.com (keys
+  decide); widget URL signature valid ~30s (mint on click).
+  [ ] AT LAUNCH: complete Trolley Business Profile activation ("Complete
+  Business Profile" banner, LIVE profile), create LIVE API keys + webhook
+  (same URL) and replace the sandbox values in the host .env; fund the
+  Trolley balance (auto-topup or manual) since payouts draw from it;
+  decide recipient-pays-fees in Trolley settings (Eran: fees come out of
+  the provider's share); [ ] wire Trolley taxForm statuses into the W-8
+  guardrail once the Trolley Tax module is confirmed on the plan
+  (currently the PandaDoc W-8BEN-E template covers it).
+  RULE (Eran 2026-08-20): US entities =
   Stripe Connect, ALL non-US entities = Trolley, even Stripe-reachable
   countries like Cyprus/Canada/UK - one international flow. Old item (c) the invoice guardrail demands a Tax ID and the Legal
   tab is built around the W-9 - foreign entities have no EIN and file a
