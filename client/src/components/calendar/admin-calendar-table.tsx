@@ -23,6 +23,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { CalendarSettings } from "@/components/calendar/calendar-settings";
+import { useAuth } from "@/hooks/use-auth";
 import { ArrowLeft, Calendar, Loader2, Search } from "lucide-react";
 
 interface CalendarUserRow {
@@ -67,6 +68,13 @@ export function AdminCalendarTable({ providerId }: { providerId?: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const selectedUserId = searchParams.get("calendarUser") || "";
+  const { user: authUser } = useAuth();
+  // Opening YOUR OWN row must mount the settings in owner mode (forUserId
+  // undefined): in for-another-user mode the Google/Microsoft/Apple connect
+  // flows are hidden because only the owner can authorize them - which left
+  // GoStork admins unable to connect a second calendar (the /calendar banner
+  // disappears after the first one). Found on the first prod smoke test.
+  const forUserId = selectedUserId && selectedUserId !== (authUser as any)?.id ? selectedUserId : undefined;
 
   const { data: users, isLoading } = useQuery<CalendarUserRow[]>({
     queryKey: ["/api/calendar/admin/users", providerId || "all"],
@@ -128,7 +136,7 @@ export function AdminCalendarTable({ providerId }: { providerId?: string }) {
             )}
           </div>
         </div>
-        <CalendarSettings forUserId={selectedUserId} />
+        <CalendarSettings forUserId={forUserId} />
       </div>
     );
   }
