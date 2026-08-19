@@ -228,10 +228,20 @@ NEXT, in order (items marked ERAN need a human in a browser):
    STRIPE_CONNECT_WEBHOOK_SECRET, PANDADOC_WEBHOOK_SECRET (staging sub),
    DAILY_WEBHOOK_SECRET. Stripe client is lazy so the server runs without
    them; payment actions error until set.
-   [ ] Lock-file hygiene lesson: `npm ci` failed on the clean host because
-   `bufferutil` (optionalDependency) was never recorded in package-lock.json
-   - fixed in eec37dcb. Any future package.json edit must regenerate the
-   lock (npm ci is what the host runs).
+   [x] Lock-file lesson (twice): `npm ci` failed on the host because
+   `bufferutil` (optionalDependency, native, no macOS prebuilt) is dropped
+   from package-lock.json whenever a Mac regenerates the lock - it came back
+   in the iMac's 2aa52584 right after eec37dcb fixed it. Root fix f7e38633:
+   bufferutil REMOVED from package.json (unreferenced; only an optional `ws`
+   accelerator). Rule: never add an optionalDependency with a native build
+   that a Mac cannot install - the lock will drift and prod `npm ci` breaks.
+   [x] Deploy-script lesson: the first failed build left git HEAD at the new
+   sha, so every later timer tick saw "up to date" and the failure stuck
+   silently for 20+ min. `gostork-deploy` now compares origin/main to a
+   last-SUCCESSFUL-deploy marker (`/srv/gostork/.deploy-state`), logs WARN
+   with the failing step + npm output, and retries after 15 min or on the
+   next push. Source of truth for the script: `deploy/gostork-deploy.sh` in
+   the repo (see deploy/README.md for the reinstall command).
    [ ] Harden later (section 10): Express sends `X-Powered-By`; restrict
    the GCE firewall 80/443 to Cloudflare IP ranges once proxied DNS is live
    (today `allow-http`/`allow-https` are 0.0.0.0/0 on the default network).
@@ -607,6 +617,10 @@ Rule: exactly ONE environment runs schedulers against the production DB.
 
 ## 12. Post-launch smoke tests
 
+- [x] Admin pages on production (2026-08-19): /account/concierge shows all
+  30 prompt sections, 3 personas, 4 rules, KB docs + 6 prep guides;
+  Branding shows "GoStork Teal" active with the GCS logo; concierge monitor
+  lists live sessions with the parent profile panel.
 - [x] Signup end-to-end on a real phone (2026-08-19, test-app): Turnstile
   passed on the new hostname, OTP SMS sent via Twilio Verify (OtpAttempt
   outcome=sent x2), account created with phone + smsNotificationsOptIn=true,
@@ -619,8 +633,23 @@ Rule: exactly ONE environment runs schedulers against the production DB.
 - [ ] Booking flow: confirmation email (correct 2.0 design, logo loads) + SMS
   (only if opted in).
 - [ ] Provider: W-9 sign -> Home task closes without refresh; agreement flow.
-- [ ] AI concierge chat (parent + provider assistant) on production URL.
-- [ ] Calendar connect + a reconnect email links to app.gostork.com.
+- [x] AI concierge chat on production URL (2026-08-19): Eva (Adam persona)
+  greeted the beta1 parent with the onboarding-aware opener and answered the
+  first message in 1.5s with a rich card - Gemini + MCP + prompt assembly
+  + SSE streaming through Cloudflare all good. [ ] provider assistant
+  (pinned Eva) still to try once a provider user exists.
+- [x] Calendar connect (2026-08-19): Google connected (tokens + refresh,
+  events syncing - busy dots on the calendar) and Outlook connected
+  (Graph calendar list -> "Calendar" selected) for eran.amir@gostork.com on
+  test-app. Found + fixed: admin opening their OWN Team Calendars row was
+  mounted in for-another-user mode, hiding the Connect button (4f25f196).
+  Remaining quirk: the OAuth callback for a GOSTORK_ADMIN lands on the Team
+  Calendars list instead of the owner's row, so the "pick calendars" dialog
+  only opens after clicking your row again (normal providers are not
+  affected - they land on their own settings). Microsoft consent shows
+  "unverified" publisher -> [ ] Microsoft Partner Center publisher
+  verification, same class as the Google verification item (section 7).
+  [ ] reconnect email -> links to the production URL: not yet exercised.
 - [ ] Payment link end-to-end in live mode (small real charge, refund).
 - [ ] SSE in-app notifications arrive through Cloudflare.
 - [ ] Verify NO emails/SMS originate from dev Macs anymore (Notification rows
