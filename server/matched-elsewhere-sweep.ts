@@ -425,6 +425,7 @@ async function sendCommitmentAlerts(prisma: Db, notifications: any, items: Commi
     ...i,
     providerName: i.providerId ? pName.get(i.providerId) || "A provider" : "A provider",
     parentName: i.parentUserId ? uName.get(i.parentUserId) || "A parent" : "A parent",
+    parentUserId: i.parentUserId || null,
   }));
 
   for (const a of admins as any[]) {

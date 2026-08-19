@@ -2832,6 +2832,7 @@ export class NotificationService implements OnModuleInit {
       kind: "invoice_paid" | "agreement_signed";
       providerName: string;
       parentName: string;
+      parentUserId?: string | null;
       serviceType: string | null;
       amountCents: number | null;
       at: Date | string;
@@ -2841,13 +2842,28 @@ export class NotificationService implements OnModuleInit {
     const brandData = await this.getBrandData();
     const baseUrl = getBaseUrl();
     const many = params.items.length > 1;
+    const profileLink = (i: (typeof params.items)[number]) =>
+      i.parentUserId ? ` <a href="${baseUrl}/parents/${i.parentUserId}" title="Open in Parents">&#8599;&#xFE0E; View profile</a>` : "";
     const describe = (i: (typeof params.items)[number]) => {
       const what = i.kind === "invoice_paid"
         ? `paid ${i.amountCents != null ? formatMoneyCents(i.amountCents) : "an invoice"}`
         : "signed an agreement";
       const svc = i.serviceType ? ` (${this.escapeHtml(i.serviceType)})` : "";
-      return `<strong>${this.escapeHtml(i.parentName)}</strong> ${what} with ${this.escapeHtml(i.providerName)}${svc}`;
+      return `<strong>${this.escapeHtml(i.parentName)}</strong> ${what} with ${this.escapeHtml(i.providerName)}${svc}${profileLink(i)}`;
     };
+    // Single-event alert: who the family is (name + CRM link, email, phone -
+    // GoStork staff see everything) and what they committed to. The digest
+    // keeps the list form with a View profile link per line.
+    const single = params.items[0];
+    const detailRows = many
+      ? undefined
+      : [
+          ...(await this.parentDetailRows(single.parentUserId, single.parentName, { contact: true })),
+          { label: "Provider", value: esc(single.providerName) },
+          ...(single.serviceType ? [{ label: "Service", value: esc(single.serviceType) }] : []),
+          ...(single.kind === "invoice_paid" && single.amountCents != null ? [{ label: "Amount", value: esc(formatMoneyCents(single.amountCents)) }] : []),
+          { label: single.kind === "invoice_paid" ? "Paid" : "Signed", value: esc(new Date(single.at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })) },
+        ];
     const subject = many
       ? `${params.items.length} commitments on GoStork`
       : params.items[0].kind === "invoice_paid" ? "Invoice paid on GoStork" : "Agreement signed on GoStork";
@@ -2862,7 +2878,8 @@ export class NotificationService implements OnModuleInit {
         title: many ? "Commitments" : "A family committed",
         greeting: `Hi ${firstName},`,
         body,
-        buttons: [{ label: "Open Parents", url: `${baseUrl}/parents` }],
+        ...(detailRows ? { detailRows } : {}),
+        buttons: [{ label: many || !single.parentUserId ? "Open Parents" : "Open parent record", url: many || !single.parentUserId ? `${baseUrl}/parents` : `${baseUrl}/parents/${single.parentUserId}` }],
         footer: "You are receiving this because GoStork commitment alerts are on. Change the cadence in Concierge settings.",
       });
       await this.dispatchNotification({

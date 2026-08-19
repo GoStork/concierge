@@ -286,7 +286,7 @@ ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${esc(brand.companyName)}" s
 <tr><td class="email-content" style="padding:40px 30px;">
 <h2 style="color:${brand.brandColor};font-size:26px;margin:0 0 16px;font-family:${brand.headingFontStack};">${opts.title}</h2>
 <p style="color:${brand.foregroundColor};font-size:16px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
-<div style="color:${brand.foregroundColor};font-size:16px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
+<div style="color:${brand.foregroundColor};font-size:16px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body.replace(/<a\s(?![^>]*style=)/g, `<a style="color:${brand.brandColor};" `)}</div>
 ${detailsHtml}
 ${alertHtml}
 ${buttonsHtml}
