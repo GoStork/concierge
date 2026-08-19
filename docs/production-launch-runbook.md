@@ -528,7 +528,7 @@ in this order:
   /terms section 17 be unpublished or reworded except in lockstep with
   the registered copy (carrier audit risk). They must survive launch.
 - [ ] OTP: `TWILIO_VERIFY_SERVICE_SID` set in prod (signup verification texts).
-- [ ] Brand data hygiene: dev `SiteSettings.companyName` was stored as
+- [x] **DONE 2026-08-19.** Brand data hygiene: dev `SiteSettings.companyName` was stored as
   `'GoStork '` with a TRAILING SPACE, which every `{brandName}` interpolation
   inherited. Invisible in HTML until the shortened consent copy put a period
   straight after it ("from GoStork . Optional."). Fixed in dev on 2026-08-19
@@ -536,6 +536,12 @@ in this order:
   PRODUCTION Supabase project (itlnituvybtnzmrzbkoz) for the same trailing
   space and btrim it before launch** - otherwise the carrier-facing consent
   string renders wrong on the very page the reviewer inspects.
+  PROD was checked the same day and DID have it, on `SiteSettings` and all
+  three `BrandTemplate` rows. Eran ran the btrim UPDATE in the Supabase SQL
+  editor; test-app.gostork.com picked it up with NO restart (brand settings are
+  read per request, not cached at boot). Verified by rendering the live
+  test-app phone step: both consent strings now read correctly and match
+  WordPress 5461 word-for-word.
 
 ## 5. PandaDoc
 
