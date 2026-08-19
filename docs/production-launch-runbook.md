@@ -289,15 +289,22 @@ NEXT, in order (items marked ERAN need a human in a browser):
       https://github.com/GoStork/concierge/settings/secrets/actions as the
       `gostorky` admin. Until then the nightly job fails loudly with
       "secret not set" (and prod has no scraper configs yet anyway).
-   c. [ ] OAuth redirect URIs - Google OAuth client lives in GCP project
-      `gen-lang-client-0051391254` (client id prefix 1053367727632):
-      add `https://test-app.gostork.com/api/calendar/google/callback` and
-      `https://app.gostork.com/api/calendar/google/callback` at
-      https://console.cloud.google.com/auth/clients?project=gen-lang-client-0051391254
-      (blocked on a passkey re-auth in Chrome at the time of writing).
-      Microsoft: add `https://test-app.gostork.com/api/calendar/microsoft/callback`
-      + the app.gostork.com twin in the Azure app registration
-      (MICROSOFT_CLIENT_ID in .env) > Authentication > Web redirect URIs.
+   c. [x] **Google OAuth** (client "GoStork Calendar" in GCP project
+      `gen-lang-client-0051391254`, 2026-08-19): added redirect URI
+      `https://test-app.gostork.com/api/calendar/google/callback`
+      (app.gostork.com, gostork.com, both ngrok hosts and Replit were
+      already there). **Publishing status flipped Testing -> In production**
+      (it was Testing with 3 Gmail test users = only they could connect
+      and tokens died every 7 days). Google now says the app "requires
+      verification" because calendar scopes are sensitive: until verified,
+      connecting users see an "unverified app" interstitial and the project
+      has a 100-user LIFETIME cap. -> section 7 item added.
+      [ ] **Microsoft** app registration 42cdb0fb-1332-4c65-8904-3f654954560a:
+      add `https://test-app.gostork.com/api/calendar/microsoft/callback`
+      (+ app.gostork.com twin if missing) under Authentication > Web
+      redirect URIs -
+      https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/Authentication/appId/42cdb0fb-1332-4c65-8904-3f654954560a
+      (Chrome was not signed in to Azure at the time of writing).
    d. [ ] Smoke tests (section 12) once Eran has signed up on test-app and
       been promoted to admin.
    Note: `systemctl restart gostork` = ~10s of 502 at the edge (seen when
@@ -494,9 +501,14 @@ in this order:
 
 ## 7. OAuth / Calendar integrations
 
-- [ ] Google OAuth client: add https://app.gostork.com redirect URIs (calendar
-  connect + any login), verify consent screen domain, confirm production
-  publishing status (not "testing" mode, which expires tokens in 7 days).
+- [x] Google OAuth client: app.gostork.com + test-app redirect URIs present;
+  publishing status = In production since 2026-08-19 (was Testing).
+- [ ] **Google OAuth app verification** (sensitive calendar scopes):
+  submit at https://console.cloud.google.com/auth/verification?project=gen-lang-client-0051391254
+  - needs homepage, privacy policy URL, scope justification, possibly a
+  demo video. Until approved: "unverified app" warning on connect + 100
+  users lifetime cap (3 used). Do this early in the beta - review takes
+  days to weeks.
 - [ ] Microsoft Graph app registration: add production redirect URIs.
 - [ ] Apple/CalDAV: no redirect URIs, but verify app-specific password flow
   documentation for users.
