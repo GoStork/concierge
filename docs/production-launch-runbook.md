@@ -167,13 +167,68 @@ NEXT, in order (items marked ERAN need a human in a browser):
    the Macs today; local `public/uploads` is only the no-GCS fallback so
    persistence is not a concern either way; ~$50/mo; the whole GKE+GitLab
    footprint retires with 1.0.
-   [ ] Provision: e2-standard-2, Ubuntu 24.04 LTS, static external IP,
-   Node 24 + git + Chromium deps, app as a systemd service under a
-   `gostork` user, Cloudflare Origin Certificate on the origin (Full
-   strict), GitHub Actions deploy on push to main (SSH -> pull, npm ci,
-   build, prisma migrate deploy, restart).
-4. [ ] Continue Phase A per section 11 (Cloudflare bot mode, test-app DNS,
-   Turnstile, OAuth URIs, PandaDoc staging subscription, pinger).
+   [x] **PROVISIONED 2026-08-19 - the 2.0 production host is live:**
+   VM `gostork-2-prod` (project `gostork`, zone us-east4-b, e2-standard-2,
+   Ubuntu 24.04, 50GB pd-balanced, shielded VM, OS Login), static IP
+   **`34.85.132.142`** (address `gostork-2-prod-ip`, us-east4). Node
+   24.19 / npm 11.17 / git / Caddy 2.11 / Chromium libs. App cloned to
+   `/srv/gostork/app` (public repo, no deploy key needed), owned by service
+   user `gostork`; systemd unit `gostork.service` runs `node dist/index.cjs`
+   (the app's own dotenv loads `/srv/gostork/app/.env`, chmod 600 - do NOT
+   use systemd EnvironmentFile, its quoting differs from dotenv and broke the
+   multi-line GCS JSON key once). Caddy reverse-proxies :80 -> 127.0.0.1:5001
+   (flush_interval -1 so SSE streams). Verified: SPA 200, /api/brand/settings
+   returns the seeded prod brand, /api/user 401, providers 200, "GCS storage
+   configured successfully", all schedulers started, nightly sync in-process
+   OFF (pinger-driven). Logs: `journalctl -u gostork -f`. Shell:
+   `gcloud compute ssh gostork-2-prod --project=gostork --zone=us-east4-b --tunnel-through-iap`.
+   [x] **Auto-deploy from main** (pull model, zero GitHub secrets):
+   `/usr/local/bin/gostork-deploy` via `gostork-deploy.timer` every minute -
+   fetch origin/main, if changed: reset --hard, npm ci, prisma generate,
+   npm run build, **prisma migrate deploy**, restart (`journalctl -u
+   gostork-deploy`). Same model as the Macs' auto-sync. A GitHub-Actions
+   push deploy can be layered later for visibility if wanted.
+   [x] Prod `.env` on the host: built from `.env.production.example` -
+   [copy] keys from the MacBook dev .env (dotenv-parsed, round-trip
+   verified), [fresh] SESSION_SECRET / JWT_SECRET / FIELD_ENCRYPTION_KEY /
+   CALDAV_ENCRYPTION_KEY / NIGHTLY_SYNC_SECRET generated new,
+   APP_URL=https://test-app.gostork.com, prod DATABASE_URL/DIRECT_URL.
+   SUPABASE_* and BRAINTREE_* dropped - code never reads them (template can
+   lose them). GOSTORK_PROVIDER_ID unset like dev (code falls back to the
+   provider named "GoStork", which was copied with its id).
+   [ ] STILL EMPTY in the host .env, to be supplied by Eran when each
+   integration is wired: STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY /
+   VITE_STRIPE_PUBLISHABLE_KEY (live; client REBUILD needed after setting
+   the VITE_ one - `sudo gostork-deploy --force`), STRIPE_WEBHOOK_SECRET,
+   STRIPE_CONNECT_WEBHOOK_SECRET, PANDADOC_WEBHOOK_SECRET (staging sub),
+   DAILY_WEBHOOK_SECRET. Stripe client is lazy so the server runs without
+   them; payment actions error until set.
+   [ ] Lock-file hygiene lesson: `npm ci` failed on the clean host because
+   `bufferutil` (optionalDependency) was never recorded in package-lock.json
+   - fixed in eec37dcb. Any future package.json edit must regenerate the
+   lock (npm ci is what the host runs).
+   [ ] Harden later (section 10): Express sends `X-Powered-By`; restrict
+   the GCE firewall 80/443 to Cloudflare IP ranges once proxied DNS is live
+   (today `allow-http`/`allow-https` are 0.0.0.0/0 on the default network).
+4. [ ] ERAN in the Cloudflare dashboard (the CLOUDFLARE_API_TOKEN in .env
+   is Turnstile-scoped only - verified 2026-08-19, cannot touch DNS/SSL):
+   a. Security > Bots: turn **Bot Fight Mode OFF** (zone-wide; see section 1).
+   b. SSL/TLS > Origin Server > **Create Certificate** (RSA 2048, hostnames
+      `*.gostork.com, gostork.com`, 15 years). Save the certificate + private
+      key into two files on the MacBook (outside the repo, e.g.
+      `~/.gostork-origin.pem` / `~/.gostork-origin.key`) and tell Claude -
+      Caddy on the VM then gets a :443 site with that cert and the zone
+      moves to **Full (strict)**.
+   c. DNS: edit `test-app.gostork.com` A record -> `34.85.132.142`, proxied
+      (orange cloud). Check 1.0 test-app usage first (section 11 step 4
+      note). Also add the `/api/*` cache-bypass rule + webhook/cron WAF
+      skips (section 1).
+   d. Turnstile: add `test-app.gostork.com` + `app.gostork.com` to the
+      widget's hostnames.
+5. [ ] Then: Google/Microsoft OAuth redirect URIs for test-app, PandaDoc
+   staging webhook subscription (needs the host reachable over HTTPS),
+   repoint the nightly-sync pinger with the NEW NIGHTLY_SYNC_SECRET,
+   smoke tests (section 12).
 
 Useful context for the executing session:
 - PandaDoc subscription uuids: production (deactivated)
