@@ -600,12 +600,22 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   https://dashboard.stripe.com/acct_1TYZ1aCGqwxDjN6V/settings/connect/platform-profile
   ("View onboarding" + both "Acknowledge"). Found because the live account
   had never been a Connect platform (sandbox was).
-- [ ] ERAN: live keys + both signing secrets into `~/.gostork-stripe-live.env`
-  on the MacBook (STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY,
-  STRIPE_WEBHOOK_SECRET, STRIPE_CONNECT_WEBHOOK_SECRET) -> Claude installs
-  into the host .env (+ VITE_STRIPE_PUBLISHABLE_KEY = pk_live), `sudo
-  gostork-deploy --force` (client rebuild - VITE key is baked in), sends a
-  test event per destination, verifies delivery.
+- [x] **LIVE KEYS INSTALLED 2026-08-19**: Eran revealed the live secret
+  key (one-time reveal, created May 18, first use today) + publishable key
+  + both signing secrets into `~/.gostork-stripe-live.env` on the MacBook;
+  Claude installed STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY /
+  VITE_STRIPE_PUBLISHABLE_KEY / STRIPE_WEBHOOK_SECRET /
+  STRIPE_CONNECT_WEBHOOK_SECRET into the host .env, `gostork-deploy
+  --force` rebuilt the client (pk_live_ confirmed in the served bundle),
+  restarted clean. Live mode has no "send test event", so verified with a
+  synthetic event signed with the installed secrets (Stripe's
+  generateTestHeaderString) POSTed to both routes on the host: 200
+  {received:true} signed, 400 with a bad signature - secrets match.
+  Refunds/chargebacks liability acknowledgement: Completed. [ ] ERAN:
+  "Ongoing seller compliance" acknowledgement still pending; the connect
+  destination shows Requires setup until Connect is fully set up (may also
+  clear when the first connected account is created). First real end-to-
+  end charge + refund (section 12) still to do with a small amount.
 - [ ] Phase B: repoint both destinations to app.gostork.com (or add a
   second pair) - the description on each says so.
 - [ ] Stripe Connect (provider payouts) redirect/return URLs on production

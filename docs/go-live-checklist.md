@@ -4,7 +4,7 @@ Items that MUST happen when GoStork switches to the live/production Stripe
 account and the real production domain. Add new go-live tasks here as they
 come up - this file is the single place to check before launch.
 
-## Stripe: create live-mode webhook destinations (NOT done yet)
+## Stripe: create live-mode webhook destinations (DONE 2026-08-19 for test-app.gostork.com - we_1U67fGCGqwxDjN6VLCLn2AqY main, we_1U67iLCGqwxDjN6VGNbnHZCI connect; repoint/add for app.gostork.com at Phase B)
 
 The production Stripe account (`acct_1TYZ1aCGqwxDjN6V`, "GoStork") has NO
 webhook destinations. The sandbox (`acct_1TYZ1kC5oC6HdQow`) has them; live
@@ -25,8 +25,11 @@ mirroring the sandbox:
 
 2. **Connect** -> `https://<prod-domain>/api/webhooks/stripe-connect`
    - Events from: Connected accounts
-   - Events (4): `account.updated`, `payout.paid`, `payout.failed`,
-     `account.application.deauthorized`
+   - Events (3): `account.updated`, `payout.paid`, `payout.failed`.
+     NOTE 2026-08-19: Stripe no longer allows `account.application.deauthorized`
+     on a Connected-accounts destination (it is a platform-level event); if it
+     is needed, add it to the MAIN destination and make sure the handler
+     routing covers it.
    - Handler: `server/src/modules/billing/connect.controller.ts` (`POST api/webhooks/stripe-connect`)
 
 Then, in the production environment:
