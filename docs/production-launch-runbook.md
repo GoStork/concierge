@@ -692,7 +692,14 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   recipient/recipientAccount processed, Payouts page flipped to
   "Payouts are enabled" (MXN); invoice marked PAID (wire path) -> payout
   sweep adopted it -> Trolley batch/payment created (first attempt failed
-  honestly on $0 sandbox balance -> added $100 sandbox funds, retried).
+  honestly on $0 sandbox balance -> added $100 sandbox funds) -> after two
+  resume fixes (re-kick an open/pending batch whose start-processing had
+  failed; the already-transferred guard had to move BELOW the rail switch)
+  the 00:00 UTC sweep re-kicked the batch and Trolley's payment.processed
+  webhook stamped payoutCompletedAt 38s later (payment
+  P-H4YqMbgfoPYcA1C578rhkX, batch processed/completed webhooks logged).
+  **TROLLEY SANDBOX PAYOUT E2E: PASS** - onboarding widget -> readiness
+  webhooks -> invoice PAID -> batch payout -> processed -> stamps.
   GOTCHAS: esbuild strips decorator metadata (every Nest injection must
   be explicit @Inject); Trolley sandbox+live share api.trolley.com (keys
   decide); widget URL signature valid ~30s (mint on click).
