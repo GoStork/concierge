@@ -715,9 +715,17 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   Standard ONLY ($199.92/mo, the minimum for bank transfers) - Tax
   (+$200/mo), Sync (+$100/mo) and Trust (+$100/mo) modules stay OFF; the
   PandaDoc W-8BEN-E flow is the tax path (widget now requests products=pay
-  only), year-end 1042-S filing goes to the accountant. Cost levers:
-  yearly billing discount ("Switch to yearly billing"), and the 30-day
-  trial is free until ~2026-09-19 (add a card before then).
+  only), year-end 1042-S filing goes to the accountant. PARKED (Eran 2026-08-20, option 1):
+  ride the free trial until ~2026-09-19; if no international provider has
+  signed by then, LET THE SUBSCRIPTION LAPSE (do not add a card) and
+  re-subscribe the week the first international provider signs - the
+  integration, sandbox keys and webhook config all keep working, only
+  live payouts need the paid plan. Alternatives evaluated and declined
+  for now: Wise Business API ($0/mo but GoStork would build/store bank
+  details + do recipient diligence), Stripe Global Payouts (usage-priced
+  but money-transmitter/compliance question), PayPal/Payoneer/Airwallex
+  (recipient-account or build-it-yourself caveats). Cost levers if kept:
+  yearly billing discount ("Switch to yearly billing").
   ESCAPE HATCH (Eran 2026-08-20): the Payouts page's "I have a US legal
   entity" checkbox (ProviderLegalIdentity.usPayoutEntity) lets a foreign
   operator with a US entity take the full US path - Stripe + US bank +
