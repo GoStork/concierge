@@ -711,9 +711,13 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   (same URL) and replace the sandbox values in the host .env; fund the
   Trolley balance (auto-topup or manual) since payouts draw from it;
   decide recipient-pays-fees in Trolley settings (Eran: fees come out of
-  the provider's share); [ ] wire Trolley taxForm statuses into the W-8
-  guardrail once the Trolley Tax module is confirmed on the plan
-  (currently the PandaDoc W-8BEN-E template covers it).
+  the provider's share); DECISION (Eran 2026-08-20): stay on Pay
+  Standard ONLY ($199.92/mo, the minimum for bank transfers) - Tax
+  (+$200/mo), Sync (+$100/mo) and Trust (+$100/mo) modules stay OFF; the
+  PandaDoc W-8BEN-E flow is the tax path (widget now requests products=pay
+  only), year-end 1042-S filing goes to the accountant. Cost levers:
+  yearly billing discount ("Switch to yearly billing"), and the 30-day
+  trial is free until ~2026-09-19 (add a card before then).
   ESCAPE HATCH (Eran 2026-08-20): the Payouts page's "I have a US legal
   entity" checkbox (ProviderLegalIdentity.usPayoutEntity) lets a foreign
   operator with a US entity take the full US path - Stripe + US bank +

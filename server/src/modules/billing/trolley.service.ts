@@ -121,7 +121,10 @@ export class TrolleyService {
     const url = trolley.buildWidgetUrl({
       email: input.email,
       referenceId: providerId,
-      products: ["pay", "tax"],
+      // "pay" only: GoStork is on Trolley's Pay Standard plan (Eran,
+      // 2026-08-20 - the Tax module costs another $200/mo and our PandaDoc
+      // W-8BEN-E flow already covers the tax form + guardrail).
+      products: ["pay"],
       locale: opts?.locale,
       prefill: { firstName: input.firstName, lastName: input.lastName, street1: input.address?.street1, city: input.address?.city, country: input.country },
       colors: brand?.primaryColor ? { primary: brand.primaryColor.replace("#", "") } : undefined,
