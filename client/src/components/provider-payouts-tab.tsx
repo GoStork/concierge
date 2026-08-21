@@ -38,6 +38,7 @@ interface PayoutsState {
   payoutCurrency?: string;
   customFormAvailable?: boolean;
   usPayoutEntity?: boolean;
+  internationalAutomated?: boolean;
   payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | "TROLLEY" | null;
   trolleyRecipientId?: string | null;
   trolleyRecipientStatus?: string | null;
@@ -996,6 +997,26 @@ function PayoutHistoryTable() {
  * "Refresh status" re-pulls it when the provider just finished.
  */
 function InternationalPayoutSection({ state }: { state: PayoutsState }) {
+  // Trolley is parked (application rejected 2026-08-20): unless the server
+  // says automated international payouts exist, this rail is a manual bank
+  // wire arranged by GoStork - show that instead of the partner widget.
+  if (!state.internationalAutomated) {
+    return (
+      <section className="rounded-xl border p-6 bg-card space-y-3" data-testid="payouts-international-manual">
+        <div>
+          <h3 className="font-semibold">International payouts</h3>
+          <p className="t-helper mt-1">
+            Your legal entity is registered in <strong>{state.legalCountry}</strong>. GoStork pays non-US
+            providers by international bank wire, arranged directly with you: when a parent pays an invoice,
+            the GoStork team contacts you for your bank details (held securely, never stored in the app) and
+            sends the wire. Any transfer fee is deducted from your share.
+          </p>
+        </div>
+        <UsEntityCheckbox checked={!!state.usPayoutEntity} />
+      </section>
+    );
+  }
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [widgetUrl, setWidgetUrl] = useState<string | null>(null);

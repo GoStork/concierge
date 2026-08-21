@@ -715,17 +715,28 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   Standard ONLY ($199.92/mo, the minimum for bank transfers) - Tax
   (+$200/mo), Sync (+$100/mo) and Trust (+$100/mo) modules stay OFF; the
   PandaDoc W-8BEN-E flow is the tax path (widget now requests products=pay
-  only), year-end 1042-S filing goes to the accountant. PARKED (Eran 2026-08-20, option 1):
-  ride the free trial until ~2026-09-19; if no international provider has
-  signed by then, LET THE SUBSCRIPTION LAPSE (do not add a card) and
-  re-subscribe the week the first international provider signs - the
-  integration, sandbox keys and webhook config all keep working, only
-  live payouts need the paid plan. Alternatives evaluated and declined
-  for now: Wise Business API ($0/mo but GoStork would build/store bank
-  details + do recipient diligence), Stripe Global Payouts (usage-priced
-  but money-transmitter/compliance question), PayPal/Payoneer/Airwallex
-  (recipient-account or build-it-yourself caveats). Cost levers if kept:
-  yearly billing discount ("Switch to yearly billing").
+  only), year-end 1042-S filing goes to the accountant. **TROLLEY REJECTED GoStork's
+  bank-transfer application (2026-08-20)** - the rail cannot go live.
+  Decision (Eran): international providers are paid by MANUAL BANK WIRE
+  arranged by admin; the Trolley code stays in the repo but is parked
+  behind TROLLEY_ENABLED=1 (trolleyEnabled() in trolley.client.ts) for a
+  future re-application or appeal. Rail rule reverted in
+  shared/payout-countries.ts: US/CA/GB/CH/EEA (incl. Cyprus - the only
+  Stripe-payable country from the MX/CO/GE/UA/CY target list) -> Stripe;
+  everything else -> INTERNATIONAL = manual wire. The Payouts page shows
+  a manual-wire notice for those providers (widget hidden while
+  internationalAutomated=false) and the payout choke point drops their
+  paid invoices into the admin transfer-failed queue
+  (notifyAdminTransferFailed) for the manual wire. Caveat to verify with
+  the first CY/EEA provider: our Stripe accounts are created under the
+  recipient service agreement and Stripe's docs say those cannot receive
+  Connect cross-border payouts - if the first CY transfer fails, that
+  provider falls back to manual wire too. The daily
+  trolley-bank-transfer-approval-check scheduled task was disabled; test
+  agency's Trolley payout state was reset. Alternatives if manual wires
+  become a burden: Wise Business API ($0/mo, GoStork stores bank
+  details), Stripe Global Payouts (usage-priced, money-transmitter
+  question), re-apply to Trolley.
   ESCAPE HATCH (Eran 2026-08-20): the Payouts page's "I have a US legal
   entity" checkbox (ProviderLegalIdentity.usPayoutEntity) lets a foreign
   operator with a US entity take the full US path - Stripe + US bank +

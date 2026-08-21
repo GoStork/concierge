@@ -15,6 +15,7 @@ import {
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { normalizeCountry, payoutRailFor, currencyFor, effectivePayoutCountry } from "../../../../shared/payout-countries";
+import { trolleyEnabled } from "./trolley.client";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { ConnectService, type CustomPayoutFormData } from "./connect.service";
 import { prisma } from "../../../db";
@@ -84,6 +85,9 @@ export class ConnectController {
       payoutCurrency: currencyFor(country),
       // The in-app bank form (Custom account) is US-only.
       customFormAvailable: country === "US",
+      // Trolley is parked (application rejected 2026-08-20); false means the
+      // INTERNATIONAL rail is a manual bank wire arranged by GoStork admin.
+      internationalAutomated: trolleyEnabled(),
     };
   }
 

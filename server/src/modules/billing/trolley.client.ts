@@ -24,6 +24,17 @@ export function trolleyConfigured(): boolean {
   return !!(process.env.TROLLEY_ACCESS_KEY && process.env.TROLLEY_SECRET_KEY);
 }
 
+/**
+ * PARKED (2026-08-20): Trolley rejected GoStork's bank-transfer application,
+ * so the whole rail is disabled unless TROLLEY_ENABLED=1 is set explicitly
+ * (sandbox experiments / a future re-application). While disabled,
+ * international providers are paid by manual wire via the admin
+ * transfer-failed queue.
+ */
+export function trolleyEnabled(): boolean {
+  return process.env.TROLLEY_ENABLED === "1" && trolleyConfigured();
+}
+
 function keys() {
   const accessKey = process.env.TROLLEY_ACCESS_KEY;
   const secretKey = process.env.TROLLEY_SECRET_KEY;

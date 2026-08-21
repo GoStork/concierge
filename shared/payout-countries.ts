@@ -52,18 +52,23 @@ export function effectivePayoutCountry(code: string | null | undefined, usPayout
 }
 
 /**
- * STRIPE = Connect transfer; INTERNATIONAL = Trolley.
+ * STRIPE = Connect transfer; INTERNATIONAL = manual bank wire by GoStork.
  *
- * Product rule (Eran, 2026-08-20): US entities are paid through Stripe
- * Connect, EVERY non-US entity through the international payout partner -
- * even countries Stripe could technically reach (Cyprus, Canada, UK...).
- * One onboarding flow, one ops process, one fee model and one tax-form path
- * for all international providers beats a per-country split.
- * STRIPE_CONNECT_PAYOUT_COUNTRIES is kept as reference (and for the Stripe
- * account-country code path) should that decision ever change.
+ * History: the 2026-08-20 rule was "US = Stripe, everything else = Trolley",
+ * but Trolley REJECTED GoStork's bank-transfer application (2026-08-20), so
+ * the Trolley rail is parked behind TROLLEY_ENABLED and the rule reverted:
+ * every country a US Stripe platform can self-serve pay (US/CA/GB/CH/EEA -
+ * from Eran's target list that covers Cyprus) goes through Stripe, and the
+ * rest (Mexico, Colombia, Georgia, Ukraine, ...) are paid by a manual
+ * international wire arranged by GoStork admin (the notifyAdminTransferFailed
+ * path raises the to-do when their invoice is paid).
+ * NOTE for non-US Stripe countries: account creation uses the recipient
+ * service agreement (transfers-only); verify the first real transfer to a
+ * CY/EEA account actually lands - if Stripe refuses, that provider simply
+ * falls back to the same manual-wire path.
  */
 export function payoutRailFor(code: string | null | undefined): PayoutRail {
-  return isUsEntity(code) ? "STRIPE" : "INTERNATIONAL";
+  return STRIPE_CONNECT_PAYOUT_COUNTRIES.includes(normalizeCountry(code)) ? "STRIPE" : "INTERNATIONAL";
 }
 
 /**

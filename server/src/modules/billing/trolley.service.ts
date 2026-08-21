@@ -33,7 +33,9 @@ export class TrolleyService {
   private readonly prisma = prismaClient;
 
   configured(): boolean {
-    return trolley.trolleyConfigured();
+    // PARKED: Trolley rejected the bank-transfer application (2026-08-20).
+    // The rail only runs with TROLLEY_ENABLED=1 (sandbox / re-application).
+    return trolley.trolleyEnabled();
   }
 
   /** The provider's legal identity + the fields Trolley wants on a recipient. */
@@ -79,7 +81,7 @@ export class TrolleyService {
    * providerId, so a retry finds the same recipient.
    */
   async ensureRecipient(providerId: string): Promise<{ recipientId: string; created: boolean }> {
-    if (!this.configured()) throw new BadRequestException("International payouts are not configured yet (Trolley keys missing).");
+    if (!this.configured()) throw new BadRequestException("Automated international payouts are not available. GoStork arranges international bank wires directly - contact your GoStork account manager.");
     const account = await this.prisma.providerBankAccount.upsert({
       where: { providerId },
       create: { providerId },
@@ -137,6 +139,7 @@ export class TrolleyService {
    * the Payouts page "Refresh" and as a safety net if a webhook is missed.
    */
   async syncFromTrolley(providerId: string): Promise<void> {
+    if (!this.configured()) return;
     const account = await this.prisma.providerBankAccount.findUnique({ where: { providerId } });
     if (!account?.trolleyRecipientId) return;
     const [recipient, accounts] = await Promise.all([
@@ -174,6 +177,11 @@ export class TrolleyService {
     | { status: "skipped"; reason: "PROVIDER_NOT_READY" | "ALREADY_TRANSFERRED"; message: string }
     | { status: "failed"; reason: string }
   > {
+    if (!this.configured()) {
+      // Manual-wire era: the payout lands in the admin transfer-failed queue
+      // (the caller notifies) and admin wires it from the bank directly.
+      return { status: "skipped", reason: "PROVIDER_NOT_READY", message: "International provider - pay by manual bank wire (Trolley rail disabled)" };
+    }
     const account = await this.prisma.providerBankAccount.findUnique({ where: { providerId: invoice.providerId } });
     if (!account?.trolleyRecipientId) {
       return { status: "skipped", reason: "PROVIDER_NOT_READY", message: "Provider has not set up international payouts yet" };
