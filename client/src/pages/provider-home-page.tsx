@@ -28,6 +28,7 @@ import {
   MessageCircleQuestion, Phone,
   MessageCircle,
   CalendarClock,
+  Loader2,
   BarChart3,
   Landmark,
   Route,
@@ -118,7 +119,7 @@ export default function ProviderHomePage() {
   // would leave resolved queue items on screen until a hard refresh.
   const fresh = { refetchOnMount: "always" as const, refetchOnWindowFocus: true, staleTime: 15_000 };
 
-  const { data: queue } = useQuery<ProviderQueue>({ queryKey: ["/api/provider/dashboard-queue"], ...fresh });
+  const { data: queue, isPending: queuePending } = useQuery<ProviderQueue>({ queryKey: ["/api/provider/dashboard-queue"], ...fresh });
 
   const { data: providerSessions = [] } = useQuery<Array<{ id: string; unreadCount?: number; pendingQuestions?: number }>>({
     queryKey: ["/api/provider/concierge-sessions"],
@@ -193,7 +194,7 @@ export default function ProviderHomePage() {
    * family's record - so the queue and the record can never disagree, and a
    * coordinator's own tasks sit alongside the ones the product raised.
    */
-  const { data: taskData, isError: tasksFailed } = useQuery<{ tasks: ProviderTask[] }>({
+  const { data: taskData, isError: tasksFailed, isPending: tasksPending } = useQuery<{ tasks: ProviderTask[] }>({
     queryKey: ["/api/provider/tasks"],
     queryFn: async () => {
       const res = await fetch("/api/provider/tasks", { credentials: "include" });
@@ -285,10 +286,16 @@ export default function ProviderHomePage() {
           title={queueCount > 0 ? `Your work queue (${queueCount})` : "Your work queue"}
         />
         {queueCount === 0 ? (
-          // A failed fetch must never wear the green all-clear: with no data
-          // at all we say so honestly; the next successful refetch (or a
-          // pull-to-refresh) repopulates.
-          tasksFailed && !taskData ? (
+          // Neither a LOADING queue nor a FAILED fetch may wear the green
+          // all-clear. Mid-load the queue is simply unknown - rendering
+          // "All clear" made tasks look like they vanished on a slow phone
+          // connection - and with no data after a failure we say so honestly.
+          tasksPending || queuePending ? (
+            <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading your queue...
+            </div>
+          ) : tasksFailed && !taskData ? (
             <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-warning))" }}>
               <CheckCircle2 className="w-4 h-4" />
               Couldn't load your work queue just now - refresh to try again.
