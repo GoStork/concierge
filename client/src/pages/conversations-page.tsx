@@ -1435,8 +1435,13 @@ const sendMessageMutation = useMutation({
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  // Creating the call takes a few seconds (Daily room + notifications). The
+  // in-flight flag stops a second tap from firing a second POST - the server
+  // dedupes too, but the button should also visibly say it is working.
+  const [videoStarting, setVideoStarting] = useState(false);
   const handleProviderVideo = async () => {
-    if (!selectedSessionId) return;
+    if (!selectedSessionId || videoStarting) return;
+    setVideoStarting(true);
     try {
       const res = await fetch("/api/video/chat-booking", {
         method: "POST",
@@ -1449,6 +1454,8 @@ const sendMessageMutation = useMutation({
       setInlineVideoBookingId(bookingId);
     } catch {
       alert("Failed to create video room. Please try again.");
+    } finally {
+      setVideoStarting(false);
     }
   };
 
@@ -2826,12 +2833,13 @@ const sendMessageMutation = useMutation({
               className="h-8 px-3 gap-1.5 text-xs font-medium rounded-full"
               style={{ color: "white", backgroundColor: brandColor, borderRadius: "999px" }}
               onClick={handleProviderVideo}
+              disabled={videoStarting}
               title={`Start a video call with ${detail?.user?.name || "the parent"}`}
               aria-label={`Start a video call with ${detail?.user?.name || "the parent"}`}
               data-testid="btn-provider-video"
             >
               <Video className="w-4 h-4" strokeWidth={2.25} />
-              <span className="hidden sm:inline">Video Call</span>
+              <span className="hidden sm:inline">{videoStarting ? "Starting..." : "Video Call"}</span>
             </Button>
           </div>
         </div>

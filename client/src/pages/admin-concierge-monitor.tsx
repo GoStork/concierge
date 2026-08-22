@@ -453,8 +453,12 @@ export default function AdminConciergeMonitor() {
     }
   };
 
+  // In-flight guard: a double-tap on the slow create used to make two
+  // bookings (two rooms, duplicate email + SMS); the server dedupes too.
+  const videoStartingRef = useRef(false);
   const handleAdminVideo = async () => {
-    if (!selectedSessionId) return;
+    if (!selectedSessionId || videoStartingRef.current) return;
+    videoStartingRef.current = true;
     try {
       const res = await fetch("/api/video/chat-booking", {
         method: "POST",
@@ -467,6 +471,8 @@ export default function AdminConciergeMonitor() {
       setInlineVideoBookingId(bookingId);
     } catch {
       toast({ title: "Failed to create video room", variant: "destructive" });
+    } finally {
+      videoStartingRef.current = false;
     }
   };
 

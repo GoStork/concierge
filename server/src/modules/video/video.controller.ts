@@ -180,6 +180,29 @@ export class VideoController {
 
     const subject = `Ad-hoc Video Call${session.provider?.name ? ` - ${session.provider.name}` : ""}`;
 
+    // IDEMPOTENCY. Creating the booking takes seconds (Daily room + email +
+    // SMS), and a double-tap on the camera button used to mint TWO bookings
+    // ~3s apart - two rooms, two confirmation emails, two texts (observed
+    // live, Aug 22). An ad-hoc call between the same two people that started
+    // in the last 5 minutes and has not ended IS this call: hand back its
+    // booking so the second tap joins the same room, sending nothing new.
+    const recent = await this.prisma.booking.findFirst({
+      where: {
+        providerUserId: providerUserId!,
+        parentUserId,
+        meetingType: "video",
+        status: "CONFIRMED",
+        subject: { startsWith: "Ad-hoc Video Call" },
+        actualEndedAt: null,
+        createdAt: { gt: new Date(Date.now() - 5 * 60_000) },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (recent) {
+      return { bookingId: recent.id, reused: true };
+    }
+
     // createBookingInternal provisions the per-booking Daily room for video
     // bookings - no need to create one here.
     const booking = await this.calendarController.createBookingInternal({
