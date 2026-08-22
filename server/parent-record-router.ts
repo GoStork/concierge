@@ -867,7 +867,17 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
     if (!providerId) return res.status(403).json({ message: "Forbidden" });
 
     const open = await prisma.parentTask.findMany({
-      where: { providerId, status: "OPEN" },
+      // PERSONAL queue, not the org's: my tasks, plus work assigned to no
+      // specific teammate (org-level items and tasks waiting on the family -
+      // hiding those from everyone would make unowned work invisible). A
+      // task on a COLLEAGUE's name is theirs, and showing it here read as
+      // "someone else's to-dos on my Home" (Julia seeing Jered's tasks).
+      // The full org picture stays on each family's record and /parents.
+      where: {
+        providerId,
+        status: "OPEN",
+        OR: [{ assigneeUserId: user.id }, { assigneeUserId: null }],
+      },
       orderBy: { dueAt: "asc" },
       take: 200,
     });
