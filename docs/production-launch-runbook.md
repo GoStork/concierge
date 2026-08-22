@@ -299,7 +299,21 @@ NEXT, in order (items marked ERAN need a human in a browser):
       paths at launch, and the bot exemption carries over - do not re-add a
       blanket challenge without `not cf.client.bot`, or GSC 403s return.
       (The CLOUDFLARE_API_TOKEN in the MacBook .env has Zone WAF Edit scope,
-      not just Turnstile - the 253 note above is out of date.)
+      not just Turnstile - the 253 note above is out of date. It does NOT
+      have Transform Rules scope.)
+   g. [x] **2026-08-22: test hosts noindexed.** GSC validation for the 403s
+      is running (started 8/22, 12 URLs pending - the Aug 17-18 crawls
+      predate both the Bot-Fight-Mode off switch and the bot exemption, so
+      all should pass). To keep test hosts from competing with the marketing
+      site's SEO (the Feb 2025 test-subdomain problem), a **Response Header
+      Transform Rule "Noindex test hosts (dev2, test, test-app)"** is Active
+      (created via Claude driving Eran's Chrome - the API token lacks
+      Transform Rules scope): hostname in {dev2,test,test-app}.gostork.com
+      -> set static `X-Robots-Tag: noindex`. Verified live on dev2 +
+      test-app; test.gostork.com's origin currently hangs on HTTPS (nothing
+      to index; the rule covers it if revived). app + www deliberately NOT
+      matched. **At Phase B launch: app.gostork.com must NEVER be added to
+      this rule** - and when test-app is retired, the rule can go with it.
 5. Step 5 (2026-08-19):
    a. [x] **PandaDoc staging subscription created**: "GoStork - Staging
       Agreements (test-app)" uuid `3a53a683-64e0-49f2-b932-7817dd816241`,
