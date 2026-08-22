@@ -748,7 +748,15 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   (+$200/mo), Sync (+$100/mo) and Trust (+$100/mo) modules stay OFF; the
   PandaDoc W-8BEN-E flow is the tax path (widget now requests products=pay
   only), year-end 1042-S filing goes to the accountant. **TROLLEY REJECTED GoStork's
-  bank-transfer application (2026-08-20)** - the rail cannot go live.
+  bank-transfer application (2026-08-20) - reason: insufficient payout
+  VOLUME (confirmed by Eran 2026-08-22, not an industry-risk decline)** -
+  the rail cannot go live yet. RE-APPLY once a few months of real
+  international invoices exist; the integration is fully built + sandbox
+  tested, so reactivation is: approval -> live keys + webhook ->
+  TROLLEY_ENABLED=1. Until then the manual-wire bridge is fine at low
+  volume - preferably sent from a self-serve Wise Business account
+  (routine KYB, no payout-platform underwriting) instead of Chase wires
+  for the ~5-10x cheaper FX to MXN/COP.
   Decision (Eran): international providers are paid by MANUAL BANK WIRE
   arranged by admin; the Trolley code stays in the repo but is parked
   behind TROLLEY_ENABLED=1 (trolleyEnabled() in trolley.client.ts) for a
