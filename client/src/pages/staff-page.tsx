@@ -543,7 +543,7 @@ function GostorkAdminUsersView() {
                 key={`${r.parentUserId}-${i}`}
                 type="button"
                 className="w-full text-left flex items-start gap-2 rounded-md px-2.5 py-2 hover:bg-secondary transition-colors"
-                onClick={() => navigate(`/parents/${r.parentUserId}?sec=crm&focus=${r.entryId}`)}
+                onClick={() => navigate(`/parents/${r.parentUserId}?col=activity&focus=${r.entryId}`)}
                 data-testid={`search-result-${i}`}
               >
                 <span className="text-[10px] font-ui uppercase px-1.5 py-0.5 rounded-full bg-accent/15 shrink-0 mt-0.5" style={{ color: "hsl(var(--accent))" }}>{r.kind}</span>

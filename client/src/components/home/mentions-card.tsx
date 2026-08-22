@@ -53,7 +53,7 @@ export function MentionsCard() {
   const open = (m: Mention) => {
     clear.mutate(m.id);
     const focus = m.entryId ? `&focus=${encodeURIComponent(m.entryId)}` : "";
-    navigate(`/parents/${m.parentUserId}?sec=crm${focus}`);
+    navigate(`/parents/${m.parentUserId}?col=activity${focus}`);
   };
 
   return (

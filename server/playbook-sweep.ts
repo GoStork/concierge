@@ -144,7 +144,7 @@ export async function firePlaybookForFamily(db: Db, playbook: PlaybookLike, opts
           serviceLine: line,
           source: "SYSTEM",
           systemKey: `playbook:${step.id}:${opts.accountKey}:${line || "any"}`,
-          deepLink: member ? `/parents/${member.id}?sec=crm` : null,
+          deepLink: member ? `/parents/${member.id}?col=activity` : null,
           assigneeUserId: owner?.ownerUserId ?? null,
           assigneeName: owner?.ownerName ?? fallbackName,
           createdByUserId: opts.createdByUserId || "system",

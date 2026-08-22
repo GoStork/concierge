@@ -342,7 +342,7 @@ export default function ProviderHomePage() {
                     // Activity tab - land focused and highlighted on it (the
                     // same scroll-to-entry the search results use), not on
                     // the top of the parent page.
-                    : t.parentUserId ? `/parents/${t.parentUserId}?sec=crm&focus=task-${t.id}`
+                    : t.parentUserId ? `/parents/${t.parentUserId}?col=activity&focus=task-${t.id}`
                     : "/parents",
                 )}
               />

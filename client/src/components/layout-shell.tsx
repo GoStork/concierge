@@ -362,7 +362,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         fetch(`/api/me/mentions/${data.notificationId}/seen`, { method: "POST", credentials: "include" })
           .then(() => queryClient.invalidateQueries({ queryKey: ["/api/me/mentions"] })).catch(() => {});
       }
-      navigate(`/parents/${data.parentUserId}?sec=crm${focus}`);
+      navigate(`/parents/${data.parentUserId}?col=activity${focus}`);
     };
     playNotificationChime();
     const { id: toastId } = toast({

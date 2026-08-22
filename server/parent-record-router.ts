@@ -264,7 +264,7 @@ async function notifyNoteMentions(opts: {
   // Land them on the exact note/task, not just the record - the same
   // ?focus=<entryId> scroll the search results use.
   const focus = opts.entryId ? `&focus=${encodeURIComponent(opts.entryId)}` : "";
-  const url = `${getBaseUrl()}/parents/${opts.parentUserId}?sec=crm${focus}`;
+  const url = `${getBaseUrl()}/parents/${opts.parentUserId}?col=activity${focus}`;
   const noteText = noteHtmlToText(opts.html);
   for (const t of targets) {
     await prisma.inAppNotification.create({
