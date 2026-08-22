@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -119,6 +119,11 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
   const { toast } = useToast();
   const navigate = useNavigate();
   const [deleteMember, setDeleteMember] = useState<MemberData | null>(null);
+  // Read-only inline detail, open to EVERYONE. Non-managers used to have no
+  // way to open a teammate at all - on a phone, where most columns are
+  // hidden, a colleague was just a name. Row click expands; editing stays
+  // behind the pencil / name link for those allowed to.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const { sortConfig, handleSort, sortData } = useTableSort();
 
   const queryKey: (string | undefined)[] =
@@ -294,7 +299,8 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
               const isSelf = member.id === currentUserId;
 
               return (
-                <TableRow key={member.id} data-testid={`row-member-${member.id}`} className={`cursor-pointer ${isSelf ? "bg-primary/5" : ""} ${member.isDisabled ? "opacity-60" : ""}`} onClick={() => canEditMember(member) && handleEdit(member)}>
+                <Fragment key={member.id}>
+                <TableRow data-testid={`row-member-${member.id}`} className={`cursor-pointer ${isSelf ? "bg-primary/5" : ""} ${member.isDisabled ? "opacity-60" : ""}`} onClick={() => setExpandedId(expandedId === member.id ? null : member.id)}>
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-2 min-w-0">
                       {member.photoUrl ? (
@@ -436,6 +442,60 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                     </TableCell>
                   )}
                 </TableRow>
+                {expandedId === member.id && (
+                  <TableRow className={isSelf ? "bg-primary/5" : "bg-secondary/40"} data-testid={`row-member-detail-${member.id}`}>
+                    <TableCell colSpan={colCount} className="py-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 text-sm font-ui">
+                        <div>
+                          <span className="t-helper block">Email</span>
+                          <span className="inline-flex items-center gap-1">{member.email}<CopyButton value={member.email} testId={`btn-copy-email-detail-${member.id}`} /></span>
+                        </div>
+                        <div>
+                          <span className="t-helper block">Mobile</span>
+                          {member.mobileNumber ? (
+                            <span className="inline-flex items-center gap-1">{formatPhoneDisplay(member.mobileNumber)}<CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-detail-${member.id}`} /></span>
+                          ) : <span className="t-helper">-</span>}
+                        </div>
+                        <div>
+                          <span className="t-helper block">{context === "parent" ? "Role" : "Roles"}</span>
+                          <span>{context === "parent"
+                            ? getRoleLabel(member.parentAccountRole || "", context)
+                            : getRelevantRoles(member.roles || [], context).map(r => getRoleLabel(r, context)).join(", ") || "-"}</span>
+                        </div>
+                        <div>
+                          <span className="t-helper block">Location</span>
+                          <span>{context === "provider"
+                            ? (member.allLocations ? "All Locations"
+                              : (member.assignedLocations || []).map(al => `${al.location.city}, ${al.location.state}`).join(" · ") || "-")
+                            : [member.city, member.state, member.country].filter(Boolean).join(", ") || "-"}</span>
+                        </div>
+                        {hasVideo && (
+                          <div>
+                            <span className="t-helper block">Video room</span>
+                            {member.dailyRoomUrl ? (
+                              <a href={member.dailyRoomUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                                {member.dailyRoomUrl.split("/").pop()}
+                              </a>
+                            ) : <span className="t-helper">-</span>}
+                          </div>
+                        )}
+                        {hasCalendar && (
+                          <div>
+                            <span className="t-helper block">Calendar</span>
+                            {member.scheduleConfig?.bookingPageSlug ? (
+                              <a href={`/book/${member.scheduleConfig.bookingPageSlug}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                                {member.scheduleConfig.bookingPageSlug}
+                              </a>
+                            ) : (member.calendarConnections || []).length > 0 ? (
+                              <span>{(member.calendarConnections || []).map(c => c.label || c.provider).join(", ")}</span>
+                            ) : <span className="t-helper">Not connected</span>}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               );
             }) : (
               <TableRow>
