@@ -170,6 +170,52 @@ export function log(message: string, source = "nestjs") {
   // bypasses session/JWT because the caller is a machine, not a logged-in user.
   // Registered BEFORE nestApp.init() so Express handles it ahead of Nest's
   // catch-all 404 for unknown /api/* routes. Service refs are late-bound.
+  // Remote self-heal for the dev boxes' pull-based deploy. The iMac's
+  // auto-sync loop went silently stuck for a week+ while nobody was
+  // physically near it - this endpoint lets an operator (or Claude, with the
+  // machine's NIGHTLY_SYNC_SECRET) run the SAME ~/.gostork/auto-sync.sh the
+  // LaunchAgent runs, and read back its verdict plus the recent sync log.
+  // Fixed commands only, no parameters; the script itself refuses conflicts
+  // and divergence, so this can never force-resolve anything. Same secret
+  // header scheme as the nightly pinger above.
+  app.post("/api/cron/redeploy", async (req: Request, res: Response) => {
+    const secret = process.env.NIGHTLY_SYNC_SECRET;
+    if (!secret) return res.status(503).json({ message: "NIGHTLY_SYNC_SECRET not configured" });
+    const provided = req.headers["x-cron-secret"];
+    if (typeof provided !== "string" || provided !== secret) {
+      return res.status(401).json({ message: "Invalid cron secret" });
+    }
+    try {
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const os = await import("node:os");
+      const run = promisify(execFile);
+      const script = `${os.homedir()}/.gostork/auto-sync.sh`;
+      const before = (await run("git", ["rev-parse", "--short", "HEAD"], { cwd: process.cwd() })).stdout.trim();
+      let scriptOut = "";
+      try {
+        const r = await run("/bin/bash", [script], {
+          cwd: process.cwd(),
+          timeout: 120_000,
+          env: { ...process.env, GS_REPO_DIR: process.env.GS_REPO_DIR || process.cwd() },
+        });
+        scriptOut = (r.stdout + r.stderr).trim();
+      } catch (e: any) {
+        scriptOut = `script failed: ${e?.message}\n${e?.stdout || ""}${e?.stderr || ""}`.trim();
+      }
+      const after = (await run("git", ["rev-parse", "--short", "HEAD"], { cwd: process.cwd() })).stdout.trim();
+      let logTail = "";
+      try {
+        logTail = (await run("/usr/bin/tail", ["-n", "20", "/tmp/gostork-autosync.log"])).stdout;
+      } catch { /* no log yet */ }
+      // If the script pulled, it also kickstarted the server - this response
+      // may be the old process's last words. That is the desired outcome.
+      res.json({ before, after, pulled: before !== after, scriptOut, logTail });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "redeploy failed" });
+    }
+  });
+
   let nightlySyncPrismaRef: PrismaService | null = null;
   let nightlySyncStorageRef: StorageService | null = null;
   let nightlySyncNotificationRef: NotificationService | null = null;
