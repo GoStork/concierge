@@ -868,11 +868,10 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
 
     const open = await prisma.parentTask.findMany({
       // PERSONAL queue, not the org's: my tasks, plus work assigned to no
-      // specific teammate (org-level items and tasks waiting on the family -
-      // hiding those from everyone would make unowned work invisible). A
-      // task on a COLLEAGUE's name is theirs, and showing it here read as
-      // "someone else's to-dos on my Home" (Julia seeing Jered's tasks).
-      // The full org picture stays on each family's record and /parents.
+      // specific teammate. A task on a COLLEAGUE's name is theirs, and
+      // showing it here read as "someone else's to-dos on my Home" (Julia
+      // seeing Jered's tasks). The full org picture stays on each family's
+      // record and /parents.
       where: {
         providerId,
         status: "OPEN",
@@ -881,10 +880,33 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
       orderBy: { dueAt: "asc" },
       take: 200,
     });
+    // Unassigned work (an agreement waiting on the family, an org-level item)
+    // belongs to whoever is actually working that family: the LEAD OWNER -
+    // auto-claimed when a staffer first replies to the family's thread, so
+    // "the person chatting with them" and "the owner" are the same person.
+    // Only a family with NO owner shows its unassigned work to the whole
+    // team, because hiding it would leave work nobody can see.
+    let mine = open;
+    {
+      const nullAssigned = open.filter((t) => !t.assigneeUserId);
+      if (nullAssigned.length) {
+        const keys = Array.from(new Set(nullAssigned.map((t) => t.parentAccountId)));
+        const owners = await prisma.parentOwner.findMany({
+          where: { parentAccountId: { in: keys }, scope: "PROVIDER", providerId },
+          select: { parentAccountId: true, ownerUserId: true },
+        });
+        const ownerOf = new Map(owners.map((o) => [o.parentAccountId, o.ownerUserId]));
+        mine = open.filter((t) => {
+          if (t.assigneeUserId) return true; // mine by name
+          const owner = ownerOf.get(t.parentAccountId);
+          return !owner || owner === user.id;
+        });
+      }
+    }
     // Anything the system can see is finished closes itself here rather than
     // waiting for the next ten-minute sweep, so the queue is never telling
     // someone to do what they just did.
-    const rows = await reconcileTaskKeys(prisma as any, open as any[]);
+    const rows = await reconcileTaskKeys(prisma as any, mine as any[]);
     if (!rows.length) return res.json({ tasks: [] });
 
     // Parent NAMES go through the same gate as everywhere else: a family who
