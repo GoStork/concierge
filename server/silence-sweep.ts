@@ -323,11 +323,22 @@ export async function runSilenceSweep(db: Db, notifications?: any): Promise<void
       (await db.provider.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }))
         .map((p: any) => [p.id, p.name]),
     );
+    // Per-line owners: the silence task lands on whoever owns THAT line of
+    // the family's journey, falling back to the org-wide owner row.
+    const { ownerForLine } = await import("./parent-crm");
     const owners = await db.parentOwner.findMany({
       where: { parentAccountId: { in: accountKeys }, scope: "PROVIDER", providerId: { in: orgIds } },
-      select: { parentAccountId: true, providerId: true, ownerUserId: true, ownerName: true },
+      select: { parentAccountId: true, providerId: true, serviceLine: true, ownerUserId: true, ownerName: true },
     });
-    const ownerOf = new Map<string, any>(owners.map((o: any) => [key2(o.parentAccountId, o.providerId), o]));
+    const ownerRowsOf = new Map<string, any[]>();
+    for (const o of owners as any[]) {
+      const k = key2(o.parentAccountId, o.providerId);
+      const list = ownerRowsOf.get(k) || [];
+      list.push(o);
+      ownerRowsOf.set(k, list);
+    }
+    const ownerOf = (pairKey: string, line: string | null): any =>
+      ownerForLine(ownerRowsOf.get(pairKey) || [], line);
 
     let sent = 0, shadowed = 0, raised = 0;
 
@@ -430,7 +441,7 @@ export async function runSilenceSweep(db: Db, notifications?: any): Promise<void
       if (now.getTime() - checkin!.getTime() < threshold * DAY_MS) continue;
 
       const nth = (silenceKeyCount.get(`${acct}|${line}`) || 0) + 1;
-      const owner = ownerOf.get(pairKey);
+      const owner = ownerOf(pairKey, line);
       const pairSessions = sessionsOfPair.get(pairKey) || [];
       const session = pairSessions.find((s: any) => serviceLineOfSubject(s.subjectType) === line) || pairSessions[0];
       const sinceStr = new Date(lt).toLocaleDateString("en-US", { month: "short", day: "numeric" });

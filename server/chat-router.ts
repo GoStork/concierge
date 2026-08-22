@@ -19,6 +19,7 @@ import {
 } from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
 import { claimGostorkOwner, claimProviderOwner } from "./parent-owner-claim";
+import { serviceLineOfSubject } from "./journey-timeline";
 import { IP_PROFILE_SELECT } from "./parent-record";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -2547,9 +2548,11 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     };
 
     // The provider twin of the GoStork claim: whoever at the agency replies
-    // first owns this family for that org. Best effort - a CRM write must not
+    // first owns this family FOR THIS THREAD'S SERVICE LINE - the surrogacy
+    // coordinator claims the surrogacy journey, the egg-donor coordinator the
+    // egg-donor one, on the same family. Best effort - a CRM write must not
     // be able to stop a message reaching a parent.
-    await claimProviderOwner(session.userId, user, "FIRST_REPLY");
+    await claimProviderOwner(session.userId, user, "FIRST_REPLY", serviceLineOfSubject(session.subjectType));
     if (uiCardType) messageData.uiCardType = uiCardType;
     if (uiCardData) messageData.uiCardData = uiCardData;
 

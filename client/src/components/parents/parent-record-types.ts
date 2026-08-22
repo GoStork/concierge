@@ -146,6 +146,8 @@ export interface CrmOwner {
   id: string;
   scope: CrmScope;
   providerId: string | null;
+  /** PROVIDER scope: the line this person owns; null = org-wide fallback. */
+  serviceLine?: string | null;
   ownerUserId: string;
   ownerName: string | null;
   /** Resolved live from the user, not snapshotted - a photo snapshot goes

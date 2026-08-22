@@ -95,14 +95,19 @@ export async function firePlaybookForFamily(db: Db, playbook: PlaybookLike, opts
   const scope = playbook.providerId ? "PROVIDER" : "GOSTORK";
   const line = playbook.serviceLine || opts.serviceLine || null;
 
-  // Assignment: the family's lead owner; with no owner, the org's own name,
-  // visible to the whole team - same rule as the work-queue materializer.
-  const owner = await db.parentOwner.findFirst({
+  // Assignment: the family's lead owner FOR THIS LINE (line owner, else the
+  // org-wide fallback owner); with neither, the org's own name, visible to
+  // the whole team - same rule as the work-queue materializer.
+  const { ownerForLine } = await import("./parent-crm");
+  const ownerRows = await db.parentOwner.findMany({
     where: playbook.providerId
       ? { parentAccountId: opts.accountKey, scope: "PROVIDER", providerId: playbook.providerId }
       : { parentAccountId: opts.accountKey, scope: "GOSTORK" },
-    select: { ownerUserId: true, ownerName: true },
+    select: { ownerUserId: true, ownerName: true, serviceLine: true },
   });
+  const owner = playbook.providerId
+    ? ownerForLine(ownerRows, playbook.serviceLine || opts.serviceLine || null)
+    : (ownerRows[0] ?? null);
   let fallbackName = "GoStork";
   if (playbook.providerId) {
     const prov = await db.provider.findUnique({ where: { id: playbook.providerId }, select: { name: true } });

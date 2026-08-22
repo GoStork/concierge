@@ -514,17 +514,25 @@ export const IP_FORM_FILTER_LABELS: Record<string, string> = {
 export function matchesCrmFilters(
   row: {
     owner?: { userId?: string; name?: string | null } | null;
+    /** Per-service-line owners (provider table) - any line counts. */
+    owners?: { userId?: string; serviceLine?: string | null }[] | null;
     nextStep?: { dueAt: string; overdue: boolean } | null;
   },
   filters: { owner: string; next: string },
   viewerUserId?: string | null,
 ): boolean {
   if (filters.owner !== "all") {
+    // A person "owns" the family when they hold ANY line of it - the
+    // surrogacy coordinator's "My leads" must include a family whose
+    // egg-donor line belongs to someone else.
+    const ownerIds = new Set(
+      [row.owner?.userId, ...(row.owners || []).map((o) => o.userId)].filter(Boolean) as string[],
+    );
     if (filters.owner === "unassigned") {
-      if (row.owner) return false;
+      if (ownerIds.size > 0) return false;
     } else if (filters.owner === "me") {
-      if (!row.owner || row.owner.userId !== viewerUserId) return false;
-    } else if (row.owner?.userId !== filters.owner) {
+      if (!viewerUserId || !ownerIds.has(viewerUserId)) return false;
+    } else if (!ownerIds.has(filters.owner)) {
       return false;
     }
   }

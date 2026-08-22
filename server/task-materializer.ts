@@ -281,19 +281,31 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
     const items = await collectQueueItems(db);
     const liveKeys = new Set(items.map((i) => i.systemKey));
 
-    // Lead owners decide assignment. Every task ends up with a NAME on it:
+    // Lead owners decide assignment - PER SERVICE LINE: the surrogacy
+    // coordinator gets the surrogacy work, the egg-donor coordinator the
+    // egg-donor work, on the same family; the org-wide fallback owner takes
+    // lines nobody claimed. Every task still ends up with a NAME on it:
     // there is no such thing as work nobody is waiting on, and "Unassigned"
     // is a queue nobody reads.
     const accountIds = Array.from(new Set(items.map((i) => i.parentAccountId)));
     const owners = accountIds.length
       ? await db.parentOwner.findMany({
           where: { parentAccountId: { in: accountIds }, scope: "PROVIDER" },
-          select: { parentAccountId: true, providerId: true, ownerUserId: true, ownerName: true },
+          select: { parentAccountId: true, providerId: true, serviceLine: true, ownerUserId: true, ownerName: true },
         })
       : [];
-    const ownerOf = new Map<string, { id: string; name: string | null }>(
-      owners.map((o: any) => [`${o.parentAccountId}|${o.providerId}`, { id: o.ownerUserId, name: o.ownerName }]),
-    );
+    const ownerRowsOf = new Map<string, any[]>();
+    for (const o of owners as any[]) {
+      const k = `${o.parentAccountId}|${o.providerId}`;
+      const list = ownerRowsOf.get(k) || [];
+      list.push(o);
+      ownerRowsOf.set(k, list);
+    }
+    const { ownerForLine } = await import("./parent-crm");
+    const ownerOf = (accountId: string, providerId: string, line: string | null): { id: string; name: string | null } | null => {
+      const row = ownerForLine(ownerRowsOf.get(`${accountId}|${providerId}`) || [], line);
+      return row ? { id: row.ownerUserId, name: row.ownerName } : null;
+    };
 
     // The org's own name, for work that is the team's rather than one
     // person's. It is not a user, so nothing gets emailed to it - it is the
@@ -306,7 +318,7 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
 
     let raised = 0;
     for (const item of items) {
-      const owner = ownerOf.get(`${item.parentAccountId}|${item.providerId}`);
+      const owner = ownerOf(item.parentAccountId, item.providerId, item.serviceLine);
       try {
         await db.parentTask.create({
           data: {

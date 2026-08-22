@@ -340,7 +340,7 @@ export default function ParentDetailPage() {
                       record={scopedRecord || record}
                       isAdmin={!!isAdmin}
                       onJumpToCrm={() => setCol("activity")}
-                      ownerSlot={<ParentLeadOwner record={record} />}
+                      ownerSlot={<ParentLeadOwner record={record} serviceLines={availableLines} />}
                     >
                       <ParentIdentitySection record={record} />
                     </ParentRecordHeader>

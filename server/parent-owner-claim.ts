@@ -99,6 +99,15 @@ export async function claimProviderOwner(
   parentUserId: string | null | undefined,
   actor: any,
   reason: OwnerClaimReason,
+  /**
+   * The SERVICE LINE of the thread being replied to. Ownership is per line:
+   * the surrogacy coordinator's first reply claims the surrogacy journey,
+   * the egg-donor coordinator's claims the egg-donor one - each on the same
+   * family. Null (a subject-less thread) claims the org-wide fallback slot.
+   * An existing org-wide owner never blocks a line claim - the fallback is
+   * for lines nobody has picked up, not a lock on the whole family.
+   */
+  serviceLine?: string | null,
 ): Promise<void> {
   try {
     if (!parentUserId || !actor?.id || !isProviderStaff(actor)) return;
@@ -111,9 +120,11 @@ export async function claimProviderOwner(
     });
     if (!parent) return;
     const accountKey = parent.parentAccountId || parentUserId;
+    const line = serviceLine ?? null;
 
+    // Never steal: only an empty slot FOR THIS LINE is filled.
     const existing = await prisma.parentOwner.findFirst({
-      where: { parentAccountId: accountKey, scope: "PROVIDER", providerId },
+      where: { parentAccountId: accountKey, scope: "PROVIDER", providerId, serviceLine: line },
       select: { id: true },
     });
     if (existing) return;
@@ -124,6 +135,7 @@ export async function claimProviderOwner(
           parentAccountId: accountKey,
           scope: "PROVIDER",
           providerId,
+          serviceLine: line,
           ownerUserId: actor.id,
           ownerName: actor.name || null,
           assignedByUserId: actor.id,
@@ -139,7 +151,7 @@ export async function claimProviderOwner(
       parentAccountId: accountKey,
       providerId,
       actorRole: "provider",
-      metadata: { ownerUserId: actor.id, auto: true, reason },
+      metadata: { ownerUserId: actor.id, auto: true, reason, serviceLine: line },
     });
   } catch (e) {
     console.error("[owner-claim] failed to auto-assign provider owner:", e);

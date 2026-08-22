@@ -2355,7 +2355,7 @@ export class UsersController {
       ? await Promise.all([
           this.prisma.parentOwner.findMany({
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
-            select: { parentAccountId: true, ownerUserId: true, ownerName: true },
+            select: { parentAccountId: true, serviceLine: true, ownerUserId: true, ownerName: true },
           }),
           this.prisma.parentTask.findMany({
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId, status: "OPEN" },
@@ -2391,7 +2391,21 @@ export class UsersController {
         for (const u of us) ownerPhotoById.set(u.id, u.photoUrl);
       }
     }
-    const ownerByKey = new Map(crmOwners.map((o: any) => [o.parentAccountId, o]));
+    // Ownership is now PER SERVICE LINE. The single `owner` field keeps the
+    // org-wide fallback row (else the first line owner) so the column stays
+    // one face; `owners` carries every line's owner for filters and detail.
+    const ownerRowsByKey = new Map<string, any[]>();
+    for (const o of crmOwners as any[]) {
+      const list = ownerRowsByKey.get(o.parentAccountId) || [];
+      list.push(o);
+      ownerRowsByKey.set(o.parentAccountId, list);
+    }
+    const ownerByKey = new Map(
+      Array.from(ownerRowsByKey.entries()).map(([k, rows]) => [
+        k,
+        rows.find((r) => !r.serviceLine) ?? rows[0],
+      ]),
+    );
     const stepByKey = new Map<string, any>();
     for (const f of crmFollowUps) if (!stepByKey.has(f.parentAccountId)) stepByKey.set(f.parentAccountId, f);
     const nowMs = Date.now();
@@ -2415,6 +2429,9 @@ export class UsersController {
           ipFormStatus: ipFormByKey.get(crmKey) ?? null,
           lastTouchAt: lastTouchByKey.get(crmKey) ?? null,
           owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
+          owners: (ownerRowsByKey.get(crmKey) || []).map((o: any) => ({
+            userId: o.ownerUserId, name: o.ownerName, serviceLine: o.serviceLine ?? null,
+          })),
           nextStep: step
             ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }
             : null,

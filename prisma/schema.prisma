@@ -3082,13 +3082,22 @@ model ParentTask {
   @@index([status, dueAt, reminderSentAt])
 }
 
-/// Lead owner. A parent can have both a GoStork owner and a per-org owner.
+/// Lead owner. A parent can have a GoStork owner plus, per provider org,
+/// one owner PER SERVICE LINE (surrogacy coordinator owns the surrogacy
+/// journey, egg-donor coordinator the egg-donor one) and one org-wide
+/// fallback row (serviceLine null) for lines nobody has claimed.
+/// Uniqueness lives in partial indexes in the migration:
+/// (parentAccountId) for GOSTORK, (parentAccountId, providerId,
+/// COALESCE(serviceLine,'')) for PROVIDER.
 model ParentOwner {
   id               String   @id @default(uuid())
   parentAccountId  String
   /// GOSTORK | PROVIDER
   scope            String
   providerId       String?
+  /// PROVIDER scope only: surrogacy | egg_donation | sperm_donation | ivf |
+  /// legal, or null = the org-wide fallback owner. Always null for GOSTORK.
+  serviceLine      String?
   ownerUserId      String
   /// Snapshot - the parents table renders hundreds of these per page.
   ownerName        String?

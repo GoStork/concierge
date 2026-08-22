@@ -15,6 +15,7 @@ import {
   CrmViewer,
   canMutateCrmRow,
   crmReadWhere,
+  ownerForLine,
   resolveCrmViewer,
   resolveWriteTarget,
 } from "./parent-crm";
@@ -880,12 +881,13 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
       orderBy: { dueAt: "asc" },
       take: 200,
     });
-    // Unassigned work (an agreement waiting on the family, an org-level item)
-    // belongs to whoever is actually working that family: the LEAD OWNER -
-    // auto-claimed when a staffer first replies to the family's thread, so
-    // "the person chatting with them" and "the owner" are the same person.
-    // Only a family with NO owner shows its unassigned work to the whole
-    // team, because hiding it would leave work nobody can see.
+    // Unassigned work belongs to whoever owns that family's SERVICE LINE -
+    // the surrogacy coordinator sees the surrogacy items, the egg-donor
+    // coordinator the egg-donor ones, on the same family. Line owner first,
+    // then the org-wide fallback owner (serviceLine null); only a line with
+    // NEITHER shows its unassigned work to the whole team, because hiding it
+    // would leave work nobody can see. Ownership is auto-claimed when a
+    // staffer first replies in a thread of that line.
     let mine = open;
     {
       const nullAssigned = open.filter((t) => !t.assigneeUserId);
@@ -893,13 +895,18 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
         const keys = Array.from(new Set(nullAssigned.map((t) => t.parentAccountId)));
         const owners = await prisma.parentOwner.findMany({
           where: { parentAccountId: { in: keys }, scope: "PROVIDER", providerId },
-          select: { parentAccountId: true, ownerUserId: true },
+          select: { parentAccountId: true, serviceLine: true, ownerUserId: true },
         });
-        const ownerOf = new Map(owners.map((o) => [o.parentAccountId, o.ownerUserId]));
+        const rowsOf = new Map<string, typeof owners>();
+        for (const o of owners) {
+          const list = rowsOf.get(o.parentAccountId) || [];
+          list.push(o);
+          rowsOf.set(o.parentAccountId, list);
+        }
         mine = open.filter((t) => {
           if (t.assigneeUserId) return true; // mine by name
-          const owner = ownerOf.get(t.parentAccountId);
-          return !owner || owner === user.id;
+          const owner = ownerForLine(rowsOf.get(t.parentAccountId) || [], t.serviceLine);
+          return !owner || owner.ownerUserId === user.id;
         });
       }
     }
@@ -981,9 +988,12 @@ parentRecordRouter.put("/api/parents/:id/owner", requireAuth, async (req, res) =
     const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
     const target = resolveWriteTarget(viewer, req.body?.scope, req.body?.providerId);
     const ownerUserId = req.body?.ownerUserId ?? null;
+    // PROVIDER ownership is PER SERVICE LINE (null = the org-wide fallback
+    // slot); GoStork ownership stays a single account-level row.
+    const serviceLine = target.scope === "PROVIDER" ? readServiceLine(req.body?.serviceLine) : null;
 
     const existing = await prisma.parentOwner.findFirst({
-      where: { parentAccountId: accountKey, scope: target.scope, providerId: target.providerId },
+      where: { parentAccountId: accountKey, scope: target.scope, providerId: target.providerId, serviceLine },
     });
 
     if (!ownerUserId) {
@@ -1016,6 +1026,7 @@ parentRecordRouter.put("/api/parents/:id/owner", requireAuth, async (req, res) =
             parentAccountId: accountKey,
             scope: target.scope,
             providerId: target.providerId,
+            serviceLine,
             ownerUserId: owner.id,
             ownerName: owner.name,
             assignedByUserId: viewer.userId,
@@ -1031,7 +1042,7 @@ parentRecordRouter.put("/api/parents/:id/owner", requireAuth, async (req, res) =
         parentAccountId: accountKey,
         providerId: target.providerId,
         actorRole: viewer.isAdmin ? "admin" : "provider",
-        metadata: { ownerUserId: owner.id, scope: target.scope },
+        metadata: { ownerUserId: owner.id, scope: target.scope, serviceLine },
       });
     }
     res.json(row);

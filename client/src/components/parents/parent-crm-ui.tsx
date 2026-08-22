@@ -943,11 +943,20 @@ function TaskOpenLink({ task }: { task: ParentRecord["crm"]["tasks"][number] }) 
 
 // ─── Owner ──────────────────────────────────────────────────────────────────
 
-export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice }) {
+export function OwnerPicker({ record, isAdmin, choice, serviceLine, label }: {
+  record: ParentRecord; isAdmin: boolean; choice: ScopeChoice;
+  /** PROVIDER scope: which line this picker assigns; null/undefined = org-wide fallback. */
+  serviceLine?: string | null;
+  /** Heading override ("Surrogacy owner"); default stays "Lead owner". */
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const mut = useCrmMutation(record.parent.id, () => setOpen(false));
-  const current = record.crm.owners.find((o) => o.scope === choice.scope && o.providerId === choice.providerId);
+  const line = serviceLine ?? null;
+  const current = record.crm.owners.find((o) =>
+    o.scope === choice.scope && o.providerId === choice.providerId
+    && (choice.scope !== "PROVIDER" || (o.serviceLine ?? null) === line));
 
   const { data: options = [] } = useQuery<any[]>({
     queryKey: ["/api/parents/crm/owner-options"],
@@ -967,7 +976,7 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
         // Label above, then the person and the button together on one line -
         // the button belongs beside the name it acts on, not stranded under it.
         <div className="space-y-1">
-          <p className="t-micro-label">Lead owner</p>
+          <p className="t-micro-label">{label || "Lead owner"}</p>
           <div className="flex items-center gap-2 flex-wrap">
             {current ? (
               <span className="flex items-center gap-1.5 text-sm min-w-0">
@@ -994,7 +1003,7 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
                 onClick={() => mut.mutate({
                   url: `/api/parents/${record.parent.id}/owner`,
                   method: "PUT",
-                  body: { ownerUserId: u.id, scope: choice.scope, providerId: choice.providerId },
+                  body: { ownerUserId: u.id, scope: choice.scope, providerId: choice.providerId, serviceLine: line },
                 })}
                 data-testid={`option-owner-${u.id}`}
               >
@@ -1017,7 +1026,7 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
                 onClick={() => mut.mutate({
                   url: `/api/parents/${record.parent.id}/owner`,
                   method: "PUT",
-                  body: { ownerUserId: null, scope: choice.scope, providerId: choice.providerId },
+                  body: { ownerUserId: null, scope: choice.scope, providerId: choice.providerId, serviceLine: line },
                 })}
               >
                 Unassign
@@ -1040,11 +1049,36 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
  * notes panel below, because two controls for one setting is what made the
  * owners filter confusing in the first place.
  */
-export function ParentLeadOwner({ record }: { record: ParentRecord }) {
+export function ParentLeadOwner({ record, serviceLines }: { record: ParentRecord; serviceLines?: string[] }) {
   const isAdmin = record.viewer.role === "admin";
   const primary = scopeChoices(record, isAdmin)[0];
   if (!primary) return null;
-  return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
+  // GoStork ownership stays one account-level slot. PROVIDER ownership is
+  // per SERVICE LINE: one picker per line the family runs (so the surrogacy
+  // and egg-donor coordinators each own their part), plus the org-wide
+  // fallback slot that answers for lines nobody claimed.
+  if (primary.scope !== "PROVIDER") {
+    return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
+  }
+  const lines = (serviceLines || []).filter((l) => SERVICE_LINE_LABELS[l]);
+  if (lines.length === 0) {
+    return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
+  }
+  return (
+    <div className="flex flex-wrap gap-x-6 gap-y-2">
+      {lines.map((l) => (
+        <OwnerPicker
+          key={l}
+          record={record}
+          isAdmin={isAdmin}
+          choice={primary}
+          serviceLine={l}
+          label={`${SERVICE_LINE_LABELS[l]} owner`}
+        />
+      ))}
+      <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} serviceLine={null} label="All lines (fallback)" />
+    </div>
+  );
 }
 
 /** The task composer on its own, for the activity toolbar's Create Task. */

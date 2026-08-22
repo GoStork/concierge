@@ -107,6 +107,25 @@ export function crmReadWhere(viewer: CrmViewer, parentAccountId: string): Record
   return { parentAccountId, scope: "PROVIDER", providerId: viewer.providerId };
 }
 
+/**
+ * Which owner row answers for a given service line.
+ *
+ * The rule, in one place so the sweeps, the Home queue and the endpoints can
+ * never disagree: the LINE's own owner wins; a family line nobody claimed
+ * falls back to the org-wide owner (serviceLine null); with neither, there
+ * is no owner and callers fall back to "the whole team".
+ */
+export function ownerForLine<T extends { serviceLine?: string | null }>(
+  rows: T[],
+  line: string | null | undefined,
+): T | null {
+  if (line) {
+    const exact = rows.find((r) => r.serviceLine === line);
+    if (exact) return exact;
+  }
+  return rows.find((r) => !r.serviceLine) ?? null;
+}
+
 export class CrmAuthError extends Error {
   constructor(public status: number, message: string) {
     super(message);
