@@ -332,11 +332,18 @@ export default function ProviderHomePage() {
                 // the family is the work, and the document is one tap away
                 // inside the thread. Everything else keeps its deep link.
                 cta={t.chatSessionId && t.parentUserId ? "Open chat"
-                  : t.deepLink ? taskLinkTarget(t.deepLink).label : "Open"}
+                  : t.deepLink ? taskLinkTarget(t.deepLink).label
+                  : t.parentUserId ? "Open task" : "Open"}
                 onClick={() => navigate(
                   t.chatSessionId && t.parentUserId
                     ? `/chat/${t.parentUserId}/${t.chatSessionId}`
-                    : (t.deepLink || (t.parentUserId ? `/parents/${t.parentUserId}` : "/parents")),
+                    : t.deepLink ? t.deepLink
+                    // A manual task's home is its own card on the record's
+                    // Activity tab - land focused and highlighted on it (the
+                    // same scroll-to-entry the search results use), not on
+                    // the top of the parent page.
+                    : t.parentUserId ? `/parents/${t.parentUserId}?sec=crm&focus=task-${t.id}`
+                    : "/parents",
                 )}
               />
             ))}
