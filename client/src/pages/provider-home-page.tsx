@@ -192,13 +192,20 @@ export default function ProviderHomePage() {
    * family's record - so the queue and the record can never disagree, and a
    * coordinator's own tasks sit alongside the ones the product raised.
    */
-  const { data: taskData } = useQuery<{ tasks: ProviderTask[] }>({
+  const { data: taskData, isError: tasksFailed } = useQuery<{ tasks: ProviderTask[] }>({
     queryKey: ["/api/provider/tasks"],
     queryFn: async () => {
       const res = await fetch("/api/provider/tasks", { credentials: "include" });
-      if (!res.ok) return { tasks: [] };
+      // THROW rather than fabricate an empty queue. This used to return
+      // { tasks: [] } on any non-200, so a transient blip (a 500, a session
+      // hiccup, ngrok mid-restart) rendered as a green "All clear" - the
+      // queue appeared to vanish and reappear between refreshes. A loud
+      // failure keeps the previous data on screen and says so instead.
+      if (!res.ok) throw new Error("Failed to load tasks");
       return res.json();
     },
+    placeholderData: (prev) => prev,
+    retry: 2,
     ...fresh,
   });
   const tasks = taskData?.tasks || [];
@@ -277,10 +284,20 @@ export default function ProviderHomePage() {
           title={queueCount > 0 ? `Your work queue (${queueCount})` : "Your work queue"}
         />
         {queueCount === 0 ? (
+          // A failed fetch must never wear the green all-clear: with no data
+          // at all we say so honestly; the next successful refetch (or a
+          // pull-to-refresh) repopulates.
+          tasksFailed && !taskData ? (
+            <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-warning))" }}>
+              <CheckCircle2 className="w-4 h-4" />
+              Couldn't load your work queue just now - refresh to try again.
+            </div>
+          ) : (
           <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle2 className="w-4 h-4" />
             All clear - nothing waiting on you right now.
           </div>
+          )
         ) : (
           <div className="space-y-2">
             {/* Tasks, not a re-derivation. These are the same rows that live on
