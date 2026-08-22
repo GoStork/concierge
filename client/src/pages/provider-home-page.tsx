@@ -51,6 +51,7 @@ interface ProviderTask {
   overdue: boolean;
   source: string;
   deepLink: string | null;
+  chatSessionId?: string | null;
   assigneeName: string | null;
   mine: boolean;
   parentName: string;
@@ -319,9 +320,17 @@ export default function ProviderHomePage() {
                   t.mine ? null : t.assigneeName,
                   t.priority !== "NONE" ? t.priority.toLowerCase() : null,
                 ].filter(Boolean).join(" - ")}
-                // Same naming as the task's own card: say where it goes.
-                cta={t.deepLink ? taskLinkTarget(t.deepLink).label : "Open"}
-                onClick={() => navigate(t.deepLink || (t.parentUserId ? `/parents/${t.parentUserId}` : "/parents"))}
+                // A task about a SENT artifact (agreement out for signature)
+                // opens the CONVERSATION it was sent in - following up with
+                // the family is the work, and the document is one tap away
+                // inside the thread. Everything else keeps its deep link.
+                cta={t.chatSessionId && t.parentUserId ? "Open chat"
+                  : t.deepLink ? taskLinkTarget(t.deepLink).label : "Open"}
+                onClick={() => navigate(
+                  t.chatSessionId && t.parentUserId
+                    ? `/chat/${t.parentUserId}/${t.chatSessionId}`
+                    : (t.deepLink || (t.parentUserId ? `/parents/${t.parentUserId}` : "/parents")),
+                )}
               />
             ))}
             {pendingBookings.map((b: any) => (

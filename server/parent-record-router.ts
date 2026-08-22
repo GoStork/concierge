@@ -952,6 +952,11 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
           overdue: new Date(t.dueAt).getTime() < now,
           source: t.source,
           deepLink: t.deepLink,
+          // The thread the work came out of (an agreement task carries the
+          // conversation it was sent from). Home makes THIS the primary
+          // action - following up with the family happens in the chat, and
+          // the artifact itself is one tap away inside it.
+          chatSessionId: t.chatSessionId ?? null,
           assigneeUserId: t.assigneeUserId,
           assigneeName: waitingOnParent ? (who?.name ?? t.assigneeName) : t.assigneeName,
           mine: t.assigneeUserId === user.id,
