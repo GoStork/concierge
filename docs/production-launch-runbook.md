@@ -282,6 +282,24 @@ NEXT, in order (items marked ERAN need a human in a browser):
       for `/api/webhooks/*` and `/api/cron/*` (section 1) - lower priority
       now that Bot Fight Mode is off; do before the Stripe/PandaDoc
       webhooks go live.
+   f. [x] **2026-08-22: verified search bots exempted from the signup
+      challenge.** Google Search Console reported "Blocked due to access
+      forbidden (403)" on gostork.com: the WAF rule "GoStork signup bot
+      challenge" (managed_challenge on app.gostork.com /questionnaire,
+      /login, /onboarding, /register - covers 1.0 AND 2.0 paths) was
+      challenging Googlebot, which cannot pass a managed challenge. Fixed by
+      prepending `(not cf.client.bot)` to the rule expression via the API
+      (rule id 7a96bdb4cf444c7f8154d469269f7309, ruleset
+      bec6d0b5b11d4f9986a6b62624a556e7). cf.client.bot = Cloudflare-VERIFIED
+      crawlers (validated by IP ownership, unspoofable), so the fraud
+      defense is unchanged for humans and fake-UA bots - confirmed
+      post-change that an unverified client still gets the 403 challenge.
+      The marketing site was audited clean the same day (all 296 sitemap
+      URLs return 200 to Googlebot). NOTE: the same rule protects the 2.0
+      paths at launch, and the bot exemption carries over - do not re-add a
+      blanket challenge without `not cf.client.bot`, or GSC 403s return.
+      (The CLOUDFLARE_API_TOKEN in the MacBook .env has Zone WAF Edit scope,
+      not just Turnstile - the 253 note above is out of date.)
 5. Step 5 (2026-08-19):
    a. [x] **PandaDoc staging subscription created**: "GoStork - Staging
       Agreements (test-app)" uuid `3a53a683-64e0-49f2-b932-7817dd816241`,
