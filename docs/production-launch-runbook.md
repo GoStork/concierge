@@ -885,6 +885,48 @@ Aug 22 2026. `34.85.132.142` was sent to Eggspecting on 2026-08-23.
   GCP egress can introduce a block that does not exist today. Move Eggspecting
   (allowlisted, so reputation is bypassed); move the others only with a reason.
 
+### 9c. Egg-donor sync configs DELETED in dev 2026-08-23 - RESTORE ON SEP 7
+
+The runaway auto-resume loop (commit b0ee5d93) ran Aug 20-23 2026 on the iMac:
+a ~60s boot-crash cycle re-resumed interrupted syncs once a minute for three
+days, re-scraping each agency's full listing pagination and running a
+`gemini-3.5-flash` `extractDonorsFromPage` call per listing page every time.
+Google flagged unusual Gemini cost spikes on Aug 20 and Aug 21, and the $50
+prepay auto-reload hit its daily payment cap twice on Aug 21.
+
+The circuit breaker in b0ee5d93 fixes this, but **the iMac is on an Aug 19
+build** (`last-modified` on its served `index.html`) and `POST
+/api/cron/redeploy` (added Aug 22, c9adbeb0) does not exist there, so the fix
+cannot be pushed to it remotely. Eran has no physical access until **Sep 7
+2026**. `runNightlySync` does an unfiltered `findMany()` on the config tables,
+so leaving the rows in place meant the 2 AM ET nightly would re-ignite the loop
+unattended for two weeks.
+
+Mitigation: all 5 `EggDonorSyncConfig` rows were copied to
+`_EggDonorSyncConfig_backup_20260823` and then DELETED from the dev Supabase
+project (`bryzqwfzvgjenijciwaa`). Nightly now finds no egg-donor config and
+starts nothing, so the loop has no ignition source. Credentials
+(`databaseUrl` / `username` / `encryptedPassword`) are intact in the backup
+table and never left the database.
+
+Affected: Asian Egg Bank, Family Creations, Eggceptional Fertility,
+Conceptions Center, Eggspecting. Egg-donor listings in dev go stale until
+restore.
+
+- [ ] **Sep 7 2026**: confirm the iMac is running code that contains the
+  b0ee5d93 circuit breaker BEFORE restoring. Then:
+  `INSERT INTO "EggDonorSyncConfig" SELECT * FROM "_EggDonorSyncConfig_backup_20260823";`
+  Verify with a single manual sync per agency before trusting the nightly.
+- [ ] Drop `_EggDonorSyncConfig_backup_20260823` once the restore is verified.
+- [ ] Residual exposure while disabled: `SurrogateSyncConfig` (1 row) and
+  `SpermDonorSyncConfig` (1 row) are still present and are still reachable by
+  the same loop if a sync of theirs is interrupted on the iMac. Neither was
+  looping as of Aug 23 (1 auto-resume total, Sperm Bank California, Aug 22).
+  Delete them the same way if resume spam reappears in `SyncLog`.
+- [ ] The `$50` prepay auto-reload was NOT raised: it was adequate at baseline
+  volume (~1,385 profiles/day) and the reload failures were a symptom of the
+  loop, not a standing misconfiguration. Revisit only if real volume grows.
+
 ## 10. Security hardening (pre-launch)
 
 - [ ] PandaDoc webhook signature verification (section 5).
