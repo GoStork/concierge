@@ -636,7 +636,10 @@ export default function ImageUploader({
                 <img
                   src={displayUrl}
                   alt={label || "Image"}
-                  className="max-h-16 max-w-[200px] object-contain"
+                  // SVGs without width/height attributes (viewBox only) collapse to
+                  // ~0px in Safari under max-* constraints alone; an explicit height
+                  // lets the browser derive the width from the viewBox ratio.
+                  className={isSvgUrl(value) ? "h-16 max-w-[200px] object-contain" : "max-h-16 max-w-[200px] object-contain"}
                   referrerPolicy="no-referrer"
                   data-testid={`${testId}-preview`}
                 />
