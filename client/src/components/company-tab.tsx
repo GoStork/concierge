@@ -157,8 +157,6 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [phone, setPhone] = useState("");
   const [yearFounded, setYearFounded] = useState("");
-  const [consultationBookingUrl, setConsultationBookingUrl] = useState("");
-  const [consultationIframeEnabled, setConsultationIframeEnabled] = useState(false);
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
@@ -249,8 +247,6 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
       setWebsiteUrl(provider.websiteUrl || "");
       setPhone(provider.phone || "");
       setYearFounded(provider.yearFounded ? String(provider.yearFounded) : "");
-      setConsultationBookingUrl(provider.consultationBookingUrl || "");
-      setConsultationIframeEnabled(provider.consultationIframeEnabled || false);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
@@ -328,7 +324,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, partnerProviderIds]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, locations, teamMembers, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, partnerProviderIds]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -369,8 +365,6 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
         phone: phone || null,
         yearFounded: yearFounded ? parseInt(yearFounded) : null,
         logoUrl: logoUrl || null,
-        consultationBookingUrl: consultationBookingUrl || null,
-        consultationIframeEnabled,
         // Clinic marketplace self-entry
         offersVideoVisits: clinicOffersVideo,
         ...(hasDonorServices ? { biometricMatchingAuthorized } : {}),
@@ -589,44 +583,6 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
               data-testid="input-company-year"
             />
           </div>
-        </div>
-      </Card>
-
-      <Card className="p-6 space-y-4">
-        <h2 className="text-lg font-heading flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-primary" /> Scheduling & Consultations
-        </h2>
-        <p className="t-helper">
-          Add your scheduling link so parents can book consultations directly through GoStork.
-        </p>
-        <div className="space-y-2">
-          <Label>Consultation Booking Link</Label>
-          <div className="relative">
-            <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={consultationBookingUrl}
-              onChange={e => setConsultationBookingUrl(e.target.value)}
-              placeholder="https://calendly.com/your-link or https://acuity.com/..."
-              className="pl-9"
-              disabled={readOnly}
-              data-testid="input-consultation-booking-url"
-            />
-          </div>
-          <p className="t-helper">
-            Paste a Calendly, Acuity, or other scheduling link. Parents will be able to book directly.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 pt-2">
-          <Checkbox
-            id="consultation-iframe"
-            checked={consultationIframeEnabled}
-            onCheckedChange={(checked) => setConsultationIframeEnabled(checked === true)}
-            disabled={readOnly || !consultationBookingUrl}
-            data-testid="toggle-consultation-iframe"
-          />
-          <Label htmlFor="consultation-iframe" className="cursor-pointer">
-            Enable in-app booking (load scheduling page within GoStork)
-          </Label>
         </div>
       </Card>
 

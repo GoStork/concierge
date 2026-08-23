@@ -1146,7 +1146,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "resolve_provider",
         description:
-          "Internal tool: Look up provider details by ID or by name (partial match). Returns id, name, logoUrl, email, consultationBookingUrl, and consultationIframeEnabled.",
+          "Internal tool: Look up provider details by ID or by name (partial match). Returns id, name, logoUrl, and email.",
         inputSchema: {
           type: "object",
           properties: {
@@ -2483,12 +2483,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (providerId) {
         provider = await prisma.provider.findUnique({
           where: { id: providerId },
-          select: { id: true, name: true, logoUrl: true, email: true, consultationBookingUrl: true, consultationIframeEnabled: true },
+          select: { id: true, name: true, logoUrl: true, email: true },
         });
       } else if (providerName) {
         provider = await prisma.provider.findFirst({
           where: { name: { contains: providerName, mode: "insensitive" } },
-          select: { id: true, name: true, logoUrl: true, email: true, consultationBookingUrl: true, consultationIframeEnabled: true },
+          select: { id: true, name: true, logoUrl: true, email: true },
         });
       }
 

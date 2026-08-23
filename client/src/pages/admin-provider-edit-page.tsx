@@ -260,8 +260,6 @@ export default function AdminProviderEditPage() {
   const [ivfSurrogateMentalHealthHistory, setIvfSurrogateMentalHealthHistory] = useState("");
   // Scheduling & Consultations - folded in from the provider-side Company tab
   // so this Profile editor is a strict superset of what the provider sees.
-  const [consultationBookingUrl, setConsultationBookingUrl] = useState("");
-  const [consultationIframeEnabled, setConsultationIframeEnabled] = useState(false);
 
   useEffect(() => {
     if (provider) {
@@ -279,8 +277,6 @@ export default function AdminProviderEditPage() {
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
       setEditWebsite(provider.websiteUrl || "");
-      setConsultationBookingUrl((provider as any).consultationBookingUrl || "");
-      setConsultationIframeEnabled((provider as any).consultationIframeEnabled || false);
       setEditEmail(provider.email || "");
       setEditPhone(provider.phone || "");
       setEditYearFounded(provider.yearFounded ? String(provider.yearFounded) : "");
@@ -363,7 +359,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, consultationBookingUrl, consultationIframeEnabled, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -394,8 +390,6 @@ export default function AdminProviderEditPage() {
       name: editName,
       about: editAbout || null,
       websiteUrl: editWebsite || null,
-      consultationBookingUrl: consultationBookingUrl || null,
-      consultationIframeEnabled,
       offersVideoVisits: clinicOffersVideo,
       biometricMatchingAuthorized,
       email: editEmail || null,
@@ -888,37 +882,6 @@ export default function AdminProviderEditPage() {
                   />
                 </div>
               </div>
-            </Card>
-
-            <Card className="p-6 space-y-4">
-              <h3 className="text-lg font-heading flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" /> Scheduling & Consultations
-              </h3>
-              <div className="space-y-2">
-                <Label>Consultation Booking Link</Label>
-                <div className="relative">
-                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    value={consultationBookingUrl}
-                    onChange={e => setConsultationBookingUrl(e.target.value)}
-                    placeholder="https://calendly.com/your-link or https://acuity.com/..."
-                    className="pl-9"
-                    data-testid="input-edit-consultation-booking-url"
-                  />
-                </div>
-                <p className="t-helper">
-                  A Calendly, Acuity, or other scheduling link parents can book consultations through.
-                </p>
-              </div>
-              <label className="flex items-center gap-3 pt-2 cursor-pointer">
-                <Checkbox
-                  checked={consultationIframeEnabled}
-                  onCheckedChange={(checked) => setConsultationIframeEnabled(checked === true)}
-                  disabled={!consultationBookingUrl}
-                  data-testid="toggle-edit-consultation-iframe"
-                />
-                <span className="text-sm font-ui">Enable in-app booking (load scheduling page within GoStork)</span>
-              </label>
             </Card>
 
             <Card className="p-6 space-y-4">

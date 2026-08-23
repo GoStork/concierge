@@ -47,8 +47,6 @@ model Provider {
   updatedAt                             DateTime                    @updatedAt
   isTestData                            Boolean                     @default(false)
   brandingEnabled                       Boolean                     @default(false)
-  consultationBookingUrl                String?
-  consultationIframeEnabled             Boolean                     @default(false)
   agreementTemplateUrl                  String?
   agreementTemplateOriginalName         String?
   pandaDocTemplateId                    String?

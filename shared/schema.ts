@@ -14,7 +14,7 @@ import type {
 /**
  * Derived from Prisma, not hand-maintained. The hand-written version listed
  * about ten fields while the model has over a hundred, so every page reading a
- * newer column (consultationBookingUrl, lgbtqCare, the whole ivf* family) got
+ * newer column (lgbtqCare, the whole ivf* family) got
  * "Property does not exist" - 46 errors in company-tab alone. `import type` is
  * erased at compile time, so this pulls no Prisma runtime into the browser
  * bundle.
@@ -198,8 +198,6 @@ export const insertProviderSchema = z.object({
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   yearFounded: z.number().int().nullable().optional(),
-  consultationBookingUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
-  consultationIframeEnabled: z.boolean().optional(),
   agreementTemplateUrl: z.string().nullable().optional(),
   agreementTemplateOriginalName: z.string().nullable().optional(),
   // Clinic marketplace self-entry (no reliable external source)
