@@ -202,7 +202,9 @@ export default function AdminProvidersPage() {
   });
 
   const providers = useMemo(() => {
-    let rows = rawProviders;
+    // The GoStork house profile is the admin company, not a provider - never
+    // list it alongside real providers (it is managed from Settings > Company).
+    let rows = rawProviders?.filter((p: any) => ((p?.name || "").trim().toLowerCase() !== "gostork"));
     if (rows && automationFilter !== "All") {
       rows = rows.filter((p: any) => {
         const a = providerAutomations(p);
