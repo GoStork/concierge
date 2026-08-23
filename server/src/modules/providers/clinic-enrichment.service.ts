@@ -1203,6 +1203,7 @@ export class ClinicEnrichmentService {
     const candidates = await this.prisma.provider.findMany({
       where: {
         id: { not: provider.id },
+        cdcClinicId: { not: null },
         services: { some: { providerType: { name: "IVF Clinic" } } },
         websiteUrl: { contains: rootDomain },
       },
@@ -1951,6 +1952,10 @@ export class ClinicEnrichmentService {
     try {
       const allIvfClinics = await this.prisma.provider.findMany({
         where: {
+          // CDC-imported clinics only. Hand-created providers (e.g. an agency
+          // with an approved IVF service line) must never be enriched over -
+          // their profile is curated, not CDC-derived.
+          cdcClinicId: { not: null },
           services: { some: { providerType: { name: "IVF Clinic" } } },
         },
         select: { id: true, name: true, websiteUrl: true, logoUrl: true, about: true, phone: true },
@@ -2096,6 +2101,12 @@ export class ClinicEnrichmentService {
 
       const allProviders = await this.prisma.provider.findMany({
         where: {
+          // CDC-imported clinics only. The fresh-start clear below NULLs the
+          // profile fields and deletes all ProviderMembers for every selected
+          // provider - running that on a hand-created provider (e.g. an agency
+          // with an approved IVF service line) destroys curated data. That is
+          // exactly what wiped Eggspecting on Aug 23 2026.
+          cdcClinicId: { not: null },
           services: {
             some: {
               providerType: { name: "IVF Clinic" },
