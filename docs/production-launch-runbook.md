@@ -824,6 +824,67 @@ Rule: exactly ONE environment runs schedulers against the production DB.
   are DEV infrastructure - decide whether the iMac keeps running as a dev box
   post-launch (with PASSIVE_MODE) or is retired.
 
+### 9a. Cross-environment double-scrape: NightlySyncLock does NOT cover it
+
+The rule above ("exactly ONE environment runs schedulers against the
+production DB") protects the **database**. It does NOT protect the **agency
+websites**, and the difference bites the moment dev and prod stop sharing a DB.
+
+`NightlySyncLock` is a row *inside* a database (`profile-sync.service.ts`,
+`nightlySyncLock.updateMany` atomic claim). Dev runs against Supabase
+`bryzqwfzvgjenijciwaa`, prod against `itlnituvybtnzmrzbkoz`. **Two databases,
+two independent lock rows.** Neither can see the other. If the same agency has
+a scraper config in BOTH environments, both nightlies log into that agency the
+same night and nothing anywhere prevents it.
+
+Why that is expensive rather than merely wasteful: these agency sites are
+Cloudflare-fronted and rate-limit on OUR source IP. `docs/scraper-playbook.md`
+documents Eggspecting (confirmed Aug 15 2026) 403-ing a second login attempt
+~3 minutes after a successful one. A duplicated nightly is exactly that
+pattern, on a schedule - the most reliable way to lose an IP allowlist we just
+negotiated.
+
+- [ ] **As each provider is onboarded into test-app/prod, DELETE or disable its
+  scraper config in the dev DB.** Never leave the same agency configured live
+  in both environments. This is the actual mitigation; there is no lock that
+  will do it for you.
+- [ ] Confirm `ENABLE_NIGHTLY_SCHEDULER=true` on exactly ONE host globally
+  (the prod VM), and that the iMac's `com.gostork.nightly-sync` launchd
+  wrapper - today the only host setting it - is switched off at cutover.
+- [ ] Dev keeps the machinery testable WITHOUT real agency traffic: point dev
+  sync configs at local HTML fixtures, and exercise the scheduler on demand
+  via `/api/cron/run-nightly-sync` rather than waiting for the 2 AM cron.
+  Fixtures also protect the "roughly ONE live login attempt per debug session"
+  budget when iterating on scraper code.
+
+### 9b. Scraper egress IPs (agency allowlists break at cutover)
+
+Agencies that allowlist us do it by **source IP**, not by domain - our scraper
+sends a spoofed Chrome UA and nothing that identifies GoStork
+(`profile-sync.service.ts` `DEFAULT_HEADERS`). Verified inventory
+(2026-08-23, `gcloud compute addresses list --project=gostork`):
+
+| Host | Region | Egress IP |
+|---|---|---|
+| GKE private pool (1.0 workloads) | us-central1 | `34.28.102.246` (`gke-egress-ip` via `gke-nat-router`) |
+| `scrapper` VM (legacy, idle 240d) | us-central1-a | `34.29.45.87` |
+| `gostork-2-prod` (2.0) | us-east4-b | `34.85.132.142` (confirmed by curl from the VM) |
+
+**`34.28.102.246` disappears when 1.0's GKE is decommissioned.** Eggspecting
+had allowlisted that address - i.e. 1.0's egress - which is why 2.0's nightly
+(running from the dev Macs on residential IPs) failed 8 consecutive nights to
+Aug 22 2026. `34.85.132.142` was sent to Eggspecting on 2026-08-23.
+
+- [ ] Before the app.gostork.com flip, ask any agency known to allowlist us to
+  ADD `34.85.132.142` (keep the old entry until 1.0 is retired).
+  Do NOT mass-mail all 7 configs: five currently sync fine from unallowlisted
+  residential IPs, which proves they are not IP-gating us. Act per agency,
+  only when one actually blocks.
+- [ ] Note the direction of risk when moving a sync to the VM: WAFs generally
+  score **datacenter IPs worse than residential**. Moving a working agency to
+  GCP egress can introduce a block that does not exist today. Move Eggspecting
+  (allowlisted, so reputation is bypassed); move the others only with a reason.
+
 ## 10. Security hardening (pre-launch)
 
 - [ ] PandaDoc webhook signature verification (section 5).

@@ -182,6 +182,30 @@ export class ScrapersController {
           console.log(`[Donor Sync] Skipping resume of ${type} "${config?.provider?.name || providerId}" - interrupted >24h ago; next nightly will re-run`);
           continue;
         }
+
+        // Circuit breaker. The 24h bound above CANNOT stop a resume loop on its
+        // own: startSync stamps lastSyncStartedAt = now() on every run
+        // (profile-sync.service.ts), auto-resume included, so a process that
+        // dies mid-sync and respawns sees an "interrupted 1min ago" job forever
+        // and the staleThreshold never trips. Aug 20-23 2026 on the iMac: a
+        // ~60s boot-crash cycle resumed Asian Egg Bank 4,051 times, one per
+        // minute for three days, writing a failed SyncLog each pass and doing
+        // no actual work. Count our OWN recent auto-resumes instead - that
+        // number is the one thing the loop cannot reset.
+        const RESUME_WINDOW_MS = 6 * 60 * 60 * 1000;
+        const MAX_RESUMES_PER_WINDOW = 3;
+        const recentResumes = await this.prisma.syncLog.count({
+          where: {
+            providerId,
+            type,
+            source: "auto-resume",
+            startedAt: { gt: new Date(Date.now() - RESUME_WINDOW_MS) },
+          },
+        }).catch(() => 0);
+        if (recentResumes >= MAX_RESUMES_PER_WINDOW) {
+          console.error(`[Donor Sync] NOT resuming ${type} "${config?.provider?.name || providerId}" - ${recentResumes} auto-resumes in the last 6h. Something is killing the sync (or the process) repeatedly; leaving it for the next nightly. Investigate before re-enabling.`);
+          continue;
+        }
         const ageMin = startedAt ? Math.round((Date.now() - startedAt.getTime()) / 60000) : null;
         console.log(`[Donor Sync] Checkpoint-resuming ${type} sync for "${config?.provider?.name || providerId}"${ageMin != null ? ` (interrupted ${ageMin}min ago)` : ""} - already-synced profiles will be skipped`);
         startSync(this.prisma, providerId, type, undefined, this.storageService, "auto-resume").catch((err: any) => {
