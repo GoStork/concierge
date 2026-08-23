@@ -60,7 +60,7 @@ function outlookCalUrl(bk: any) {
 function generateIcs(bk: any): string {
   const start = new Date(bk.scheduledAt);
   const end = new Date(start.getTime() + bk.duration * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
+  const fmt = (d: Date) => d.toISOString().replace(/-|:|\./g, "").slice(0, 15) + "Z";
   return [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//GoStork//EN", "BEGIN:VEVENT",
     `DTSTART:${fmt(start)}`, `DTEND:${fmt(end)}`,
