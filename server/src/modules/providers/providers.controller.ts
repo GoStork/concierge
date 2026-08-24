@@ -22,6 +22,7 @@ import { deriveIvfParentContext, evaluateIvfRequirements, ivfRequirementsFromPro
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiBody } from "@nestjs/swagger";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
+import { KnowledgeService } from "../knowledge/knowledge.service";
 import { isClinicianMember } from "./clinician";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderSchema } from "@shared/schema";
@@ -151,7 +152,10 @@ function buildParentSurrogateStatusFilter(raw?: string | null): { in: string[] }
 @ApiTags("Providers")
 @Controller("api/providers")
 export class ProvidersController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(KnowledgeService) private readonly knowledgeService: KnowledgeService,
+  ) {}
 
   @Get("marketplace/egg-donors")
   @ApiOperation({ summary: "List egg donors (paginated, 100 per page)" })
@@ -1475,6 +1479,16 @@ export class ProvidersController {
       if (isDeveloper && !isAdmin) data.isTestData = true;
       const provider = await this.prisma.provider.create({ data });
       updateProfileEmbedding(this.prisma, "Provider", provider.id, null).catch(() => {});
+      // Seed Eva's knowledge base from the provider's website automatically -
+      // the admin already scraped it to create the profile, so the AI memory
+      // should know the same site without a separate manual "Website Sync"
+      // step. Fire-and-forget: creation never fails on a slow/unreachable site.
+      if (provider.websiteUrl) {
+        this.knowledgeService
+          .ingestWebsite(provider.websiteUrl, provider.id)
+          .then((r) => console.log(`[provider-create] Knowledge auto-seeded for "${provider.name}": ${r.chunks} chunks from ${r.pages} page(s)`))
+          .catch((e) => console.error(`[provider-create] Knowledge auto-seed failed for "${provider.name}": ${e?.message}`));
+      }
       return provider;
     } catch (err) {
       if (err instanceof z.ZodError) {

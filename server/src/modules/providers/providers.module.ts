@@ -12,9 +12,10 @@ import { ProviderOnboardingController } from "./provider-onboarding.controller";
 import { AutoReplyService } from "./auto-reply.service";
 import { ParentBriefingService } from "./parent-briefing.service";
 import { StorageModule } from "../storage/storage.module";
+import { KnowledgeModule } from "../knowledge/knowledge.module";
 
 @Module({
-  imports: [StorageModule],
+  imports: [StorageModule, KnowledgeModule],
   providers: [AutoReplyService, ParentBriefingService],
   exports: [AutoReplyService, ParentBriefingService],
   controllers: [

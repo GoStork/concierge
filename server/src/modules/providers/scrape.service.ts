@@ -476,7 +476,10 @@ async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ h
   }
 }
 
-async function fetchHtml(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string }> {
+// Exported: the knowledge base's website ingestion reuses this exact fetch
+// (JS-shell/browser fallback included) and the same subpage discovery below,
+// so Eva's memory sees the same pages the provider-creation scrape saw.
+export async function fetchHtml(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -568,7 +571,7 @@ async function searchYearFounded(companyName: string, websiteUrl: string): Promi
   }
 }
 
-function findSubpageUrls(html: string, baseUrl: string): string[] {
+export function findSubpageUrls(html: string, baseUrl: string): string[] {
   const base = new URL(baseUrl);
   const linkRegex = /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   const candidates: string[] = [];

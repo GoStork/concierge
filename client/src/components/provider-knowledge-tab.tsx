@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Upload, FileText, Globe, Trash2, Loader2, CheckCircle, Brain, MessageCircleQuestion, Send } from "lucide-react";
+import { Upload, FileText, Globe, Trash2, Loader2, CheckCircle, Brain, MessageCircleQuestion, Send, RefreshCw } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -63,7 +63,7 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
       return res.json();
     },
     onSuccess: (data: any) => {
-      toast({ title: "Website Synced", description: `Processed ${data.chunks} knowledge chunks from ${data.url}` });
+      toast({ title: "Website synced", description: `The AI read ${data.pages ? `${data.pages} page(s) from ` : ""}${data.url} and can now answer from it.`, variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/knowledge/documents"] });
     },
     onError: (err: any) => {
@@ -134,7 +134,7 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
           AI Knowledge Base
         </h2>
         <p className="t-helper mt-1">
-          Upload documents and sync your website so the AI concierge can answer questions about your practice accurately.
+          The website content is read automatically when the provider joins GoStork. Upload documents to teach the AI concierge more about the practice.
         </p>
       </div>
 
@@ -251,47 +251,52 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
         />
       </Card>
 
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Globe className="w-4 h-4" />
-            Website Sync
-          </h3>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            data-testid="button-sync-website"
-          >
-            {syncMutation.isPending ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> Syncing...</>
-            ) : (
-              <><Globe className="w-3.5 h-3.5 mr-1.5" /> Sync AI Memory</>
-            )}
-          </Button>
-        </div>
-        <p className="t-helper">
-          Crawl your website and feed its content to the AI concierge. Re-sync anytime you update your site.
-        </p>
-      </Card>
-
       <div>
         <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
           <FileText className="w-4 h-4" />
-          Uploaded Documents
+          What the AI Knows
         </h3>
+        <p className="t-helper mb-3">
+          Everything the AI concierge has learned about this practice - website content is added automatically when the provider is created, documents via the upload box above.
+        </p>
         {documentsQuery.isLoading ? (
           <div className="t-helper flex items-center gap-2 py-4">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading...
           </div>
-        ) : docs.length === 0 ? (
-          <Card className="p-6 text-center">
-            <p className="t-helper">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
-          </Card>
         ) : (
           <div className="space-y-2">
+            {/* Providers created before knowledge auto-seeding (or whose seed
+                failed) have no website source yet - offer the first sync here. */}
+            {!docs.some((d: any) => d.sourceType === "WEBSITE") && (
+              <Card className="p-3 flex items-center justify-between" data-testid="card-website-not-synced">
+                <div className="flex items-center gap-3">
+                  <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Website content</p>
+                    <p className="t-helper">The AI has not read the website yet.</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  data-testid="button-sync-website"
+                >
+                  {syncMutation.isPending ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> Reading website...</>
+                  ) : (
+                    <><Globe className="w-3.5 h-3.5 mr-1.5" /> Sync now</>
+                  )}
+                </Button>
+              </Card>
+            )}
+            {docs.length === 0 && (
+              <Card className="p-6 text-center">
+                <p className="t-helper">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
+              </Card>
+            )}
             {docs.map((doc: any, i: number) => (
               <Card key={i} className="p-3 flex items-center justify-between" data-testid={`card-document-${i}`}>
                 <div className="flex items-center gap-3">
@@ -302,14 +307,31 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
                   )}
                   <div>
                     <p className="text-sm font-medium">
-                      {doc.sourceFileName || doc.sourceUrl || "Website Content"}
+                      {doc.sourceType === "WEBSITE" ? "Website content" : doc.sourceFileName || "Document"}
                     </p>
                     <p className="t-helper">
-                      {doc.chunk_count} chunks · {doc.sourceType}
-                      {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
+                      {doc.sourceType === "WEBSITE"
+                        ? `The AI read ${doc.sourceUrl || "the website"}${doc.createdAt ? ` on ${new Date(doc.createdAt).toLocaleDateString()}` : ""} and can answer from it`
+                        : `Uploaded document${doc.createdAt ? `, added ${new Date(doc.createdAt).toLocaleDateString()}` : ""} - the AI answers from its content`}
                     </p>
                   </div>
                 </div>
+                {doc.sourceType === "WEBSITE" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => { e.stopPropagation(); syncMutation.mutate(); }}
+                    disabled={syncMutation.isPending}
+                    title="Re-read the website (use after the site changes)"
+                    data-testid="button-sync-website"
+                  >
+                    {syncMutation.isPending ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> Re-reading...</>
+                    ) : (
+                      <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Re-sync</>
+                    )}
+                  </Button>
+                )}
                 {doc.sourceFileName && (
                   <Button
                     size="sm"

@@ -163,33 +163,69 @@ export class KnowledgeService {
     }
   }
 
+  private htmlToText(html: string): string {
+    return html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /** Multi-page website ingestion: homepage + the same subpages the
+   *  provider-creation scraper discovers (about / team / locations / contact,
+   *  JS-rendered sites included), so Eva's memory covers the whole site -
+   *  not just the homepage. Runs automatically when a provider is created
+   *  and on manual re-sync. */
   async ingestWebsite(
     url: string,
     providerId: string,
-  ): Promise<{ chunks: number }> {
+  ): Promise<{ chunks: number; pages: number }> {
     this.validateExternalUrl(url);
 
-    let text = "";
+    const PER_PAGE_CHAR_CAP = 20_000;
+    const TOTAL_CHAR_CAP = 150_000;
+    const MAX_SUBPAGES = 10;
+
+    // Same fetch + subpage discovery as the provider-creation scraper.
+    const { fetchHtml, findSubpageUrls } = await import("../providers/scrape.service");
+
+    let mainHtml = "";
+    let effectiveUrl = url;
     try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; GoStorkBot/1.0; +https://gostork.com)",
-        },
-        signal: AbortSignal.timeout(15000),
-        redirect: "follow",
-      });
-      const html = await response.text();
-      text = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+      const main = await fetchHtml(url);
+      mainHtml = main.html;
+      effectiveUrl = main.finalUrl || url;
     } catch (e: any) {
       throw new Error(`Failed to fetch website: ${e.message}`);
     }
 
+    const pageTexts: string[] = [];
+    const mainText = this.htmlToText(mainHtml).slice(0, PER_PAGE_CHAR_CAP);
+    if (mainText.length >= 50) pageTexts.push(`PAGE: ${effectiveUrl}\n${mainText}`);
+
+    const subpageUrls = findSubpageUrls(mainHtml, effectiveUrl)
+      .filter((u) => {
+        try { this.validateExternalUrl(u); return true; } catch { return false; }
+      })
+      .slice(0, MAX_SUBPAGES);
+
+    const subpages = await Promise.allSettled(
+      subpageUrls.map(async (u) => ({ url: u, html: (await fetchHtml(u, 20000)).html })),
+    );
+    let pagesIngested = pageTexts.length;
+    let totalChars = mainText.length;
+    for (const r of subpages) {
+      if (r.status !== "fulfilled") continue;
+      if (totalChars >= TOTAL_CHAR_CAP) break;
+      const t = this.htmlToText(r.value.html).slice(0, PER_PAGE_CHAR_CAP);
+      if (t.length < 200) continue;
+      pageTexts.push(`PAGE: ${r.value.url}\n${t}`);
+      pagesIngested++;
+      totalChars += t.length;
+    }
+
+    const text = pageTexts.join("\n\n");
     if (!text || text.length < 50) {
       throw new Error("Insufficient content extracted from website");
     }
@@ -208,10 +244,10 @@ export class KnowledgeService {
       sourceTier: 1,
       sourceType: "WEBSITE",
       sourceUrl: url,
-      metadata: { crawledUrl: url, crawledAt: new Date().toISOString() },
+      metadata: { crawledUrl: url, crawledAt: new Date().toISOString(), pagesIngested },
     });
 
-    return { chunks };
+    return { chunks, pages: pagesIngested };
   }
 
   async searchKnowledge(
