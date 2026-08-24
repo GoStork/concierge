@@ -46,6 +46,7 @@ import {
   refreshProviderAgreementRoles,
   getProviderAgreementSigningSession,
   raiseProviderAgreementTask,
+  fetchDocumentViewUrl,
 } from "../../../pandadoc-service";
 
 function isAdmin(user: any): boolean {
@@ -294,6 +295,69 @@ export class ProviderAgreementController {
         completedAt: row.completedAt,
       },
     };
+  }
+
+  // ── Public: login-free guest signing (token-gated, NO auth) ──
+  //
+  // The provider signs the agreement BEFORE they ever log in - their
+  // onboarding starts after the signature - so the email links here instead
+  // of the auth-guarded /provider-agreement/:id page. The token is generated
+  // when the provider is notified (chat-router webhook) and is unguessable
+  // (24 random bytes). First open stamps guestOpenedAt for admin tracking;
+  // signing is tracked by the PandaDoc completion webhook as before.
+
+  @Get("api/public/provider-agreements/:token/session")
+  async guestSession(@Param("token") token: string) {
+    if (!token || token.length < 20) throw new HttpException("Invalid signing link", HttpStatus.NOT_FOUND);
+    const row = await (prisma as any).providerAgreement.findUnique({
+      where: { guestToken: token },
+      select: { id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true, provider: { select: { name: true } } },
+    });
+    if (!row) throw new HttpException("Invalid or expired signing link", HttpStatus.NOT_FOUND);
+
+    if (!row.guestOpenedAt) {
+      await (prisma as any).providerAgreement.update({
+        where: { id: row.id },
+        data: { guestOpenedAt: new Date() },
+      }).catch(() => {});
+    }
+
+    if (row.status === "COMPLETED") {
+      return { isCompletedView: true, status: row.status, providerName: row.provider?.name || null };
+    }
+    if (row.status !== "SENT") {
+      throw new HttpException("This agreement is not ready for your signature yet", HttpStatus.BAD_REQUEST);
+    }
+    if (!row.signerEmail || !row.pandaDocDocumentId) {
+      throw new HttpException("Agreement has no signer on record", HttpStatus.BAD_REQUEST);
+    }
+    const apiKey = process.env.PANDADOC_API_KEY;
+    if (!apiKey) throw new HttpException("PandaDoc not configured", HttpStatus.INTERNAL_SERVER_ERROR);
+    const signingUrl = await fetchDocumentViewUrl(apiKey, row.pandaDocDocumentId, row.signerEmail);
+    if (!signingUrl) throw new HttpException("Could not create signing session - document may not be ready yet", HttpStatus.BAD_REQUEST);
+    return { isCompletedView: false, signingUrl, providerName: row.provider?.name || null };
+  }
+
+  @Get("api/public/provider-agreements/:token/download")
+  async guestDownload(@Res() res: Response, @Param("token") token: string) {
+    if (!token || token.length < 20) throw new HttpException("Invalid link", HttpStatus.NOT_FOUND);
+    const row = await (prisma as any).providerAgreement.findUnique({
+      where: { guestToken: token },
+      select: { status: true, pandaDocDocumentId: true },
+    });
+    if (!row || row.status !== "COMPLETED" || !row.pandaDocDocumentId) {
+      throw new HttpException("Not available", HttpStatus.NOT_FOUND);
+    }
+    const apiKey = process.env.PANDADOC_API_KEY;
+    if (!apiKey) throw new HttpException("PandaDoc not configured", HttpStatus.INTERNAL_SERVER_ERROR);
+    const pdRes = await fetch(
+      `https://api.pandadoc.com/public/v1/documents/${row.pandaDocDocumentId}/download`,
+      { headers: { "Authorization": `API-Key ${apiKey}` } },
+    );
+    if (!pdRes.ok) throw new HttpException("Failed to download", HttpStatus.BAD_GATEWAY);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="gostork-agreement.pdf"`);
+    res.send(Buffer.from(await pdRes.arrayBuffer()));
   }
 
   // ── Shared: signing session + download ──

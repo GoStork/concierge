@@ -2751,6 +2751,14 @@ model ProviderAgreement {
   /// Set when the provider notification email + Home task went out (after the
   /// GoStork signer completed). Guards the webhook against double-notifying.
   providerNotifiedAt         DateTime?
+  /// Login-free signing: the email links to /sign-agreement/<guestToken>, so a
+  /// provider who has never logged in can sign first and onboard after.
+  /// Generated when the provider is notified; validated by the public session
+  /// endpoint (no auth).
+  guestToken                 String?   @unique
+  /// First time the guest signing link was opened - the admin's "did they see
+  /// it yet" tracking signal (signed = status COMPLETED, as before).
+  guestOpenedAt              DateTime?
   requestedByUserId          String?
   requestedAt                DateTime?
   completedAt                DateTime?

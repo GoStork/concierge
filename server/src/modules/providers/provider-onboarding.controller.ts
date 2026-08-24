@@ -141,7 +141,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     db.providerCostSheet.findMany({ where: { providerId }, select: { status: true } }),
     db.referralFeeConfig.findMany({ where: { providerId, isActive: true }, select: { serviceType: true, feeType: true, flatAmount: true, percentage: true, parentPaysBasis: true, defaultServiceAmount: true } }),
     db.providerW9.findUnique({ where: { providerId }, select: { status: true } }),
-    db.providerAgreement.findFirst({ where: { providerId }, orderBy: { createdAt: "desc" }, select: { status: true } }),
+    db.providerAgreement.findFirst({ where: { providerId }, orderBy: { createdAt: "desc" }, select: { status: true, guestOpenedAt: true } }),
     db.calendarConnection.count({ where: { connected: true, tokenValid: true, user: { providerId } } }),
     db.providerBankAccount.findUnique({ where: { providerId }, select: { payoutsEnabled: true, stripeConnectAccountId: true } }),
     db.knowledgeChunk.count({ where: { providerId } }),
@@ -295,7 +295,13 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   });
   steps.push({
     key: "agreement", group: "provider_setup", label: "Provider agreement signed",
-    detail: pagrStatus === "COMPLETED" ? "Agreement signed." : pagrStatus === "SENT" ? "Sent - waiting for the provider to sign." : "Locked until the agreement is sent (admin step above).",
+    detail: pagrStatus === "COMPLETED"
+      ? "Agreement signed."
+      : pagrStatus === "SENT"
+        ? pagr?.guestOpenedAt
+          ? `Sent - the provider opened it on ${new Date(pagr.guestOpenedAt).toLocaleDateString()}, waiting for their signature.`
+          : "Sent - the provider has not opened the signing link yet."
+        : "Locked until the agreement is sent (admin step above).",
     status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "locked",
     deepLink: editLink("legal-identity"),
   });

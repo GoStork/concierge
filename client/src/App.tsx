@@ -193,6 +193,8 @@ function AppRoutes() {
         <Route path="/admin/ip-form-template" element={<Navigate to="/account/ip-form-template" replace />} />
         <Route path="/w9/:id" element={<ProtectedRoute><W9SigningPage /></ProtectedRoute>} />
         <Route path="/provider-agreement/:id" element={<ProtectedRoute><ProviderAgreementSigningPage /></ProtectedRoute>} />
+        {/* Login-free guest signing: providers sign BEFORE first login (token-gated, public). */}
+        <Route path="/sign-agreement/:token" element={<ProviderAgreementSigningPage />} />
         {/* Public payment page - no auth required */}
         <Route path="/pay/:paymentToken" element={<PaymentPage />} />
         {/* Billing routes */}

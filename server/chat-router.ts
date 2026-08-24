@@ -6309,9 +6309,13 @@ async function handleProviderAgreementWebhook(eventType: string, documentId: str
     if (!completedEmails.has(pa.gostorkSignerEmail.toLowerCase())) return true;
     if (pa.providerNotifiedAt) return true; // double-delivery guard
 
+    // Login-free signing: the provider signs BEFORE they ever log in (their
+    // onboarding starts after the signature), so the email must not point at
+    // an auth-guarded page. A one-time token gates the public signing route.
+    const guestToken = pa.guestToken || (await import("crypto")).randomBytes(24).toString("hex");
     await (prisma as any).providerAgreement.update({
       where: { id: pa.id },
-      data: { status: "SENT", gostorkCompletedAt: new Date(), providerNotifiedAt: new Date() },
+      data: { status: "SENT", gostorkCompletedAt: new Date(), providerNotifiedAt: new Date(), guestToken },
     });
     console.log(`[ProviderAgreement webhook] GoStork signed for provider ${pa.providerId} - notifying provider`);
 
@@ -6332,7 +6336,7 @@ async function handleProviderAgreementWebhook(eventType: string, documentId: str
         await notifService.sendProviderAgreementRequestNotification({
           providerId: pa.providerId,
           providerName: pa.provider?.name || "Provider",
-          signingUrl: `${getBaseUrl()}/provider-agreement/${pa.id}`,
+          signingUrl: `${getBaseUrl()}/sign-agreement/${guestToken}`,
           fallbackSigner: { userId: pa.signerUserId, email: pa.signerEmail || pa.provider?.email || "", name: pa.provider?.name || "" },
         });
       }
