@@ -51,7 +51,7 @@ export type OnboardingStep = {
  *  appears on anyone's open queue, and the reconciler never touches the
  *  onbmark prefix. */
 const MARKABLE_STEP_KEYS = new Set([
-  "parent_form", "partner_clinics", "knowledge",
+  "parent_form", "parent_form_provider", "partner_clinics", "knowledge",
   "playbooks", "automation", "branding", "sponsorship",
 ]);
 
@@ -100,6 +100,7 @@ const HANDOFF_TASKS: Array<{
   { prefix: "onbprofile", title: "Review your company profile", notes: "Check your logo, about text, locations, and contact details - parents see these on your marketplace profile.", deepLink: "/account/company", priority: "MEDIUM" },
   { prefix: "onbteam", title: "Add your team members and assign roles", notes: "Invite your staff and assign their roles and locations so the right people get the right work.", deepLink: "/account/team", priority: "MEDIUM" },
   { prefix: "onbai", title: "Set up your AI Concierge", notes: "Review your AI Concierge settings and knowledge so it answers parents accurately about your organization.", deepLink: "/account/concierge", priority: "MEDIUM" },
+  { prefix: "onbform", title: "Review your Parent Form", notes: "Review the intake form parents fill out for you and flag any question that needs adjusting.", deepLink: "/account/parent-form", priority: "MEDIUM" },
   { prefix: "onbplaybooks", title: "Configure your playbooks", notes: "Set up task playbooks that fire as parents move through their journey.", deepLink: "/account/playbooks", priority: "LOW" },
   { prefix: "onbauto", title: "Review your automations", notes: "Review auto-replies, billing automation, and silence rules. Defaults apply until you customize them.", deepLink: "/account/automation", priority: "LOW" },
   { prefix: "onbbrand", title: "Review your branding", notes: "Your logo and brand were pre-filled from your website - confirm or adjust them.", deepLink: "/account/branding", priority: "LOW" },
@@ -258,35 +259,54 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     detail: ipFormOverrideCount > 0 ? "Per-provider form adjustments exist." : "Default template applies - adjust per-provider questions if this provider needs them.",
     status: ipFormOverrideCount > 0 ? "done" : "optional", deepLink: editLink("parent-form"), isOptional: true,
   });
-  const partnerIds = Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : [];
-  if (hasSurrogacy || hasEgg) {
-    steps.push({
-      key: "partner_clinics", group: "admin_setup", label: "Link partner IVF clinics",
-      detail: partnerIds.length ? `${partnerIds.length} partner clinic(s) linked.` : "Link the IVF clinic(s) this agency works with for bundled costs and two-call booking.",
-      status: partnerIds.length ? "done" : "optional", deepLink: editLink("profile"), isOptional: true,
-    });
-  }
   steps.push({
     key: "knowledge", group: "admin_setup", label: "Seed knowledge base",
     detail: knowledgeCount > 0 ? `${knowledgeCount} knowledge chunk(s) indexed.` : "Sync their website or upload documents so the AI answers from their real content.",
     status: knowledgeCount > 0 ? "done" : "optional", deepLink: editLink("knowledge"), isOptional: true,
   });
 
-  // ── Phase C - Provider setup (handoff) ──
+  // Sending the compliance documents is the ADMIN's action - the signing is
+  // the provider's (tracked in Phase C, locked until these are sent).
   const w9Status = w9?.status || "NOT_SENT";
+  const w9Sent = ["SENT", "COMPLETED"].includes(w9Status);
   steps.push({
-    key: "w9", group: "provider_setup", label: "W-9 signed",
-    detail: w9Status === "COMPLETED" ? "W-9 on file." : w9Status === "SENT" ? "Sent - waiting for the provider to sign." : "Not sent yet - send it from the Legal tab.",
-    status: w9Status === "COMPLETED" ? "done" : w9Status === "SENT" ? "waiting_on_provider" : "pending",
-    deepLink: editLink("legal-identity"),
+    key: "send_w9", group: "admin_setup", label: "Send W-9",
+    detail: w9Sent ? "W-9 sent to the provider." : "Send the W-9 request from the Legal tab.",
+    status: w9Sent ? "done" : "pending", deepLink: editLink("legal-identity"),
   });
   const pagrStatus = pagr?.status || "NOT_SENT";
+  const pagrSent = ["SENT", "COMPLETED"].includes(pagrStatus);
   steps.push({
-    key: "agreement", group: "provider_setup", label: "Provider agreement signed",
-    detail: pagrStatus === "COMPLETED" ? "Agreement signed." : pagrStatus === "SENT" ? "Sent - waiting for the provider to sign." : pagrStatus === "AWAITING_GOSTORK" ? "GoStork signs first - fill referral fees and sign." : "Not sent yet - send it from the Legal tab.",
-    status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "pending",
+    key: "send_agreement", group: "admin_setup", label: "Send provider agreement",
+    detail: pagrSent
+      ? "Agreement sent to the provider."
+      : pagrStatus === "AWAITING_GOSTORK"
+        ? "GoStork signs first - fill referral fees and sign on the Legal tab."
+        : "Send the GoStork agreement from the Legal tab.",
+    status: pagrSent ? "done" : "pending", deepLink: editLink("legal-identity"),
+  });
+
+  // ── Phase C - Provider setup (handoff) ──
+  steps.push({
+    key: "w9", group: "provider_setup", label: "W-9 signed",
+    detail: w9Status === "COMPLETED" ? "W-9 on file." : w9Status === "SENT" ? "Sent - waiting for the provider to sign." : "Locked until the W-9 is sent (admin step above).",
+    status: w9Status === "COMPLETED" ? "done" : w9Status === "SENT" ? "waiting_on_provider" : "locked",
     deepLink: editLink("legal-identity"),
   });
+  steps.push({
+    key: "agreement", group: "provider_setup", label: "Provider agreement signed",
+    detail: pagrStatus === "COMPLETED" ? "Agreement signed." : pagrStatus === "SENT" ? "Sent - waiting for the provider to sign." : "Locked until the agreement is sent (admin step above).",
+    status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "locked",
+    deepLink: editLink("legal-identity"),
+  });
+  const partnerIds = Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : [];
+  if (hasSurrogacy || hasEgg) {
+    steps.push({
+      key: "partner_clinics", group: "provider_setup", label: "Link partner IVF clinics",
+      detail: partnerIds.length ? `${partnerIds.length} partner clinic(s) linked.` : "Link the IVF clinic(s) this agency works with for bundled costs and two-call booking.",
+      status: partnerIds.length ? "done" : "optional", deepLink: editLink("profile"), isOptional: true,
+    });
+  }
 
   const providerStep = (key: string, prefix: string, label: string, doneWhen: boolean, doneDetail: string, waitDetail: string, tab: string, optional = false) => {
     const done = doneWhen || taskDone(prefix);
@@ -318,6 +338,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   );
   providerStep("team", "onbteam", "Team added & roles assigned", (users as any[]).length >= 2, `${(users as any[]).length} team account(s).`, "Waiting for the provider to invite their team.", "users");
   providerStep("ai", "onbai", "AI Concierge set up", false, "Marked done by the provider.", "Waiting for the provider to review AI Concierge settings.", "ai-concierge");
+  providerStep("parent_form_provider", "onbform", "Parent Form reviewed by provider", false, "The provider reviewed their Parent Form.", "Waiting for the provider to review their Parent Form.", "parent-form", true);
   providerStep("playbooks", "onbplaybooks", "Playbooks configured", playbookCount > 0, `${playbookCount} playbook(s).`, "Waiting for the provider to configure playbooks.", "playbooks", true);
   providerStep("automation", "onbauto", "Automations reviewed", autoReplyCount > 0, "Automation customized.", "Waiting for the provider to review automations.", "automation", true);
   providerStep("branding", "onbbrand", "Branding reviewed", false, "Marked done by the provider.", "Waiting for the provider to confirm branding.", "branding", true);
