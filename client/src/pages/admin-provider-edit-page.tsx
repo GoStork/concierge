@@ -759,8 +759,8 @@ export default function AdminProviderEditPage() {
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         {/* scrollbar-hide: the strip still scrolls horizontally, just without the visible bar. */}
         {/* Tab order groups by lifecycle: Identity -> Inventory -> Parent Experience -> Money & Compliance -> Growth. */}
-        <div className="overflow-x-auto w-full scrollbar-hide">
-        <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start">
+        <div className="overflow-x-auto w-full scrollbar-hide scroll-mt-24">
+        <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start scroll-mt-24">
           {/* Identity */}
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>

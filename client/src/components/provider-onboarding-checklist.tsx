@@ -116,7 +116,17 @@ export default function ProviderOnboardingChecklist({
 
   const navigate = (deepLink: string) => {
     const tab = /[?&]tab=([^&]+)/.exec(deepLink)?.[1];
-    if (tab) onNavigateTab(tab);
+    if (!tab) return;
+    onNavigateTab(tab);
+    // The checklist sits above the tab strip, so switching tabs alone leaves
+    // the viewport parked on the checklist - scroll the selected tab (and the
+    // content under it) into view once the new panel has rendered.
+    requestAnimationFrame(() => {
+      const el =
+        document.querySelector(`[data-testid="tab-edit-${tab}"]`) ||
+        document.querySelector('[role="tablist"]');
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const groups: OnboardingStep["group"][] = ["created", "admin_setup", "provider_setup", "go_live"];
