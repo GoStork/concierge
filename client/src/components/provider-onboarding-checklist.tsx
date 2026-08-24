@@ -93,6 +93,14 @@ export default function ProviderOnboardingChecklist({
       if (!res.ok) throw new Error("Failed to load onboarding status");
       return res.json();
     },
+    // The global query defaults cache forever, which would freeze the
+    // checklist at page-load state while the admin saves fees/scrapers in the
+    // tabs below. Poll while mounted so every save is reflected within
+    // seconds, whatever tab it came from.
+    staleTime: 10_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 20_000,
   });
 
   // Manual check-off for optional steps ("nothing to set up here").

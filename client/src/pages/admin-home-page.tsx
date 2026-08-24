@@ -209,6 +209,10 @@ export default function AdminHomePage() {
       return res.json();
     },
     staleTime: 60_000,
+    // Global defaults cache forever - without this, a provider finishing
+    // onboarding would stay in "Needs attention" until a hard refresh.
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
   const onboardingRows = onboardingQ.data || [];
 
