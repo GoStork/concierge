@@ -352,6 +352,7 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | `reCAPTCHA required` / `404 (reCAPTCHA page)` | Site needs captcha solving | Set `TWOCAPTCHA_API_KEY`; `captcha-solver.ts` |
 | `Cloudflare JS challenge on the login page (status=404)` | HISTORICAL false positive: passive `cdn-cgi/challenge-platform` script on an ordinary 404 (hidden `wp-login.php`) | Fixed Aug 24 2026 - `detectWafBlock` keys on `_cf_chl_opt`/`orchestrate/chl_page`/`__cf_chl` only; formless 404 candidates are skipped, not fatal |
 | `login page returned 404 with no login form` | Benign per-candidate skip - that path doesn't exist on the site | Walk continues; only worry if EVERY candidate 404s (then find the site's real login URL) |
+| Sync SUCCEEDS but every profile field is blank; externalIds are `auto-...` or bare card numbers | Slug-card catalog (FacetWP): cards carry no data + no numeric ids, so items were listing scraps with no profileUrl | `isSlugCardCatalog` path (Aug 24 2026) - see the "Slug-card catalogs" section |
 | `Failed to extract data ... page may not contain profiles` | Login returned a non-list page, or markup changed | Check login succeeded; verify the AJAX/list endpoint + extraction |
 | `(EAUTHTIMEOUT) timeout while waiting for message` | Transient upstream stall (EDC host) | Already retried; re-run if it slips through |
 | `Interrupted - server restarted while sync was running` | Benign - server was restarted mid-run | Ignore; auto-resume re-runs it |
@@ -387,8 +388,41 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
   **`/login/`** via a GF form (`input_1`/`input_2` + GF hidden fields). Source URLs:
   `/find-a-donor/` (egg) and `/find-a-surrogate` (surrogates), each with its own account.
   Logged-out, those URLs redirect to a registration form with TWO password inputs - the
-  single-password rule keeps the engine off it. Donor profiles are static links at
-  `/egg-donors/<name>/` on the authenticated list page.
+  single-password rule keeps the engine off it. Detail pages: `/egg-donors/<slug>/` and
+  `/surrogate/<slug>/` (singular). The listing is a **FacetWP slug-card catalog** - see the
+  dedicated section below; Gemini listing extraction alone once imported 10 surrogates with
+  EVERY field blank because no numeric ids exist and no profileUrl was ever assigned.
+
+## Slug-card catalogs (FacetWP etc.) - the `isSlugCardCatalog` path (Aug 24 2026)
+
+Some WP sites list profiles as a grid of cards where each card is ONE `<a>` wrapping an
+`<img>`, linking to `/<type-word>/<name-slug>/` (e.g. `/egg-donors/alyssa-108/`). No numeric
+id exists anywhere, listing cards carry almost no data, and FacetWP paginates via AJAX (the
+pager anchors have `data-page` attributes but no hrefs, so Gemini finds no pagination links
+either). Symptoms before this path existed: profiles import "successfully" with auto-generated
+externalIds and every field blank.
+
+The engine now detects >= 5 slug-card links (`extractSlugCardProfileLinks`: anchor containing
+an `<img>` whose URL's final two path segments are `<type-word>/<slug>`) and switches to a
+deterministic crawl:
+- **Pagination**: FacetWP honors its URL prefix server-side, so `GET <listing>?_paged=N`
+  renders page N without JS. Total pages = max `data-page` in the HTML (also matches the
+  escaped `data-page=\"N\"` inside the `FWP_JSON` preload blob) - `maxFacetwpPageCount`.
+- **Items are built FROM the detail pages**, not the listing: each card URL is fetched and
+  run through the typed Gemini extraction (`extractDonorsFromPage`), which returns the full
+  profile (age/BMI/deliveries/compensation/...). The listing card contributes only the name
+  (`first-name` div) and cover photo.
+- **externalId = the URL slug, always.** Gemini's externalId on these pages is the display
+  name ("Paige 11"), which varies between runs and would fork duplicates; the slug is the
+  only stable unique key. Gemini's value is demoted to a name fallback. NOTE: the display
+  name on the card can differ completely from the slug (card "Paige 11" ->
+  `/egg-donors/alyssa-108/`), so never try to derive one from the other.
+- profileUrl is set on every item, so the standard section-extraction enrichment fills
+  `profileData._sections` + the photo gallery in the same pass (FC galleries use
+  `gallery-item-image` markup, not Fotorama - the Gemini `sections.photos` merge covers it).
+- Known cost: re-syncs still fetch + type-extract every detail page (the cardHash skip can't
+  help because the hash inputs come from the detail fetch itself). Fine at ~100 profiles;
+  revisit if a slug-card site is much larger.
 
 ---
 

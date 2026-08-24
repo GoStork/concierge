@@ -1477,6 +1477,73 @@ function addNumericProfileDetailUrls(html: string, baseUrl: string, map: Map<str
 }
 
 /**
+ * Slug-card catalogs (e.g. Family Creations, a FacetWP grid): every listing
+ * card is one <a> wrapping an <img>, linking to a per-profile page whose URL
+ * ends in /<type-word>/<name-slug>/ (e.g. /egg-donors/alyssa-108/,
+ * /surrogate/alexis-21/). There is no numeric id anywhere on the card, so
+ * neither extractWpDonorCardProfileUrls (donor-card/view-more markup) nor
+ * addNumericProfileDetailUrls (numeric /donor/<id>/ links) can see these.
+ * The slug is the stable unique key - it becomes the externalId fallback.
+ * Returns slug -> {url, name, photoUrl}.
+ */
+export function extractSlugCardProfileLinks(
+  html: string,
+  baseUrl: string,
+): Map<string, { url: string; name: string | null; photoUrl: string | null }> {
+  const map = new Map<string, { url: string; name: string | null; photoUrl: string | null }>();
+  if (!html) return map;
+  // Card anchors wrap markup but never other anchors, so lazy-match to </a>.
+  for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = m[1].trim();
+    const body = m[2];
+    // Card signature: the anchor must contain the card photo. Filters out nav
+    // and breadcrumb links that happen to share the URL shape.
+    if (!/<img\b/i.test(body)) continue;
+    let abs: URL;
+    try { abs = new URL(href, baseUrl); } catch { continue; }
+    // Final two path segments must be <type-word>/<slug>. The type word being
+    // last-but-one keeps program/marketing pages out (/egg-donor-program/...).
+    const pathMatch = abs.pathname.match(
+      /\/(egg-donors?|sperm-donors?|donors?|surrogates?|profiles?)\/([a-z0-9][a-z0-9_-]*)\/?$/i,
+    );
+    if (!pathMatch) continue;
+    const slug = pathMatch[2].toLowerCase();
+    if (map.has(slug)) continue;
+    const nameMatch =
+      body.match(/class=["'][^"']*\bfirst-name\b[^"']*["'][^>]*>([^<]+)</i) ||
+      body.match(/<h[1-6][^>]*>([^<]+)</i);
+    const photoMatch = body.match(/<img\b[^>]*src=["']([^"']+)["']/i);
+    let photoUrl: string | null = null;
+    if (photoMatch) {
+      try { photoUrl = new URL(photoMatch[1].trim(), baseUrl).href; } catch {}
+    }
+    map.set(slug, {
+      url: abs.href,
+      name: nameMatch ? nameMatch[1].trim() : null,
+      photoUrl,
+    });
+  }
+  return map;
+}
+
+/**
+ * FacetWP paginates via AJAX, but it also honors URL params server-side using
+ * its configured prefix (almost always "_"), so GET <listing>?_paged=N renders
+ * page N without JS. The rendered/preloaded pager markup carries every page as
+ * data-page="N" (escaped as data-page=\"N\" inside the FWP_JSON preload blob) -
+ * the max is the total page count. Returns 1 when the page is not FacetWP.
+ */
+export function maxFacetwpPageCount(html: string): number {
+  if (!html || !/facetwp/i.test(html)) return 1;
+  let max = 1;
+  for (const m of html.matchAll(/data-page=\\?["']?(\d+)/gi)) {
+    const n = parseInt(m[1], 10);
+    if (!isNaN(n) && n > max) max = n;
+  }
+  return Math.min(max, 50); // runaway guard
+}
+
+/**
  * Extract every photo URL from a Fotorama gallery on a donor-view page (e.g.
  * Eggspecting). The raw (pre-JS) markup is a flat list of <img src> tags inside
  * <div class="fotorama" ...>:
@@ -1514,7 +1581,7 @@ function extractFotoramaPhotos(html: string, baseUrl: string): string[] {
   return out;
 }
 
-async function extractDonorsFromPage(
+export async function extractDonorsFromPage(
   html: string,
   pageUrl: string,
   type: DonorType,
@@ -5819,7 +5886,17 @@ async function runSyncJob(
     // plainly to /donor/<id>/ (e.g. Conceptions Center).
     addNumericProfileDetailUrls(mainHtml, sourceUrl, wpProfileUrlMap);
 
-    if (!hasWpPaging && profileLinks.length > 0 && items.length < 3) {
+    // Slug-card catalogs (e.g. Family Creations' FacetWP grids): cards link to
+    // per-profile pages by NAME SLUG, with no numeric id anywhere, so the maps
+    // above stay empty and Gemini's listing items are card scraps with made-up
+    // externalIds and no profileUrl - which is how a "successful" sync once
+    // imported 10 surrogates with every field blank. When >= 5 such card links
+    // exist, the catalog is crawled deterministically below (each detail page
+    // is the item source) and the listing-scrap paths here are skipped.
+    const slugCardLinks = extractSlugCardProfileLinks(mainHtml, sourceUrl);
+    const isSlugCardCatalog = !hasWpPaging && slugCardLinks.size >= 5;
+
+    if (!hasWpPaging && !isSlugCardCatalog && profileLinks.length > 0 && items.length < 3) {
       const maxProfiles = Math.min(profileLinks.length, profileLimit && profileLimit > 0 ? profileLimit : 50);
       job.total = maxProfiles;
 
@@ -5844,7 +5921,7 @@ async function runSyncJob(
       }
     }
 
-    if (!hasWpPaging && paginationLinks.length > 0) {
+    if (!hasWpPaging && !isSlugCardCatalog && paginationLinks.length > 0) {
       // Discover ALL listing pages (cap high only as a runaway guard). Checkpoint
       // resume makes long discovery safe - an interrupted sync continues where it
       // stopped instead of restarting. Previously capped at 10 pages, which
@@ -6341,6 +6418,90 @@ async function runSyncJob(
       // lands precisely on 100% rather than stopping short of a too-high estimate.
       if (totalIsFixed) job.total = job.processed;
       console.log(`[donor-sync] Deterministic pagination imported ${job.processed} ${job.type} profiles across pages`);
+    }
+
+    // Slug-card catalog crawl (e.g. Family Creations): collect every card's
+    // detail URL across all FacetWP pages (?_paged=N renders server-side), then
+    // build each item FROM ITS DETAIL PAGE - the typed Gemini extraction there
+    // returns the full profile (age/BMI/deliveries/compensation/...), which the
+    // listing cards never carry. externalId falls back to the URL slug (the only
+    // stable unique key these sites expose), and profileUrl is set so the
+    // section-extraction enrichment inside enrichAndImportItems fills
+    // profileData._sections + the photo gallery in the same pass.
+    if (isSlugCardCatalog) {
+      streamed = true;
+      const allCardLinks = new Map(slugCardLinks);
+      const totalPages = maxFacetwpPageCount(mainHtml);
+      const testMode = !!(profileLimit && profileLimit > 0);
+      job.currentStep = totalPages > 1 ? `Collecting profiles - page 1 of ${totalPages}...` : "Collecting profiles...";
+      for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+        if (isJobCancelled(job.id)) break;
+        // In test mode page 1's cards already exceed the cap - skip the crawl.
+        if (testMode && allCardLinks.size >= profileLimit!) break;
+        const u = new URL(sourceUrl);
+        if (!u.pathname.endsWith("/")) u.pathname += "/";
+        u.searchParams.set("_paged", String(pageNum));
+        try {
+          job.currentStep = `Collecting profiles - page ${pageNum} of ${totalPages}...`;
+          const pageHtml = await fetchHtml(u.href, sessionCookies);
+          if (pageHtml.includes('type="password"')) break; // session bounced to login
+          const before = allCardLinks.size;
+          for (const [k, v] of extractSlugCardProfileLinks(pageHtml, u.href)) {
+            if (!allCardLinks.has(k)) allCardLinks.set(k, v);
+          }
+          if (allCardLinks.size === before) break; // page repeated / past the end
+        } catch (err: any) {
+          job.errors.push(`Card-catalog page ${pageNum} error: ${err.message}`);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+
+      const cap = testMode ? profileLimit! : 500; // 500 = runaway guard
+      const entries = Array.from(allCardLinks.entries()).slice(0, cap);
+      // Fix the denominator upfront only outside test mode: enrichAndImportItems
+      // computes the test cap as profileLimit - job.total, so pre-setting the
+      // total there would zero out the remaining budget and import nothing.
+      if (!testMode) {
+        job.total = entries.length;
+        totalIsFixed = true;
+      }
+      console.log(`[donor-sync] Slug-card catalog: ${allCardLinks.size} profiles across ${totalPages} page(s), importing ${entries.length}`);
+
+      let pending: any[] = [];
+      let collected = 0;
+      for (const [slug, card] of entries) {
+        if (isJobCancelled(job.id)) break;
+        collected++;
+        job.currentStep = `Importing profile ${collected} of ${entries.length}...`;
+        try {
+          const profileHtml = await fetchHtml(card.url, sessionCookies);
+          const profileData = await extractDonorsFromPage(profileHtml, card.url, job.type);
+          const pageItems =
+            job.type === "surrogate" ? profileData?.surrogates || [] : profileData?.donors || [];
+          const item: any = pageItems[0] || {};
+          // The slug is the ONLY stable unique key these sites expose - Gemini's
+          // externalId here is usually the display name ("Paige 11"), which can
+          // vary between runs and would fork duplicates. Demote it to a name.
+          const geminiId = typeof item.externalId === "string" ? item.externalId.trim() : "";
+          item.externalId = slug;
+          item.profileUrl = card.url;
+          if (!item.name) item.name = card.name || (geminiId && !/^\d+$/.test(geminiId) ? geminiId : null);
+          if (!item.photoUrl && card.photoUrl) item.photoUrl = card.photoUrl;
+          pending.push(item);
+        } catch (err: any) {
+          job.errors.push(`Failed to fetch profile ${card.url}: ${err.message}`);
+        }
+        if (pending.length >= 10) {
+          const batch = pending;
+          pending = [];
+          await enrichAndImportItems(batch);
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      if (pending.length > 0) await enrichAndImportItems(pending);
+      if (totalIsFixed) job.total = job.processed;
+      console.log(`[donor-sync] Slug-card catalog imported ${job.processed} ${job.type} profiles`);
     }
 
     // Non-streamed discovery paths (single-page, EDC/Gemini pagination, profile
