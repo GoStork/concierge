@@ -546,7 +546,19 @@ function detectWafBlock(html: string): string | null {
   if (lower.includes("error code 1015") || lower.includes("you are being rate limited")) {
     return "Cloudflare block (error 1015: rate limited)";
   }
-  if (lower.includes("cdn-cgi/challenge-platform") || lower.includes("__cf_chl")) {
+  // A bare "cdn-cgi/challenge-platform" reference is NOT a challenge page.
+  // Cloudflare's bot management passively injects
+  // /cdn-cgi/challenge-platform/scripts/jsd/main.js into every HTML response it
+  // fronts - including ordinary 404 pages (familycreations.net's hidden
+  // wp-login.php, Aug 24 2026, read as "Cloudflare JS challenge" and aborted
+  // the whole candidate walk). Only the interstitial's own artifacts count:
+  // the _cf_chl_opt config object, the orchestrate/chl_page script, or a
+  // __cf_chl_* token parameter.
+  if (
+    lower.includes("_cf_chl_opt") ||
+    lower.includes("orchestrate/chl_page") ||
+    lower.includes("__cf_chl")
+  ) {
     return "Cloudflare JS challenge";
   }
   if (lower.includes("just a moment") && lower.includes("cloudflare")) return "Cloudflare JS challenge";
@@ -578,6 +590,12 @@ export async function authenticateAndGetCookies(
   username: string,
   password: string,
   onStatus?: (msg: string) => void,
+  /**
+   * Where the site should land us after sign-in (usually the profile list /
+   * source URL). Only used when the login form itself declares a redirect
+   * field (login_redirect / redirect_to); never invents one.
+   */
+  postLoginRedirectUrl?: string,
 ): Promise<AuthResult> {
   // 30s per fetch is plenty for any legit login page; on Replit's egress we
   // were seeing the GET hang indefinitely against some sites (genesis o-jms,
@@ -622,6 +640,40 @@ export async function authenticateAndGetCookies(
     });
     const loginHtml = await loginResp.text();
     const initialCookies = extractSetCookies(loginResp);
+
+    // The GET may have been redirected (e.g. /login -> /login/); resolve
+    // relative form actions and same-page posts against where we landed.
+    const landedUrl = loginResp.url || loginPageUrl;
+
+    // --- Structured form parsing (quote- and attribute-order-agnostic) ---
+    // The legacy regexes below assume double-quoted attributes; Gravity Forms
+    // (WordPress) emits single quotes (name='input_1'), which made its login
+    // form invisible to them (familycreations.net, Aug 24 2026). Parse every
+    // POST form block into typed inputs and pick the one real login form:
+    // exactly one password input. Two password inputs is a registration or
+    // change-password form (password + confirm) - never sign in through those.
+    const attrOf = (tag: string, attr: string): string | null => {
+      const m = tag.match(new RegExp(`\\b${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, "i"));
+      return m ? ((m[1] ?? m[2] ?? m[3]) || "") : null;
+    };
+    type ParsedInput = { type: string; name: string | null; value: string };
+    let loginFormTag: string | null = null;
+    let loginFormInputs: ParsedInput[] = [];
+    for (const fm of loginHtml.matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/gi)) {
+      const block = fm[0];
+      const formTag = block.match(/<form\b[^>]*>/i)![0];
+      if ((attrOf(formTag, "method") || "get").toLowerCase() !== "post") continue;
+      const inputs: ParsedInput[] = [...block.matchAll(/<input\b[^>]*>/gi)].map((im) => ({
+        type: (attrOf(im[0], "type") || "text").toLowerCase(),
+        name: attrOf(im[0], "name"),
+        value: attrOf(im[0], "value") || "",
+      }));
+      if (inputs.filter((i) => i.type === "password").length === 1) {
+        loginFormTag = formTag;
+        loginFormInputs = inputs;
+        break;
+      }
+    }
 
     const formsWithAction = [...loginHtml.matchAll(/<form[^>]*action="([^"]*)"[^>]*method="post"/gi)];
     const formsWithActionReversed = [...loginHtml.matchAll(/<form[^>]*method="post"[^>]*action="([^"]*)"/gi)];
@@ -695,8 +747,31 @@ export async function authenticateAndGetCookies(
       /<input[^>]*type="password"[^>]*name="([^"]*)"/i,
     );
 
-    const emailField = isWordPress ? "log" : emailFieldMatch ? emailFieldMatch[1] : "Email";
-    const passwordField = isWordPress ? "pwd" : passwordFieldMatch ? passwordFieldMatch[1] : "Password";
+    let emailField = isWordPress ? "log" : emailFieldMatch ? emailFieldMatch[1] : "Email";
+    let passwordField = isWordPress ? "pwd" : passwordFieldMatch ? passwordFieldMatch[1] : "Password";
+
+    // Hidden fields the login form requires posted back verbatim. Gravity
+    // Forms in particular silently ignores the submission without its
+    // is_submit_N / gform_submit / state_N fields.
+    const hiddenFields = new Map<string, string>();
+    if (!isWordPress && loginFormTag) {
+      const pwIdx = loginFormInputs.findIndex((i) => i.type === "password");
+      passwordField = loginFormInputs[pwIdx]?.name || passwordField;
+      // Prefer a keyword-named text input; otherwise the nearest text/email
+      // input above the password field (Gravity Forms names them
+      // input_1/input_2, which no keyword can match).
+      const textish = (i: ParsedInput) => i.type === "text" || i.type === "email";
+      const keywordInput = loginFormInputs.find(
+        (i) => textish(i) && i.name && /email|username|user|login|identifier/i.test(i.name),
+      );
+      const beforePassword = loginFormInputs.slice(0, pwIdx).filter((i) => textish(i) && i.name);
+      emailField = keywordInput?.name || beforePassword[beforePassword.length - 1]?.name || emailField;
+      for (const i of loginFormInputs) {
+        if (i.type === "hidden" && i.name) hiddenFields.set(i.name, i.value);
+      }
+      const parsedAction = attrOf(loginFormTag, "action");
+      postUrl = parsedAction ? new URL(parsedAction, landedUrl).href : landedUrl;
+    }
 
     // Did this candidate URL actually serve a real login form? If so, the caller
     // must STOP walking its candidate list: every later candidate is a guess at
@@ -706,7 +781,7 @@ export async function authenticateAndGetCookies(
     // /Account/Login (404) and /login (403 from Cloudflare), and that trailing
     // 403 on a path this site has never had became the tail of the error string,
     // reading like a WAF block when the actual cause was the captcha.
-    const foundRealLoginForm = isWordPress || !!passwordFieldMatch;
+    const foundRealLoginForm = isWordPress || !!passwordFieldMatch || !!loginFormTag;
 
     // If the login page is captcha-protected, solve it now and inject the token
     // into the POST body. We fail loudly (rather than silently importing zero
@@ -730,6 +805,17 @@ export async function authenticateAndGetCookies(
       const reason = `${loginGetBlock} on the login page (status=${loginResp.status}) - the request never reached the site's login form`;
       console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
       return { ok: false, reason, wafBlocked: true };
+    }
+    // A 404 with no login form means this candidate path simply does not exist
+    // on the site (e.g. WordPress installs that hide wp-login.php, like
+    // familycreations.net - its real login lives at /login/). Skip WITHOUT
+    // reachedLoginForm so the candidate walk keeps going; the isWordPress flag
+    // alone must not stop the walk on a page that served no form.
+    if (loginResp.status === 404 && !loginFormTag && !passwordFieldMatch) {
+      return {
+        ok: false,
+        reason: `login page returned 404 with no login form - this path does not exist on the site`,
+      };
     }
     const loginCaptcha = detectCaptcha(loginHtml);
     if (loginCaptcha === "reCAPTCHA") {
@@ -783,6 +869,16 @@ export async function authenticateAndGetCookies(
     }
 
     const body = new URLSearchParams();
+    for (const [name, value] of hiddenFields) body.set(name, value);
+    // When the form carries its own post-login redirect target, point it at
+    // the page we actually need (the donor/surrogate list) instead of back at
+    // the login page - a success redirect whose location contains "login"
+    // would otherwise read as a failed sign-in.
+    if (postLoginRedirectUrl) {
+      for (const key of ["login_redirect", "redirect_to", "redirect"]) {
+        if (hiddenFields.has(key)) body.set(key, postLoginRedirectUrl);
+      }
+    }
     if (tokenValue) {
       body.set(tokenFieldName, tokenValue);
     }
@@ -831,7 +927,12 @@ export async function authenticateAndGetCookies(
 
     if (authResp.status >= 300 && authResp.status < 400) {
       const location = authResp.headers.get("location") || "";
-      if (location.toLowerCase().includes("login")) {
+      // A redirect whose location contains "login" is normally a bounce back to
+      // the sign-in page - but not when the response also set a WordPress auth
+      // cookie (Gravity Forms login forms redirect to their own login_redirect,
+      // which can be the login page itself, while the session is already live).
+      const gotWpAuthCookie = authCookies.some((c) => /^wordpress_logged_in_/i.test(c));
+      if (location.toLowerCase().includes("login") && !gotWpAuthCookie) {
         const reason = `redirected back to login page (location="${location}", status=${authResp.status})`;
         console.error(`[donor-sync] Login failed - ${reason}`);
         return { ok: false, reason, reachedLoginForm: foundRealLoginForm };
@@ -4919,6 +5020,7 @@ async function runSyncJob(
           credentials.username,
           credentials.password,
           (msg) => { job.currentStep = msg; },
+          sourceUrl,
         );
         if (result.ok) {
           sessionCookies = result.cookies;

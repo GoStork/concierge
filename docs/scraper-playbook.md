@@ -52,6 +52,29 @@ re-discovering the same problems on every new agency.
   `wordpress_test_cookie` cookie plus the `testcookie` / `wp-submit` hidden fields.
   - **Gotcha:** for WordPress sites the **Source URL must be the donor-list page**, not
     `wp-login.php`. (The engine logs into WP, then needs the list page to scrape.)
+- **Some WP sites HIDE `wp-login.php` (404) and log in via a Gravity Forms page** (Family
+  Creations, Aug 24 2026: login lives at `/login/`, a GF form). The engine handles this:
+  - **A 404 candidate with no login form is skipped, not fatal** - and crucially the
+    `isWordPress` flag alone (from a `wp-login.php` URL) no longer sets `reachedLoginForm`
+    on a formless 404, so the walk continues to the next candidate.
+  - **Structured form parsing is quote- and attribute-order-agnostic.** GF emits
+    single-quoted attributes (`name='input_1'`), which the legacy double-quote regexes
+    never matched. The engine now parses every POST form into typed inputs and picks the
+    form with **exactly one** password input; **two password inputs = a registration /
+    password-confirm form - never log in through one** (FC's logged-out Source URL
+    redirects to exactly such a recipient-registration form).
+  - **GF field names carry no keywords** (`input_1`/`input_2`), so the email field falls
+    back to the nearest text/email input above the password input in the same form.
+  - **ALL hidden inputs of the login form are posted back verbatim** - GF silently ignores
+    a submission missing `is_submit_N` / `gform_submit` / `state_N` / currency fields.
+  - **`login_redirect` / `redirect_to` hidden fields are overwritten with the Source URL**,
+    so a successful sign-in redirects to the list page instead of back to `/login/` (which
+    would read as "redirected back to login page"). Belt-and-braces: a 3xx whose
+    `Set-Cookie` contains `wordpress_logged_in_*` counts as success even when the location
+    contains "login".
+  - Quirk: FC's themed 404 pages embed a login widget, so even the `/Account/Login`
+    candidate (404) logs in successfully through the new parser. Harmless - any candidate
+    that yields the session cookie is fine.
 - **reCAPTCHA (v2 and v3)** is solved via **token injection** (no headless browser):
   `captcha-solver.ts` extracts the sitekey, submits it to **2captcha**
   (`in.php`/`res.php`), gets a `g-recaptcha-response` token, and adds it to the login POST.
@@ -79,9 +102,17 @@ re-discovering the same problems on every new agency.
   page embeds the origin's own reCAPTCHA script - captcha-first ordering labels every edge
   block `(reCAPTCHA page)` and sends you auditing the wrong vendor. Detection keys strictly
   on **block-page markers** (`sorry, you have been blocked`, `error code 1020/1015`,
-  `cdn-cgi/challenge-platform`, `__cf_chl`, `cloudflare ray id`), never on the mere presence
-  of "cloudflare" - most of these agency sites are Cloudflare-fronted while serving a
-  perfectly normal login form. A **403 with `server: cloudflare`** counts as a block even
+  `_cf_chl_opt` / `orchestrate/chl_page` / `__cf_chl`, `cloudflare ray id`), never on the
+  mere presence of "cloudflare" - most of these agency sites are Cloudflare-fronted while
+  serving a perfectly normal login form.
+  - **A bare `cdn-cgi/challenge-platform` reference is NOT a challenge marker** (fixed
+    Aug 24 2026). Cloudflare bot management passively injects
+    `/cdn-cgi/challenge-platform/scripts/jsd/main.js` into EVERY HTML response it fronts -
+    including plain 404 pages. Family Creations hides `wp-login.php` (404), the passive
+    script on that 404 read as "Cloudflare JS challenge (status=404)", and the misdetected
+    "block" aborted the whole candidate walk before `/login` was ever tried. A real JS
+    challenge interstitial is a 403/503 carrying `_cf_chl_opt` / `orchestrate/chl_page` /
+    `__cf_chl_*` tokens - key on those only. A **403 with `server: cloudflare`** counts as a block even
   when the body matches no marker; this is checked on the login **GET** as well as the POST,
   so a marker-less block page never reaches the *paid* solver.
   - A block **aborts the candidate loop**: the remaining candidates are the same closed door
@@ -319,6 +350,8 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | `<captcha-type> required on POST response` (hCaptcha / Cloudflare / generic) | Non-reCAPTCHA challenge | Not solvable here; needs a headless-browser path or manual intervention |
 | Log: `[nightly-sync] Skip - last successful nightly was ...` | 20h DB-level dedup absorbed a duplicate trigger | Working as designed; benign |
 | `reCAPTCHA required` / `404 (reCAPTCHA page)` | Site needs captcha solving | Set `TWOCAPTCHA_API_KEY`; `captcha-solver.ts` |
+| `Cloudflare JS challenge on the login page (status=404)` | HISTORICAL false positive: passive `cdn-cgi/challenge-platform` script on an ordinary 404 (hidden `wp-login.php`) | Fixed Aug 24 2026 - `detectWafBlock` keys on `_cf_chl_opt`/`orchestrate/chl_page`/`__cf_chl` only; formless 404 candidates are skipped, not fatal |
+| `login page returned 404 with no login form` | Benign per-candidate skip - that path doesn't exist on the site | Walk continues; only worry if EVERY candidate 404s (then find the site's real login URL) |
 | `Failed to extract data ... page may not contain profiles` | Login returned a non-list page, or markup changed | Check login succeeded; verify the AJAX/list endpoint + extraction |
 | `(EAUTHTIMEOUT) timeout while waiting for message` | Transient upstream stall (EDC host) | Already retried; re-run if it slips through |
 | `Interrupted - server restarted while sync was running` | Benign - server was restarted mid-run | Ignore; auto-resume re-runs it |
@@ -348,6 +381,14 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
   `-150x150` thumbs); **skip Gemini section extraction** (donor-view pages time it out);
   image-host 429s retried in `persistSinglePhoto`.
 - **Symfony** (e.g. app.spermbankcalifornia): login at **`/login`**; `/Account/Login` → 405.
+- **WordPress + Gravity Forms login** (e.g. Family Creations, both egg donors and
+  surrogates): `wp-login.php` is hidden (404 - and the 404 carries Cloudflare's passive
+  `challenge-platform` script, see the WAF false-positive note above); real login at
+  **`/login/`** via a GF form (`input_1`/`input_2` + GF hidden fields). Source URLs:
+  `/find-a-donor/` (egg) and `/find-a-surrogate` (surrogates), each with its own account.
+  Logged-out, those URLs redirect to a registration form with TWO password inputs - the
+  single-password rule keeps the engine off it. Donor profiles are static links at
+  `/egg-donors/<name>/` on the authenticated list page.
 
 ---
 
