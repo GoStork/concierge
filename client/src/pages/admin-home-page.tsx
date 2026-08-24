@@ -29,6 +29,7 @@ import {
   Zap,
   Video,
   Star,
+  Building2,
 } from "lucide-react";
 import { StarDisplay } from "@/components/reviews/reviews-ui";
 import { QueueRow, SectionHeader, StatTile } from "@/components/home/home-sections";
@@ -199,7 +200,20 @@ export default function AdminHomePage() {
     }
   };
 
+  // Providers still onboarding (checklist < 100%) - one aggregate row each.
+  const onboardingQ = useQuery<Array<{ providerId: string; providerName: string; doneCount: number; requiredCount: number; percent: number }>>({
+    queryKey: ["/api/admin/onboarding/pending"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/onboarding/pending", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load onboarding queue");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const onboardingRows = onboardingQ.data || [];
+
   const queueCount =
+    onboardingRows.length +
     (((data as any)?.signedProviderAgreements?.length as number) || 0) +
     (data?.escalations.length || 0) +
     (data?.pendingMeetings?.length || 0) +
@@ -232,6 +246,18 @@ export default function AdminHomePage() {
           </div>
         ) : (
           <div className="space-y-2">
+            {/* Providers mid-onboarding - open the edit page to continue the checklist. */}
+            {onboardingRows.map((o) => (
+              <QueueRow
+                key={`onb-${o.providerId}`}
+                tone="task"
+                icon={<Building2 className="w-4 h-4" />}
+                title={`${o.providerName} - onboarding ${o.doneCount}/${o.requiredCount}`}
+                detail={`${o.percent}% of required setup steps done`}
+                cta="Continue"
+                onClick={() => navigate(`/admin/providers/${o.providerId}`)}
+              />
+            ))}
             {/* Good news first: a provider executed the GoStork agreement. */}
             {((data as any)?.signedProviderAgreements || []).map((a: any) => (
               <QueueRow

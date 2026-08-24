@@ -58,6 +58,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import ImageUploader from "@/components/image-uploader";
 import ManageServicesDialog from "@/components/manage-services-dialog";
+import ProviderOnboardingChecklist from "@/components/provider-onboarding-checklist";
 import { ServiceTag, serviceApprovalIcon } from "@/components/ui/service-tag";
 
 type ScrapedTeamMember = {
@@ -751,23 +752,34 @@ export default function AdminProviderEditPage() {
         </Button>
       </div>
 
+      {!isGoStorkHouse && (
+        <ProviderOnboardingChecklist providerId={provider.id} onNavigateTab={handleTabChange} />
+      )}
+
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         {/* scrollbar-hide: the strip still scrolls horizontally, just without the visible bar. */}
+        {/* Tab order groups by lifecycle: Identity -> Inventory -> Parent Experience -> Money & Compliance -> Growth. */}
         <div className="overflow-x-auto w-full scrollbar-hide">
         <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start">
+          {/* Identity */}
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
-          <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-edit-calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
+            <Palette className="w-4 h-4 mr-1.5 inline" />
+            Branding
+          </TabsTrigger>
+          {/* Inventory */}
           {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
           {showSurrogates && <TabsTrigger value="surrogates" className={tabTriggerClass} data-testid="tab-edit-surrogates">Surrogates</TabsTrigger>}
           {showSpermDonors && <TabsTrigger value="sperm-donors" className={tabTriggerClass} data-testid="tab-edit-sperm-donors">Sperm Donors</TabsTrigger>}
+          {isIvfClinic && <TabsTrigger value="doctors" className={tabTriggerClass} data-testid="tab-edit-doctors">Doctors</TabsTrigger>}
           <TabsTrigger value="costs" className={tabTriggerClass} data-testid="tab-edit-costs">
             <DollarSign className="w-4 h-4 mr-1.5 inline" />
             Costs
           </TabsTrigger>
-          <TabsTrigger value="agreements" className={tabTriggerClass} data-testid="tab-edit-agreements">Agreements</TabsTrigger>
+          {/* Parent experience */}
           <TabsTrigger value="parent-form" className={tabTriggerClass} data-testid="tab-edit-parent-form">Parent Form</TabsTrigger>
-          {isIvfClinic && <TabsTrigger value="doctors" className={tabTriggerClass} data-testid="tab-edit-doctors">Doctors</TabsTrigger>}
+          <TabsTrigger value="agreements" className={tabTriggerClass} data-testid="tab-edit-agreements">Agreements</TabsTrigger>
           <TabsTrigger value="knowledge" className={tabTriggerClass} data-testid="tab-edit-knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="ai-concierge" className={tabTriggerClass} data-testid="tab-edit-ai-concierge">AI Concierge</TabsTrigger>
           <TabsTrigger value="playbooks" className={tabTriggerClass} data-testid="tab-edit-playbooks">Playbooks</TabsTrigger>
@@ -775,6 +787,8 @@ export default function AdminProviderEditPage() {
             <MessageSquarePlus className="w-4 h-4 mr-1.5 inline" />
             Automation
           </TabsTrigger>
+          <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-edit-calendar">Calendar</TabsTrigger>
+          {/* Money & compliance */}
           <TabsTrigger value="legal-identity" className={tabTriggerClass} data-testid="tab-edit-legal-identity">
             Legal
           </TabsTrigger>
@@ -784,13 +798,10 @@ export default function AdminProviderEditPage() {
           <TabsTrigger value="payouts" className={tabTriggerClass} data-testid="tab-edit-payouts">
             Payouts
           </TabsTrigger>
+          {/* Growth */}
           <TabsTrigger value="sponsorship" className={tabTriggerClass} data-testid="tab-edit-sponsorship">
             <Sparkles className="w-4 h-4 mr-1.5 inline" />
             Sponsorship
-          </TabsTrigger>
-          <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
-            <Palette className="w-4 h-4 mr-1.5 inline" />
-            Branding
           </TabsTrigger>
         </TabsList>
         </div>

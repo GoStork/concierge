@@ -1,0 +1,204 @@
+/**
+ * Provider onboarding checklist - the admin's guided path from "just scraped"
+ * to "fully live". Renders above the tabs on the admin provider edit page.
+ * All statuses are DERIVED server-side (provider-onboarding.controller.ts);
+ * nothing here stores checklist state. Hidden entirely at 100%.
+ */
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Lock,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Send,
+  ListChecks,
+} from "lucide-react";
+
+type OnboardingStep = {
+  key: string;
+  group: "created" | "admin_setup" | "provider_setup" | "go_live";
+  label: string;
+  detail: string;
+  status: "done" | "pending" | "waiting_on_provider" | "optional" | "locked";
+  deepLink: string;
+  isOptional?: boolean;
+};
+
+type OnboardingSummary = {
+  providerId: string;
+  providerName: string;
+  steps: OnboardingStep[];
+  doneCount: number;
+  requiredCount: number;
+  percent: number;
+  tasksSentAt: string | null;
+};
+
+const GROUP_LABELS: Record<OnboardingStep["group"], string> = {
+  created: "1. Created",
+  admin_setup: "2. GoStork admin setup",
+  provider_setup: "3. Provider setup",
+  go_live: "4. Go live",
+};
+
+function StatusIcon({ status }: { status: OnboardingStep["status"] }) {
+  if (status === "done") return <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />;
+  if (status === "pending") return <Circle className="w-4 h-4 text-[hsl(var(--brand-warning))] shrink-0" />;
+  if (status === "waiting_on_provider") return <Clock className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />;
+  if (status === "locked") return <Lock className="w-4 h-4 text-muted-foreground/50 shrink-0" />;
+  return <Circle className="w-4 h-4 text-muted-foreground/50 shrink-0" />;
+}
+
+function statusBadge(status: OnboardingStep["status"]): { label: string; cls: string } | null {
+  switch (status) {
+    case "pending":
+      return { label: "Your turn", cls: "bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]" };
+    case "waiting_on_provider":
+      return { label: "Provider", cls: "bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))]" };
+    case "optional":
+      return { label: "Optional", cls: "bg-secondary text-secondary-foreground" };
+    case "locked":
+      return { label: "Locked", cls: "bg-muted text-muted-foreground" };
+    default:
+      return null;
+  }
+}
+
+export default function ProviderOnboardingChecklist({
+  providerId,
+  onNavigateTab,
+}: {
+  providerId: string;
+  /** Switch the edit page to the given ?tab= value. */
+  onNavigateTab: (tab: string) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
+
+  const { data, isLoading } = useQuery<OnboardingSummary>({
+    queryKey: ["/api/admin/providers", providerId, "onboarding"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/providers/${providerId}/onboarding`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load onboarding status");
+      return res.json();
+    },
+  });
+
+  const sendTasksMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/admin/providers/${providerId}/onboarding/send-tasks`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Onboarding tasks sent", description: "The provider now sees their setup tasks on their Home page.", variant: "success" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/providers", providerId, "onboarding"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not send tasks", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading || !data) return null;
+  if (data.percent >= 100) return null;
+
+  // Expanded by default while onboarding is early; collapses to the slim
+  // progress bar once past halfway. A manual toggle always wins.
+  const expanded = manuallyToggled ?? data.percent < 50;
+
+  const navigate = (deepLink: string) => {
+    const tab = /[?&]tab=([^&]+)/.exec(deepLink)?.[1];
+    if (tab) onNavigateTab(tab);
+  };
+
+  const groups: OnboardingStep["group"][] = ["created", "admin_setup", "provider_setup", "go_live"];
+
+  return (
+    <Card className="p-4 mb-4 border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.03)]" data-testid="onboarding-checklist">
+      <button
+        type="button"
+        className="w-full flex items-center gap-3 text-left"
+        onClick={() => setManuallyToggled(!expanded)}
+        data-testid="onboarding-checklist-toggle"
+      >
+        <span className="w-9 h-9 rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] flex items-center justify-center shrink-0">
+          <ListChecks className="w-5 h-5" />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-medium">
+            Onboarding - {data.doneCount}/{data.requiredCount} required steps done
+          </span>
+          <span className="mt-1 block h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden">
+            <span
+              className="block h-full rounded-full bg-[hsl(var(--primary))] transition-all"
+              style={{ width: `${data.percent}%` }}
+            />
+          </span>
+        </span>
+        {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+      </button>
+
+      {expanded && (
+        <div className="mt-4 space-y-4">
+          {groups.map((group) => {
+            const steps = data.steps.filter((s) => s.group === group);
+            if (!steps.length) return null;
+            return (
+              <div key={group}>
+                <div className="t-helper font-medium uppercase tracking-wide mb-1.5">{GROUP_LABELS[group]}</div>
+                <div className="space-y-1">
+                  {steps.map((step) => {
+                    const badge = statusBadge(step.status);
+                    return (
+                      <button
+                        key={step.key}
+                        type="button"
+                        onClick={() => navigate(step.deepLink)}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[var(--radius)] text-left hover:bg-[hsl(var(--primary)/0.06)] transition-colors"
+                        data-testid={`onboarding-step-${step.key}`}
+                      >
+                        <StatusIcon status={step.status} />
+                        <span className="flex-1 min-w-0">
+                          <span className={`block text-sm ${step.status === "done" ? "text-muted-foreground line-through decoration-[hsl(var(--brand-success)/0.5)]" : ""}`}>
+                            {step.label}
+                          </span>
+                          <span className="t-helper block truncate">{step.detail}</span>
+                        </span>
+                        {badge && (
+                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${badge.cls}`}>{badge.label}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="flex items-center gap-3 pt-1">
+            <Button
+              size="sm"
+              disabled={sendTasksMutation.isPending}
+              onClick={() => sendTasksMutation.mutate()}
+              data-testid="button-send-onboarding-tasks"
+            >
+              {sendTasksMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+              {data.tasksSentAt ? "Re-send onboarding tasks" : "Send onboarding tasks to provider"}
+            </Button>
+            {data.tasksSentAt && (
+              <span className="t-helper">Sent {new Date(data.tasksSentAt).toLocaleDateString()}</span>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}

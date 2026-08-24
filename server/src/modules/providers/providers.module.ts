@@ -8,6 +8,7 @@ import { ProfileSyncController } from "./profile-sync.controller";
 import { ScrapersController } from "./scrapers.controller";
 import { DocumentsController } from "./documents.controller";
 import { AutoReplyController } from "./auto-reply.controller";
+import { ProviderOnboardingController } from "./provider-onboarding.controller";
 import { AutoReplyService } from "./auto-reply.service";
 import { ParentBriefingService } from "./parent-briefing.service";
 import { StorageModule } from "../storage/storage.module";
@@ -26,6 +27,7 @@ import { StorageModule } from "../storage/storage.module";
     ScrapersController,
     DocumentsController,
     AutoReplyController,
+    ProviderOnboardingController,
   ],
 })
 export class ProvidersModule {}

@@ -569,6 +569,8 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
   remaining = await reconcileCalendarTasks(db, remaining);
   // W-9 / provider-agreement tasks close the moment the document is signed.
   remaining = await reconcileDocSignTasks(db, remaining);
+  // Provider-onboarding handoff tasks close the moment their artifact exists.
+  remaining = await reconcileOnboardingTasks(db, remaining);
 
   // Only the queue kinds this file owns - a playbook task has no artifact to
   // reconcile against, and silence was handled above.
@@ -718,6 +720,53 @@ async function reconcileDocSignTasks<T extends { id: string; source?: string; sy
     return tasks.filter((t) => !doneIds.has(t.id));
   } catch (e: any) {
     console.error(`[tasks] Doc-sign reconcile failed: ${e?.message}`);
+    return tasks;
+  }
+}
+
+/**
+ * Provider-onboarding handoff tasks (systemKey `onbcal:` / `onbstripe:` /
+ * `onbcosts:` / `onbteam:` / `onbplaybooks:` / `onbauto:` - raised by the
+ * admin's "Send onboarding tasks" button, provider-onboarding.controller.ts).
+ * Each closes the moment its artifact exists, so a provider who connects a
+ * calendar is never told to connect a calendar. Close-only, own prefixes
+ * only - the manual-complete onboarding tasks (onbprofile:, onbai:,
+ * onbbrand:, onbsponsor:) have no artifact and are NOT touched here.
+ */
+async function reconcileOnboardingTasks<T extends { id: string; source?: string; systemKey?: string | null }>(
+  db: Db, tasks: T[],
+): Promise<T[]> {
+  const CHECKS: Record<string, (providerId: string) => Promise<boolean>> = {
+    onbcal: async (pid) => (await db.calendarConnection.count({ where: { connected: true, tokenValid: true, user: { providerId: pid } } })) > 0,
+    onbstripe: async (pid) => Boolean((await db.providerBankAccount.findUnique({ where: { providerId: pid }, select: { payoutsEnabled: true } }))?.payoutsEnabled),
+    onbcosts: async (pid) => (await db.providerCostSheet.count({ where: { providerId: pid } })) > 0,
+    onbteam: async (pid) => (await db.user.count({ where: { providerId: pid } })) >= 2,
+    onbplaybooks: async (pid) => (await db.taskPlaybook.count({ where: { providerId: pid } })) > 0,
+    onbauto: async (pid) => (await db.providerAutoReply.count({ where: { providerId: pid } })) > 0,
+  };
+  const onb = tasks.filter((t: any) => {
+    if (t.source !== "SYSTEM" || !t.systemKey) return false;
+    const prefix = t.systemKey.split(":")[0];
+    return Object.prototype.hasOwnProperty.call(CHECKS, prefix);
+  }) as any[];
+  if (!onb.length) return tasks;
+  try {
+    const closedIds: string[] = [];
+    for (const t of onb) {
+      const [prefix, providerId] = String(t.systemKey).split(":");
+      if (!providerId) continue;
+      if (await CHECKS[prefix](providerId)) closedIds.push(t.id);
+    }
+    if (!closedIds.length) return tasks;
+    await db.parentTask.updateMany({
+      where: { id: { in: closedIds }, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+    console.log(`[tasks] onboarding reconcile closed ${closedIds.length} task(s)`);
+    const closed = new Set(closedIds);
+    return tasks.filter((t) => !closed.has(t.id));
+  } catch (e: any) {
+    console.error(`[tasks] onboarding reconcile failed: ${e?.message}`);
     return tasks;
   }
 }

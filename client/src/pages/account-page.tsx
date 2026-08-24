@@ -75,27 +75,35 @@ const PARTNER_GENDER_OPTIONS = [
   { value: "man", label: "Man" },
 ];
 
+// Ordered by lifecycle, matching the admin provider edit tabs: Identity ->
+// Parent Experience -> Money & Compliance -> Growth (providers manage their
+// inventory/costs inside Company).
 const allTabs = [
   { to: '/account', label: 'My Account', icon: User, end: true, roles: null },
-  { to: '/account/company', label: 'Company', icon: Building2, roles: 'provider' as const },
-  { to: '/account/documents', label: 'Agreements', icon: FileText, roles: 'provider' as const },
-  { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/members', label: 'Members', icon: Users, roles: 'parent' as const },
-  { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
-  { to: '/account/legal-identity', label: 'Legal', icon: FileSignature, roles: 'provider' as const },
-  { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
-  { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'billing' as const },
-  { to: '/account/sponsorship', label: 'Sponsorship', icon: Sparkles, roles: 'sponsorship' as const },
+  // Identity
+  { to: '/account/company', label: 'Company', icon: Building2, roles: 'provider' as const },
+  { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
-  { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
-  { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
-  { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
-  { to: '/account/automation', label: 'Automation', icon: RefreshCw, roles: 'provider' as const },
+  // Parent experience
   { to: '/account/ip-form-template', label: 'Parent Form', icon: ClipboardList, roles: 'admin' as const },
   // Provider self-service view of THEIR Parent Form (read-only unless GoStork
   // enabled canEditParentForm) - admins manage per-provider forms from the
   // admin provider edit page instead.
   { to: '/account/parent-form', label: 'Parent Form', icon: ClipboardList, roles: 'provider-form' as const },
+  { to: '/account/documents', label: 'Agreements', icon: FileText, roles: 'provider' as const },
+  { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
+  { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
+  { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
+  { to: '/account/automation', label: 'Automation', icon: RefreshCw, roles: 'provider' as const },
+  { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
+  // Money & compliance
+  { to: '/account/legal-identity', label: 'Legal', icon: FileSignature, roles: 'provider' as const },
+  { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
+  { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'billing' as const },
+  // Growth
+  { to: '/account/sponsorship', label: 'Sponsorship', icon: Sparkles, roles: 'sponsorship' as const },
+  // GoStork admin tools
   { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
   { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
 ];
