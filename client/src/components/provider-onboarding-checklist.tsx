@@ -30,6 +30,8 @@ type OnboardingStep = {
   status: "done" | "pending" | "waiting_on_provider" | "optional" | "locked";
   deepLink: string;
   isOptional?: boolean;
+  manuallyMarkable?: boolean;
+  manuallyDone?: boolean;
 };
 
 type OnboardingSummary = {
@@ -90,6 +92,20 @@ export default function ProviderOnboardingChecklist({
       const res = await fetch(`/api/admin/providers/${providerId}/onboarding`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load onboarding status");
       return res.json();
+    },
+  });
+
+  // Manual check-off for optional steps ("nothing to set up here").
+  const markMutation = useMutation({
+    mutationFn: async ({ key, done }: { key: string; done: boolean }) => {
+      const res = await apiRequest(done ? "POST" : "DELETE", `/api/admin/providers/${providerId}/onboarding/steps/${key}/mark-done`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/providers", providerId, "onboarding"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not update step", description: err.message, variant: "destructive" });
     },
   });
 
@@ -168,24 +184,56 @@ export default function ProviderOnboardingChecklist({
                   {steps.map((step) => {
                     const badge = statusBadge(step.status);
                     return (
-                      <button
+                      <div
                         key={step.key}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => navigate(step.deepLink)}
-                        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[var(--radius)] text-left hover:bg-[hsl(var(--primary)/0.06)] transition-colors"
+                        onKeyDown={(e) => { if (e.key === "Enter") navigate(step.deepLink); }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[var(--radius)] text-left cursor-pointer hover:bg-[hsl(var(--primary)/0.06)] transition-colors"
                         data-testid={`onboarding-step-${step.key}`}
                       >
-                        <StatusIcon status={step.status} />
+                        {step.manuallyMarkable ? (
+                          // Clickable check: mark an optional step done when there
+                          // is nothing to set up in that section (click again to undo).
+                          <button
+                            type="button"
+                            title={step.status === "done" ? (step.manuallyDone ? "Undo - reopen this step" : "Done") : "Mark as done - nothing to set up here"}
+                            disabled={markMutation.isPending || (step.status === "done" && !step.manuallyDone)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (step.status === "done" && !step.manuallyDone) return;
+                              markMutation.mutate({ key: step.key, done: step.status !== "done" });
+                            }}
+                            className="shrink-0 rounded-full hover:scale-110 transition-transform disabled:hover:scale-100"
+                            data-testid={`onboarding-mark-${step.key}`}
+                          >
+                            <StatusIcon status={step.status} />
+                          </button>
+                        ) : (
+                          <StatusIcon status={step.status} />
+                        )}
                         <span className="flex-1 min-w-0">
                           <span className={`block text-sm ${step.status === "done" ? "text-muted-foreground line-through decoration-[hsl(var(--brand-success)/0.5)]" : ""}`}>
                             {step.label}
                           </span>
                           <span className="t-helper block truncate">{step.detail}</span>
                         </span>
+                        {step.manuallyMarkable && step.status !== "done" && (
+                          <button
+                            type="button"
+                            disabled={markMutation.isPending}
+                            onClick={(e) => { e.stopPropagation(); markMutation.mutate({ key: step.key, done: true }); }}
+                            className="t-helper shrink-0 text-primary hover:underline"
+                            data-testid={`onboarding-mark-link-${step.key}`}
+                          >
+                            Mark done
+                          </button>
+                        )}
                         {badge && (
                           <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${badge.cls}`}>{badge.label}</span>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

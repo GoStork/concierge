@@ -15,10 +15,12 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   Req,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
   UseGuards,
 } from "@nestjs/common";
 import { Request } from "express";
@@ -37,7 +39,21 @@ export type OnboardingStep = {
   deepLink: string;
   /** True when the step never counts toward percent (nice-to-have). */
   isOptional?: boolean;
+  /** Admin can manually check this step off (optional steps with no hard artifact). */
+  manuallyMarkable?: boolean;
+  /** True when its done status came from the admin's manual mark. */
+  manuallyDone?: boolean;
 };
+
+/** Optional steps the admin can check off by hand when there is nothing to
+ *  do in that section. Stored as a DONE parentTask with systemKey
+ *  onbmark:<stepKey>:<providerId> - created directly as DONE so it never
+ *  appears on anyone's open queue, and the reconciler never touches the
+ *  onbmark prefix. */
+const MARKABLE_STEP_KEYS = new Set([
+  "parent_form", "partner_clinics", "knowledge",
+  "playbooks", "automation", "branding", "sponsorship",
+]);
 
 export type OnboardingSummary = {
   providerId: string;
@@ -138,12 +154,19 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   ]);
 
   const taskByPrefix = new Map<string, any>();
+  // Admin manual check-offs: systemKey onbmark:<stepKey>:<providerId>.
+  const markedKeys = new Set<string>();
   for (const t of onbTasks as any[]) {
-    const prefix = String(t.systemKey || "").split(":")[0];
-    if (prefix) taskByPrefix.set(prefix, t);
+    const parts = String(t.systemKey || "").split(":");
+    if (parts[0] === "onbmark") {
+      if (parts[1]) markedKeys.add(parts[1]);
+      continue;
+    }
+    if (parts[0]) taskByPrefix.set(parts[0], t);
   }
-  const tasksSentAt: string | null = onbTasks.length
-    ? new Date(Math.min(...(onbTasks as any[]).map((t) => new Date(t.createdAt).getTime()))).toISOString()
+  const handoffTasks = (onbTasks as any[]).filter((t) => !String(t.systemKey || "").startsWith("onbmark:"));
+  const tasksSentAt: string | null = handoffTasks.length
+    ? new Date(Math.min(...handoffTasks.map((t) => new Date(t.createdAt).getTime()))).toISOString()
     : null;
   const taskDone = (prefix: string) => taskByPrefix.get(prefix)?.status === "DONE";
   const taskRaised = (prefix: string) => taskByPrefix.has(prefix);
@@ -318,6 +341,20 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     status: costApprovalStatus, deepLink: editLink("costs"),
   });
 
+  // Apply the admin's manual check-offs to the markable steps: a marked step
+  // is done even when no artifact exists (there was simply nothing to do).
+  for (const s of steps) {
+    if (!MARKABLE_STEP_KEYS.has(s.key)) continue;
+    s.manuallyMarkable = true;
+    if (s.status !== "done" && markedKeys.has(s.key)) {
+      s.status = "done";
+      s.manuallyDone = true;
+      s.detail = "Marked done by GoStork admin - nothing to set up here.";
+    } else if (s.status === "done" && markedKeys.has(s.key)) {
+      s.manuallyDone = true;
+    }
+  }
+
   const required = steps.filter((s) => !s.isOptional && s.key !== "go_live");
   const doneCount = required.filter((s) => s.status === "done").length;
   const allDone = doneCount === required.length;
@@ -370,6 +407,51 @@ export class ProviderOnboardingController {
     return summaries
       .filter((s): s is OnboardingSummary => Boolean(s) && s!.percent < 100)
       .map((s) => ({ providerId: s.providerId, providerName: s.providerName, doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent }));
+  }
+
+  /** Manually check off an optional step ("nothing to do here"). Stored as a
+   *  DONE parentTask on the onbmark: systemKey so the checklist stays fully
+   *  derived otherwise - never visible on any open queue. */
+  @Post("api/admin/providers/:id/onboarding/steps/:key/mark-done")
+  @UseGuards(SessionOrJwtGuard)
+  async markStepDone(@Req() req: Request, @Param("id") id: string, @Param("key") key: string) {
+    requireAdmin(req);
+    if (!MARKABLE_STEP_KEYS.has(key)) throw new BadRequestException("This step cannot be marked done manually");
+    const db = prisma as any;
+    const provider = await db.provider.findUnique({ where: { id }, select: { id: true } });
+    if (!provider) throw new NotFoundException("Provider not found");
+    const userId = (req.user as any)?.id;
+    const now = new Date();
+    await db.parentTask.upsert({
+      where: { systemKey: `onbmark:${key}:${id}` },
+      create: {
+        parentAccountId: id,
+        scope: "PROVIDER",
+        providerId: id,
+        title: `Onboarding step "${key}" marked done by GoStork admin`,
+        type: "TODO",
+        priority: "LOW",
+        source: "SYSTEM",
+        systemKey: `onbmark:${key}:${id}`,
+        status: "DONE",
+        dueAt: now,
+        completedAt: now,
+        completedByUserId: userId,
+        createdByUserId: userId,
+      },
+      update: { status: "DONE", completedAt: now, completedByUserId: userId },
+    });
+    return { marked: key };
+  }
+
+  /** Undo a manual check-off. */
+  @Delete("api/admin/providers/:id/onboarding/steps/:key/mark-done")
+  @UseGuards(SessionOrJwtGuard)
+  async unmarkStepDone(@Req() req: Request, @Param("id") id: string, @Param("key") key: string) {
+    requireAdmin(req);
+    const db = prisma as any;
+    await db.parentTask.deleteMany({ where: { systemKey: `onbmark:${key}:${id}` } });
+    return { unmarked: key };
   }
 
   /** Raise the Phase C handoff tasks on the provider's Home queue.
