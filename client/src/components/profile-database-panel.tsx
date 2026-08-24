@@ -249,6 +249,12 @@ export default function ProfileDatabasePanel({
           setPersistentSync(providerId, type, data.job.id);
           setJobProgress(data.job);
           startPolling(data.job.id);
+        } else if (!cancelled && activeJobId) {
+          // The job we remembered from before this panel unmounted finished
+          // while we were away - clear the stale id so the Syncing... button
+          // doesn't stay stuck.
+          setActiveJobId(null);
+          setPersistentSync(providerId, type, null);
         }
       } catch {}
     }
@@ -268,7 +274,13 @@ export default function ProfileDatabasePanel({
         }
       } catch {}
     }
-    if (!activeJobId) checkActiveJob();
+    // ALWAYS re-check with the server on mount, even when a jobId was restored
+    // from the persistent map: the restored id alone gives us no job data, so
+    // the progress card stayed hidden (jobProgress null, no polling) after
+    // navigating away and back - only a hard refresh (which wipes the map and
+    // took the checkActiveJob path) brought it back. The server response both
+    // rehydrates the progress card immediately and restarts polling.
+    checkActiveJob();
     const saved = getPersistent(providerId, type);
     if (saved.pdfJobId) {
       setActivePdfJobId(saved.pdfJobId);
