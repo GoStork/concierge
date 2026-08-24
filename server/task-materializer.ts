@@ -729,9 +729,10 @@ async function reconcileDocSignTasks<T extends { id: string; source?: string; sy
  * `onbcosts:` / `onbteam:` / `onbplaybooks:` / `onbauto:` - raised by the
  * admin's "Send onboarding tasks" button, provider-onboarding.controller.ts).
  * Each closes the moment its artifact exists, so a provider who connects a
- * calendar is never told to connect a calendar. Close-only, own prefixes
- * only - the manual-complete onboarding tasks (onbprofile:, onbai:,
- * onbbrand:, onbsponsor:) have no artifact and are NOT touched here.
+ * calendar is never told to connect a calendar (onbpaybasis: likewise closes
+ * once every fee config line has a decided Parent Pays Basis). Close-only,
+ * own prefixes only - the manual-complete onboarding tasks (onbprofile:,
+ * onbai:, onbbrand:, onbsponsor:) have no artifact and are NOT touched here.
  */
 async function reconcileOnboardingTasks<T extends { id: string; source?: string; systemKey?: string | null }>(
   db: Db, tasks: T[],
@@ -740,6 +741,16 @@ async function reconcileOnboardingTasks<T extends { id: string; source?: string;
     onbcal: async (pid) => (await db.calendarConnection.count({ where: { connected: true, tokenValid: true, user: { providerId: pid } } })) > 0,
     onbstripe: async (pid) => Boolean((await db.providerBankAccount.findUnique({ where: { providerId: pid }, select: { payoutsEnabled: true } }))?.payoutsEnabled),
     onbcosts: async (pid) => (await db.providerCostSheet.count({ where: { providerId: pid } })) > 0,
+    // Decided = TOTAL_COST, or DEFAULT_FIRST_PAYMENT with an actual amount
+    // (bare DEFAULT_FIRST_PAYMENT is just the column default). All active
+    // lines must be decided, and at least one config row must exist.
+    onbpaybasis: async (pid) => {
+      const cfgs = await db.referralFeeConfig.findMany({
+        where: { providerId: pid, isActive: true },
+        select: { parentPaysBasis: true, defaultServiceAmount: true },
+      });
+      return cfgs.length > 0 && cfgs.every((c: any) => c.parentPaysBasis === "TOTAL_COST" || c.defaultServiceAmount != null);
+    },
     onbteam: async (pid) => (await db.user.count({ where: { providerId: pid } })) >= 2,
     onbplaybooks: async (pid) => (await db.taskPlaybook.count({ where: { providerId: pid } })) > 0,
     onbauto: async (pid) => (await db.providerAutoReply.count({ where: { providerId: pid } })) > 0,

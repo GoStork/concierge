@@ -80,6 +80,7 @@ const HANDOFF_TASKS: Array<{
   { prefix: "onbcal", title: "Connect your calendar", notes: "Connect Google, Outlook, or Apple Calendar so parents can book consultations with your team.", deepLink: "/account/calendar", priority: "HIGH" },
   { prefix: "onbstripe", title: "Connect payouts", notes: "Set up your payout account so GoStork can send you money.", deepLink: "/account/payouts", priority: "HIGH" },
   { prefix: "onbcosts", title: "Upload your cost sheet(s)", notes: "Upload a cost sheet for each service you offer. GoStork reviews and approves them before they go live.", deepLink: "/account/company", priority: "HIGH" },
+  { prefix: "onbpaybasis", title: "Choose how parents are invoiced", notes: "On the Billing page, pick your Parent Pays Basis for each service: the full quoted total, or a default first payment amount.", deepLink: "/account/billing", priority: "HIGH" },
   { prefix: "onbprofile", title: "Review your company profile", notes: "Check your logo, about text, locations, and contact details - parents see these on your marketplace profile.", deepLink: "/account/company", priority: "MEDIUM" },
   { prefix: "onbteam", title: "Add your team members and assign roles", notes: "Invite your staff and assign their roles and locations so the right people get the right work.", deepLink: "/account/team", priority: "MEDIUM" },
   { prefix: "onbai", title: "Set up your AI Concierge", notes: "Review your AI Concierge settings and knowledge so it answers parents accurately about your organization.", deepLink: "/account/concierge", priority: "MEDIUM" },
@@ -121,7 +122,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     hasSurrogacy ? db.surrogate.count({ where: { providerId } }) : 0,
     hasSperm ? db.spermDonor.count({ where: { providerId } }) : 0,
     db.providerCostSheet.findMany({ where: { providerId }, select: { status: true } }),
-    db.referralFeeConfig.findMany({ where: { providerId, isActive: true }, select: { serviceType: true } }),
+    db.referralFeeConfig.findMany({ where: { providerId, isActive: true }, select: { serviceType: true, feeType: true, flatAmount: true, percentage: true, parentPaysBasis: true, defaultServiceAmount: true } }),
     db.providerW9.findUnique({ where: { providerId }, select: { status: true } }),
     db.providerAgreement.findFirst({ where: { providerId }, orderBy: { createdAt: "desc" }, select: { status: true } }),
     db.calendarConnection.count({ where: { connected: true, tokenValid: true, user: { providerId } } }),
@@ -210,7 +211,13 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
       .filter((s) => s.status === "APPROVED" || s.status === "NEW")
       .map((s) => serviceTypeKey(s.providerType?.name || "")),
   ));
-  const feeKeys = new Set((referralFees as any[]).map((f) => f.serviceType));
+  // A fee config only counts once its economics are actually set (a flat
+  // amount or a percentage) - a bare row is not a negotiated fee.
+  const feeKeys = new Set(
+    (referralFees as any[])
+      .filter((f) => (f.feeType === "FLAT" ? f.flatAmount != null : f.percentage != null))
+      .map((f) => f.serviceType),
+  );
   const missingFeeLines = approvedLineKeys.filter((k) => !feeKeys.has(k));
   steps.push({
     key: "billing", group: "admin_setup", label: "Set billing & referral fees",
@@ -270,6 +277,22 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("calendar", "onbcal", "Calendar connected", calendarCount > 0, `${calendarCount} calendar connection(s).`, "Waiting for the provider to connect a calendar.", "calendar");
   providerStep("stripe", "onbstripe", "Payouts connected", Boolean(bank?.payoutsEnabled), "Stripe payouts enabled.", bank?.stripeConnectAccountId ? "Stripe onboarding started but payouts not enabled yet." : "Waiting for the provider to set up payouts.", "payouts");
   providerStep("costs_uploaded", "onbcosts", "Cost sheets uploaded", costSheets.length > 0, `${costSheets.length} cost sheet(s) uploaded.`, "Waiting for the provider to upload cost sheets.", "costs");
+  // Parent Pays Basis is decided by the provider on their Billing page. A
+  // line counts as decided once its config says TOTAL_COST or carries a
+  // default first-payment amount - DEFAULT_FIRST_PAYMENT with no amount is
+  // just the DB default, not a choice.
+  const basisByKey = new Map((referralFees as any[]).map((f) => [f.serviceType, f]));
+  const undecidedBasisLines = approvedLineKeys.filter((k) => {
+    const f = basisByKey.get(k);
+    return !f || (f.parentPaysBasis !== "TOTAL_COST" && f.defaultServiceAmount == null);
+  });
+  providerStep(
+    "pay_basis", "onbpaybasis", "Parent Pays Basis chosen",
+    approvedLineKeys.length > 0 && undecidedBasisLines.length === 0,
+    "The provider chose how parents are invoiced for every service line.",
+    undecidedBasisLines.length ? `Waiting for the provider to choose the invoicing basis for: ${undecidedBasisLines.join(", ")}.` : "Waiting for the provider to choose how parents are invoiced.",
+    "billing",
+  );
   providerStep("team", "onbteam", "Team added & roles assigned", (users as any[]).length >= 2, `${(users as any[]).length} team account(s).`, "Waiting for the provider to invite their team.", "users");
   providerStep("ai", "onbai", "AI Concierge set up", false, "Marked done by the provider.", "Waiting for the provider to review AI Concierge settings.", "ai-concierge");
   providerStep("playbooks", "onbplaybooks", "Playbooks configured", playbookCount > 0, `${playbookCount} playbook(s).`, "Waiting for the provider to configure playbooks.", "playbooks", true);

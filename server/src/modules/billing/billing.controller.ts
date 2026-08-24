@@ -596,16 +596,28 @@ export class BillingController {
 
     const normalizedService = normalizeServiceType(serviceType);
     const { feeType, flatAmount, percentage, defaultServiceAmount, parentPaysBasis, sampleTotalCostCents, isActive, notes, depositMilestone, averageClearanceDays } = body;
+    // Parent Pays Basis is the PROVIDER's decision (their onboarding step).
+    // The admin form no longer sends it - when absent from the body, preserve
+    // whatever the provider already chose instead of clobbering it back to
+    // the default.
+    const existingAdmin = await this.db.referralFeeConfig.findUnique({
+      where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
+      select: { parentPaysBasis: true, defaultServiceAmount: true },
+    });
     const normalizedBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" =
-      parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT";
+      parentPaysBasis !== undefined
+        ? (parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT")
+        : ((existingAdmin?.parentPaysBasis as any) === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT");
+    const effectiveDefaultAmount =
+      "defaultServiceAmount" in body ? (defaultServiceAmount ?? null) : (existingAdmin?.defaultServiceAmount ?? null);
     const normalizedSample = sampleTotalCostCents != null && Number.isFinite(Number(sampleTotalCostCents))
       ? Math.round(Number(sampleTotalCostCents))
       : null;
 
     const config = await this.db.referralFeeConfig.upsert({
       where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
-      create: { providerId, serviceType: normalizedService, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
-      update: { feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
+      create: { providerId, serviceType: normalizedService, feeType, flatAmount, percentage, defaultServiceAmount: effectiveDefaultAmount, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
+      update: { feeType, flatAmount, percentage, defaultServiceAmount: effectiveDefaultAmount, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
     });
 
     // Provider-wide surrogacy settings (deposit milestone + clearance days)
