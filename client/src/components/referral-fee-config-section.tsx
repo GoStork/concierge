@@ -164,18 +164,14 @@ export function ReferralFeeConfigSection({
         feeType,
         flatAmount: feeType === "FLAT" ? Math.round(parseFloat(flatAmount) * 100) : null,
         percentage: feeType === "PERCENTAGE" ? parseFloat(percentage) : null,
+        defaultServiceAmount:
+          parentPaysBasis === "TOTAL_COST"
+            ? null
+            : defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
+        parentPaysBasis,
         sampleTotalCostCents: sampleTotalCost ? Math.round(parseFloat(sampleTotalCost) * 100) : null,
         isActive: true,
       };
-      // Only the provider submits the basis fields - the admin omits them so
-      // the server preserves whatever the provider chose.
-      if (isProviderMode) {
-        body.parentPaysBasis = parentPaysBasis;
-        body.defaultServiceAmount =
-          parentPaysBasis === "TOTAL_COST"
-            ? null
-            : defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null;
-      }
       if (showSurrogacyExtras) {
         body.depositMilestone = depositMilestone;
         body.averageClearanceDays = parseInt(averageClearanceDays, 10) || 21;
@@ -265,25 +261,15 @@ export function ReferralFeeConfigSection({
         )}
       </div>
 
-      {/* Parent Pays Basis is the PROVIDER's decision (part of their
-          onboarding). The admin sees a read-only summary of what the provider
-          chose; only provider mode renders the editable radios below. */}
-      {!isProviderMode ? (
-        <div className="rounded-lg border p-4 space-y-1.5 bg-secondary/40">
-          <Label>Parent Pays Basis <span className="t-helper ml-2 font-normal">(set by the provider)</span></Label>
-          <p className="text-sm">
-            {!initialConfig
-              ? "Not chosen yet - the provider picks this during their onboarding (Billing page)."
-              : parentPaysBasis === "TOTAL_COST"
-                ? "Total Quoted Cost - each invoice charges the parent the full quoted total."
-                : initialConfig.defaultServiceAmount
-                  ? `Default First Payment of ${formatCents(initialConfig.defaultServiceAmount)} per invoice.`
-                  : "Default First Payment - amount not set yet by the provider."}
-          </p>
-        </div>
-      ) : (
+      {/* Parent Pays Basis is ultimately the PROVIDER's decision (part of
+          their onboarding), but it stays fully editable here too - the admin
+          can fill it in when the answer is already known. It is only REQUIRED
+          on the provider side; the admin can save the fee economics alone. */}
       <div className="rounded-lg border p-4 space-y-3 bg-card">
-        <Label>Parent Pays Basis</Label>
+        <Label>
+          Parent Pays Basis
+          {!isProviderMode && <span className="t-helper ml-2 font-normal">(the provider's call - optional here, they set it during onboarding)</span>}
+        </Label>
         <div className="space-y-2">
           {/* Total Quoted Cost option */}
           <label
@@ -320,7 +306,7 @@ export function ReferralFeeConfigSection({
                     placeholder="e.g. 10,000"
                     value={defaultServiceAmount}
                     onChange={setDefaultServiceAmount}
-                    required
+                    required={isProviderMode}
                     aria-invalid={defaultFirstPaymentMissing}
                   />
                   <p className="t-helper">
@@ -342,7 +328,6 @@ export function ReferralFeeConfigSection({
             : "Each invoice charges the parent the Default First Payment above. The provider can still send a cost sheet that drives the GoStork % calculation."}
         </p>
       </div>
-      )}
 
       {/* Sample Total Quoted Cost (drives preview when basis = TOTAL_COST or
           fee = PERCENTAGE). The input and its live preview share one white
