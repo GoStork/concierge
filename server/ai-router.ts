@@ -74,7 +74,8 @@ function getAnthropicClient(): Anthropic {
 export async function warmupGeminiConnection(): Promise<void> {
   try {
     const model = geminiAI.getGenerativeModel({ model: "gemini-3.5-flash" });
-    await model.generateContent("hi");
+    const warm = await model.generateContent("hi");
+    trackGemini("tier2-prewarm", "gemini-3.5-flash", warm);
     console.log("[GEMINI] Tier2 connection pre-warmed");
   } catch (e: any) {
     console.log(`[GEMINI] Pre-warm failed (non-critical): ${e.message}`);
