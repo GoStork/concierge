@@ -36,6 +36,14 @@ if [ "$LOCAL" != "$BASE" ]; then
 fi
 
 # Count attempts against THIS remote SHA.
+#
+# NOTE: unlike the MacBook script, this one does not pull - the daemon does,
+# inside run-server.sh. That makes the "pull exited 0 but HEAD did not move"
+# case self-handling: the only thing that clears this counter is LOCAL actually
+# reaching REMOTE (above). A daemon pull that silently no-ops leaves LOCAL !=
+# REMOTE, so the next cycle increments ATTEMPT and counts it as the failure it
+# is. Do not "improve" this by resetting the counter on a successful kickstart -
+# that reintroduces the silent-staleness bug this cap exists to catch.
 LAST_REMOTE=""; LAST_COUNT=0
 if [ -r "$STATE_FILE" ]; then
   read -r LAST_REMOTE LAST_COUNT < "$STATE_FILE" 2>/dev/null || true
@@ -49,12 +57,19 @@ fi
 mkdir -p "$(dirname "$STATE_FILE")"
 echo "$REMOTE $ATTEMPT" > "$STATE_FILE"
 
+# Past the cap: stay quiet MOST cycles, but every NAG_EVERY-th cycle shout AND
+# retry. Pure suppression was the first version of this guard and it was wrong:
+# once an operator cleaned the tree, nothing ever tried again, so the box stayed
+# silently stale until a human happened to notice - the exact failure the cap was
+# added to prevent, just quieter. Retrying 1-in-NAG_EVERY means a fixed tree
+# self-heals within ~30 minutes with no knowledge of this state file required.
 if [ "$ATTEMPT" -gt "$MAX_ATTEMPTS" ]; then
-  # Suppressed. Nag periodically so a wedge is visible without flooding the log.
-  if [ $((ATTEMPT % NAG_EVERY)) -eq 0 ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') WEDGED: $ATTEMPT attempts to reach ${REMOTE:0:7} have not advanced HEAD (still ${LOCAL:0:7}). Restarts suppressed. Check: git -C $REPO status --porcelain, and grep 'PULL FAILED' /tmp/gostork-server.log"
+  if [ $((ATTEMPT % NAG_EVERY)) -ne 0 ]; then
+    exit 0
   fi
-  exit 0
+  echo "$(date '+%Y-%m-%d %H:%M:%S') WEDGED: $ATTEMPT attempts to reach ${REMOTE:0:7} have not advanced HEAD (still ${LOCAL:0:7}). This box is running STALE CODE. Check: git -C $REPO status --porcelain, and grep 'PULL FAILED' /tmp/gostork-server.log"
+  echo "$(date '+%Y-%m-%d %H:%M:%S') retrying anyway (1 in $NAG_EVERY) in case the tree was fixed"
+  # falls through to the kickstart below
 fi
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') new commits ${LOCAL:0:7}..${REMOTE:0:7} -> restarting daemon (pull+build) [attempt $ATTEMPT/$MAX_ATTEMPTS]"

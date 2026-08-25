@@ -86,7 +86,11 @@ Then follow the install steps below.
    domain. The installed filename should be `com.gostork.nightly-sync.plist`:
    ```bash
    chmod +x ops/imac-nightly-sync/run-server.sh
+   # Write to a temp name and mv into place - never overwrite a live launchd
+   # file in situ (see "Install live files atomically" below).
    sudo cp ops/imac-nightly-sync/com.gostork.nightly-sync.daemon.plist \
+           /Library/LaunchDaemons/.com.gostork.nightly-sync.plist.new
+   sudo mv /Library/LaunchDaemons/.com.gostork.nightly-sync.plist.new \
            /Library/LaunchDaemons/com.gostork.nightly-sync.plist
    sudo chown root:wheel /Library/LaunchDaemons/com.gostork.nightly-sync.plist
    sudo chmod 644        /Library/LaunchDaemons/com.gostork.nightly-sync.plist
@@ -112,6 +116,67 @@ Then follow the install steps below.
    If the log shows permission errors reading `~/Documents`, re-grant **Full Disk
    Access to `/bin/bash`** (step 2) - the daemon runs the same `/bin/bash`, so the
    existing grant should carry over, but a fresh grant fixes it if not.
+
+## Auto-sync (pull + restart ~60s after a push to main)
+
+Separate from the daemon above. `~/.gostork/auto-sync.sh`, driven by the
+`com.gostork.autosync` LaunchAgent (StartInterval 60), notices when
+`origin/main` has moved and kickstarts the daemon, which does the actual pull
+inside `run-server.sh`. The versioned copy is `auto-sync.sh` in this directory -
+it was unversioned until 2026-08-25, which is how the two dev boxes silently
+drifted apart.
+
+    cp ops/imac-nightly-sync/auto-sync.sh ~/.gostork/auto-sync.sh.new
+    mv ~/.gostork/auto-sync.sh.new ~/.gostork/auto-sync.sh
+    chmod +x ~/.gostork/auto-sync.sh
+
+### Install live files atomically
+
+Use `cp` to a temp name then `mv`, never a plain `cp` over the live file. The
+agent fires every 60 seconds, so a straight overwrite can land while bash is
+mid-execution - and bash reads a script incrementally by byte offset, so it
+resumes at whatever now sits at that offset. On 2026-08-25 the MacBook did
+exactly this and got:
+
+    ~/.gostork/auto-sync.sh: line 23: om.gostork.nightly-sync: command not found
+
+bash resuming into the middle of a comment line. Harmless that time; on a script
+that does something destructive mid-file, or one running as root, it would not
+be. `mv` swaps the inode, so anything already running finishes on the old file.
+
+`run-server.sh` is covered against the same hazard from the other direction: the
+daemon runs it straight from the repo and it `git pull`s itself, so its body is
+wrapped in `main()` - bash parses the whole function before executing any of it.
+Keep `main "$@"` as the last line.
+
+### Failure behaviour
+
+Attempts are counted per remote SHA, so every new push starts fresh. The counter
+clears the moment the box is in sync.
+
+- attempts 1-5: kickstart the daemon each cycle
+- attempts 6-29: silent, so a wedge does not flood the log
+- every 30th attempt: log `WEDGED ... running STALE CODE` with the diagnostic
+  commands **and kickstart anyway** - so a tree an operator has since cleaned
+  self-heals within ~30 minutes instead of staying stale forever
+- the daemon's pull exiting 0 without moving HEAD is inherently counted as a
+  failure here, because only `local == remote` clears the counter
+
+Why the cap exists: before 2026-08-25 this kickstarted every 60s for as long as
+`local != remote`. When the daemon's pull could not succeed - a dirty
+`package-lock.json` aborts `git pull --rebase` - nothing advanced HEAD, the
+condition stayed true, and the iMac restarted **8,772 times over six days** on
+70-commit-stale code while every log line looked like normal progress.
+
+### Do not cross-install with the MacBook
+
+`ops/macbook-autosync/` is a deliberately different design - it pulls inside the
+agent with `--autostash` and kickstarts `gui/<uid>/com.gostork.server` only
+after HEAD actually moves. That launchd label **does not exist on the iMac**,
+and `system/com.gostork.nightly-sync` does not exist on the MacBook. Installing
+either script on the other box makes every kickstart a silent no-op - auto-deploy
+stops while the log still looks healthy. Comparison table:
+`ops/macbook-autosync/README.md`.
 
 ## Keeping the Mac awake
 
