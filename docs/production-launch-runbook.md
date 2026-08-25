@@ -1019,6 +1019,43 @@ Three things that must be true before launch:
   launch whether production gets its own billing account; at minimum label the
   projects so cost reports are attributable.
 
+### 9f. Gemini 3.7 migration: batch done, Eva blocked on an SDK role
+
+Batch Gemini work moved to `gemini-3.7-flash` on 2026-08-25 (half the input
+price, **2.4x cheaper output** - and output is ~95% of spend). Eva did not move,
+for a specific and fixable reason worth recording so nobody retries it blind.
+
+- [x] **Batch paths on 3.7.** Verified: identical donor extraction, slightly
+  faster, -55% per call. googleSearch grounding also verified working on 3.7.
+- [ ] **Eva/Tier 2 on 3.7 - blocked on the SDK, not the model.** 3.7 returns
+  `400 Role 'function' is not supported` for tool responses;
+  `@google/generative-ai` hardcodes that role. Every tool-calling turn fails
+  instantly. Unblocking means porting the Tier 1/2 tool loop to
+  `@google/genai` (already a dependency), then re-running the 73-test suite.
+  Worth scheduling - it is the same ~57% saving on the chat paths.
+- [x] **`thinkingBudget: 0` is silently ignored by 3.7** - use
+  `thinkingLevel: "low"`. Handled by `thinkingOff(model)`; probe any new model
+  and read `usageMetadata.thoughtsTokenCount` rather than assuming.
+
+Measured on an identical pool and concurrency, so the numbers are comparable:
+
+| Config | Suite result |
+|---|---|
+| 3.5 (baseline) | **73 passed / 1 failed** (the known TD-13 chronic) |
+| 3.7, thinking ignored | 50/24, then 49/25 - all incomplete SSE |
+| 3.7, thinking correctly off | 44/30 - all `400 Role 'function'` |
+
+Two process lessons from that table, both of which cost hours:
+
+- **The first 3.7 run scored 4/70 and was nearly recorded as "3.7 fails".** It
+  was measuring nothing: `TEST_SERVER_POOL` pointed at port 5002, which on the
+  MacBook is another project's `vite preview`. Always confirm the pool is
+  serving GoStork before trusting a suite result (`scripts/start-test-servers.sh`
+  now enforces this).
+- **Always run the control.** The 3.5 baseline on the same pool is what
+  separated "3.7 is broken" from "this machine is overloaded" - reasoning from
+  the failure pattern alone pointed confidently at the wrong answer.
+
 ### 9d. Prisma CLI must stay pinned
 
 `npm run build` shells out to `npx prisma generate`. `prisma` was never in

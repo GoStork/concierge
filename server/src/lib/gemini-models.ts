@@ -34,7 +34,31 @@
 /** Extraction / scraping / classification / enrichment. */
 export const GEMINI_BATCH_MODEL = process.env.GEMINI_BATCH_MODEL || "gemini-3.7-flash";
 
-/** Eva and anything else a human reads in real time. */
+/**
+ * Eva and anything else a human reads in real time.
+ *
+ * PINNED TO 3.5 BY A HARD BLOCKER, not by caution. gemini-3.7-flash rejects the
+ * tool-response role this SDK emits:
+ *
+ *   400 Bad Request: Role 'function' is not supported. Please use a valid role:
+ *   SYSTEM, SYSTEM_1, USER, ASSISTANT, DEVELOPER, CONTEXT, USER_CONTEXT, MODEL, USER.
+ *
+ * `@google/generative-ai` hardcodes `{ role: "function" }` when it builds the
+ * function-response turn (dist/index.mjs, the `functionContent` literal). 3.5
+ * accepts that role; 3.7 does not. So EVERY Tier 2 turn that calls a tool -
+ * which is most of them - fails instantly on 3.7. Measured: 44/74 with the
+ * failures all "connection closed after 31 bytes", versus 73/74 on 3.5 with the
+ * identical pool and concurrency.
+ *
+ * Batch work is unaffected because it does not use function calling.
+ * googleSearch grounding was verified working on 3.7 separately.
+ *
+ * Moving Eva to 3.7 therefore means migrating the Tier 1/Tier 2 tool loop to
+ * `@google/genai` (already a dependency for the image paths), which sends
+ * function responses in the modern shape. That is a real refactor of the most
+ * load-bearing code in the product, gated on the 73-test concierge suite - not
+ * a config flip. The prize is worth scheduling: ~57% off the chat paths too.
+ */
 export const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || "gemini-3.5-flash";
 
 /**
