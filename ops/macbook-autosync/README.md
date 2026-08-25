@@ -8,6 +8,23 @@ Versioned copy of what runs on the MacBook. Installed as:
 Was unversioned until 2026-08-25, which is exactly how the two dev boxes
 drifted apart without anyone noticing.
 
+## Install it atomically
+
+    cp auto-sync.sh ~/.gostork/auto-sync.sh.new && mv ~/.gostork/auto-sync.sh.new ~/.gostork/auto-sync.sh
+
+Use `mv`, never a plain `cp` over the live file. The LaunchAgent fires every 60
+seconds, so a straight overwrite has a good chance of landing while bash is
+mid-execution - and bash reads a script incrementally by byte offset, so it
+resumes at whatever now sits at that offset. Doing exactly that on 2026-08-25
+produced:
+
+    ~/.gostork/auto-sync.sh: line 23: om.gostork.nightly-sync: command not found
+
+which is bash resuming into the middle of a comment line in the new file. One
+cycle, harmless here, but the same trick on a script that *does* something
+destructive mid-file would not be. `mv` swaps the inode; anything already
+running keeps reading the old one to completion.
+
 ## This is NOT the iMac's mechanism
 
 `ops/imac-nightly-sync/` is a different design. Do not install one over the
