@@ -6,6 +6,13 @@ server/public
 vite.config.ts.*
 *.tar.gz
 .env
+# .env alone did not cover backups. A .env.bak-ab holding DATABASE_URL sat
+# untracked on 2026-08-25 and would have been swept into the repo by any
+# `git add -A`. Per-machine env files are never committed - see CLAUDE.md.
+.env.*
+# Committed templates stay committed. .env.production.example is tracked today;
+# the negation keeps a future re-add from being shadowed by the line above.
+!*.example
 public/
 *.png
 *.jpg
