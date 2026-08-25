@@ -14,7 +14,7 @@ set -euo pipefail
 
 # Absolute path to the repo on the iMac. The iMac's working clone is GitHub-iMac
 # (NOT plain GitHub). Override with GOSTORK_REPO_DIR from the plist if it moves.
-REPO_DIR="${GOSTORK_REPO_DIR:-$HOME/Documents/GitHub-iMac/concierge}"
+REPO_DIR="${GOSTORK_REPO_DIR:-$HOME/GitHub-iMac/concierge}"
 cd "$REPO_DIR"
 
 export NODE_ENV=production
@@ -26,7 +26,27 @@ export ENABLE_NIGHTLY_SCHEDULER=true
 # vite build then fails to resolve the import, and - because of `set -e` - this
 # script died before `exec`, so launchd KeepAlive restarted it every ~2s forever
 # and the server never came up at all. That silently killed 2 nights of syncs.
-git pull origin main --rebase || echo "[run-server] git pull failed - running existing build"
+#
+# `git pull --rebase` ABORTS on any unstaged change ("cannot pull with rebase:
+# You have unstaged changes") and this used to be a swallowed one-line warning.
+# Aug 19-25 2026: a stray npm-generated package-lock.json (just `"peer": true`
+# noise) made every pull abort, so this script booted the PREVIOUS build, and
+# auto-sync - seeing local != remote a minute later - kickstarted it again.
+# 8,772 restarts over six days, all on 70-commit-stale code, with nobody
+# alerted. So: auto-recover from the one file that is always safe to discard
+# (npm rewrites package-lock.json from package.json), and if the pull still
+# fails, fail LOUDLY and greppably instead of pretending it worked.
+if ! git pull origin main --rebase; then
+  if ! git diff --quiet -- package-lock.json 2>/dev/null; then
+    echo "[run-server] pull blocked by a modified package-lock.json (npm noise) - discarding it and retrying"
+    git checkout -- package-lock.json || true
+  fi
+  if ! git pull origin main --rebase; then
+    echo "[run-server] PULL FAILED - booting the existing build on STALE code. Dirty working tree:"
+    git status --porcelain | head -20
+    echo "[run-server] PULL FAILED - clean the working tree or this machine restarts every 60s and never advances. HEAD=$(git rev-parse --short HEAD 2>/dev/null) origin/main=$(git rev-parse --short origin/main 2>/dev/null)"
+  fi
+fi
 # --include=dev is REQUIRED: NODE_ENV=production is exported above, which makes
 # a bare `npm install` skip AND prune devDependencies - deleting vite/esbuild
 # and guaranteeing the build below fails forever (stale-dist fallback on every
