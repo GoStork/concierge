@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.gostork.autosync</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>/Users/eranamir/.gostork/auto-sync.sh</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>GS_REPO_DIR</key><string>/Users/eranamir/Documents/GitHub/concierge</string>
+    <key>GS_AUTO_PUSH</key><string>0</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>/tmp/gostork-autosync.log</string>
+  <key>StandardErrorPath</key><string>/tmp/gostork-autosync.log</string>
+</dict></plist>
