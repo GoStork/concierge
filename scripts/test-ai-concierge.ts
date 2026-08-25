@@ -1846,6 +1846,11 @@ async function fetchWithServerRetry(url: string, options: RequestInit, maxWaitMs
   }
 }
 
+// Per-attempt SSE read budget. Raise it (or drop TEST_CONCURRENCY) when a
+// loaded machine makes legitimate turns run long - a turn that needs 120s is
+// slow, not broken, and should not be reported as a stream failure.
+const ABORT_MS = parseInt(process.env.TEST_ABORT_MS || "100000", 10);
+
 async function sendMessage(cookie: string, message: string, sessionId: string | null, baseUrl: string = BASE_URL): Promise<TurnResult> {
   const body: Record<string, unknown> = { message };
   if (sessionId) body.sessionId = sessionId;
@@ -1866,10 +1871,10 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
       await new Promise(r => setTimeout(r, wait));
     }
 
-    // Per-attempt timeout: abort after 100s if the body never finishes.
+    // Per-attempt timeout: abort if the body never finishes.
     // (The outer withTimeout at MSG_TIMEOUT_MS=180s is the hard deadline for all attempts combined.)
     const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), 100_000);
+    const abortTimer = setTimeout(() => controller.abort(), ABORT_MS);
 
     try {
       const res = await fetchWithServerRetry(`${baseUrl}/api/ai-concierge/chat`, {
@@ -1909,10 +1914,26 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
           } catch {}
         }
         if (!gotDone) {
-          // Truncated stream - server restarted while AI was processing.
-          // Retry: the session is in the DB so the AI will have full context.
-          if (attempt < 2) continue;
-          throw new Error("Incomplete SSE response: server restarted mid-stream (3 attempts exhausted)");
+          // Stream ended without a "done" event. Report WHY, and do not guess.
+          //
+          // This used to read "server restarted mid-stream" unconditionally,
+          // which is a cause it never checked. On 2026-08-25 that message sent
+          // an investigation chasing a phantom Gemini 3.7 regression for hours:
+          // the servers had not restarted at all (same pids throughout), the
+          // real cause was this function's own 100s per-attempt abort firing on
+          // turns that legitimately take longer under 3-way parallel load, and
+          // NOT ONE of the 24 "failures" was an assertion failure. An error
+          // message that asserts an unverified cause is worse than one that
+          // says "I don't know" - it stops the reader from looking further.
+          const aborted = controller.signal.aborted;
+          const why = aborted
+            ? `hit the ${ABORT_MS / 1000}s per-attempt timeout (turn still in flight; try a lower TEST_CONCURRENCY)`
+            : `connection closed after ${text.length} bytes with no "done" event (server restart, proxy timeout, or crash)`;
+          if (attempt < 2) {
+            console.log(`  [retry] SSE incomplete - ${why}`);
+            continue;
+          }
+          throw new Error(`Incomplete SSE response: ${why} (3 attempts exhausted)`);
         }
         if (/\[\[MATCH_CARD:/i.test(content)) hasCard = true;
         return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid, consultationProviderId: consultPid };
