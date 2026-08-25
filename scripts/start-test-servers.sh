@@ -48,26 +48,61 @@ if [[ ! -f "dist/index.cjs" ]]; then
 fi
 
 # Launch one server per port.
+#
+# Ports are CLAIMED, not assumed. This used to walk 5001,5002,5003 blindly -
+# but 5002 on the MacBook is nutrition-planner's `vite preview`, which answers
+# 200 on / and so passed the old readiness check while being incapable of
+# serving the concierge API. Every test sharded onto it died with "Lost server
+# connection mid-response" and a 480s timeout, which reads exactly like a model
+# or application regression. One 54-minute run (4 passed / 70 failed) was thrown
+# away chasing that on 2026-08-25 before anyone looked at who owned the port.
+#
+# So: skip any port already held by someone else, and after starting, require
+# that the port is held by the pid WE launched. A foreign 200 is not readiness.
 URLS=()
-for ((i=0; i<COUNT; i++)); do
-  PORT=$((5001 + i))
+PORT=5001
+STARTED=0
+while (( STARTED < COUNT )); do
+  if (( PORT > 5100 )); then
+    echo "ERROR: ran out of candidate ports below 5100 (started $STARTED of $COUNT)." >&2
+    exit 1
+  fi
+  HOLDER="$(lsof -ti :"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
+  if [[ -n "$HOLDER" ]]; then
+    WHO="$(ps -o command= -p "$HOLDER" 2>/dev/null | cut -c1-70)"
+    echo "  - port $PORT already held by pid $HOLDER ($WHO) - skipping"
+    PORT=$((PORT + 1))
+    continue
+  fi
   LOG="/tmp/server-${PORT}.log"
   echo "Starting server on port $PORT (log: $LOG)..."
   PORT="$PORT" nohup node dist/index.cjs > "$LOG" 2>&1 &
-  URLS+=("http://localhost:${PORT}")
-done
+  SPAWNED=$!
 
-# Wait for each port to start serving (10s each at most).
-sleep 3
-for ((i=0; i<COUNT; i++)); do
-  PORT=$((5001 + i))
-  for t in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -sI "http://localhost:${PORT}/" >/dev/null 2>&1; then
-      echo "  ✓ Port $PORT ready"
+  READY=0
+  for t in $(seq 1 30); do
+    sleep 1
+    HOLDER="$(lsof -ti :"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
+    # The listener must be the process we just spawned (or its child), not a
+    # squatter that happens to answer on this port.
+    if [[ -n "$HOLDER" ]] && { [[ "$HOLDER" == "$SPAWNED" ]] || [[ "$(ps -o ppid= -p "$HOLDER" 2>/dev/null | tr -d ' ')" == "$SPAWNED" ]]; }; then
+      echo "  ✓ Port $PORT ready (pid $HOLDER, ours)"
+      READY=1
       break
     fi
-    sleep 1
+    if ! kill -0 "$SPAWNED" 2>/dev/null; then
+      echo "  ✗ Port $PORT: process died on startup - see $LOG" >&2
+      break
+    fi
   done
+
+  if (( READY )); then
+    URLS+=("http://localhost:${PORT}")
+    STARTED=$((STARTED + 1))
+  else
+    echo "  ✗ Port $PORT did not come up as ours - skipping" >&2
+  fi
+  PORT=$((PORT + 1))
 done
 
 POOL="$(IFS=,; echo "${URLS[*]}")"
