@@ -226,7 +226,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 
 **Database / ORM**
 - `drizzle-kit@^0.31.8`
-- `prisma@^7.9.1`
+- `prisma@^7.4.0`
 
 **Build / tooling**
 - `@replit/vite-plugin-cartographer@^0.4.4`

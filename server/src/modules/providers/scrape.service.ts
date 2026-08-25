@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as cheerio from "cheerio";
 import { trackGemini } from "../../lib/gemini-usage";
-import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
+import { GEMINI_BATCH_MODEL, thinkingOff } from "../../lib/gemini-models";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -1533,7 +1533,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   const model = genAI.getGenerativeModel({
     model: GEMINI_BATCH_MODEL,
     generationConfig: {
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: thinkingOff(GEMINI_BATCH_MODEL),
     } as any,
   });
 

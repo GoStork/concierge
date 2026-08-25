@@ -37,7 +37,7 @@ import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Cost
 import { looksLikeProfileQuestion as isInterrogativeShaped } from "./question-shape";
 import { turnTimingStore, newTurnTimings, mark, recordToolCall, recordInterceptor, snapshotTurnTimings, timeSpan } from "./turn-timing";
 import { trackGemini } from "./src/lib/gemini-usage";
-import { GEMINI_CHAT_MODEL } from "./src/lib/gemini-models";
+import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
 
 // Tier2 model id, resolved once so the cost meter and the SDK call can never
 // disagree about which model was billed. TIER2_MODEL overrides for A/B.
@@ -143,7 +143,7 @@ async function callTier1Gemini(
   // raw into the API request - a plain string there is a guaranteed 400.
   const model = geminiAI.getGenerativeModel({
     model: GEMINI_CHAT_MODEL,
-    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+    generationConfig: { thinkingConfig: thinkingOff(GEMINI_CHAT_MODEL) } as any,
     systemInstruction: fullSystemT1,
   });
 
@@ -569,7 +569,7 @@ async function callTier2Claude(
     // TIER2_MODEL overrides for A/B (e.g. gemini-3.1-flash-lite); default stays
     // the flagship - the whole 73-test suite is tuned against it.
     model: TIER2_MODEL_NAME,
-    ...(process.env.TIER2_THINKING === "1" ? {} : { generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }),
+    ...(process.env.TIER2_THINKING === "1" ? {} : { generationConfig: { thinkingConfig: thinkingOff(TIER2_MODEL_NAME) } as any }),
     ...(geminiTools ? { tools: geminiTools as any } : {}),
     systemInstruction: fullSystem,
   });
@@ -1547,7 +1547,7 @@ async function claudeRetry(messages: any[]): Promise<string> {
     // without it, and the hidden reasoning phase (~5-7s, measured 2026-07-17)
     // was the bulk of the 9.3s/6.6s interceptor fires in the Session-2
     // baseline. Retries are rewrite tasks, not reasoning tasks.
-    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+    generationConfig: { thinkingConfig: thinkingOff(GEMINI_CHAT_MODEL) } as any,
     ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
   });
   const chat = model.startChat({ history: chatHistory });
@@ -1581,7 +1581,7 @@ async function claudeRetryStream(messages: any[], onDelta: (delta: string) => vo
   const userMessage = lastMsg.parts[0].text;
   const model = geminiAI.getGenerativeModel({
     model: GEMINI_CHAT_MODEL,
-    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+    generationConfig: { thinkingConfig: thinkingOff(GEMINI_CHAT_MODEL) } as any,
     ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
   });
   const chat = model.startChat({ history: chatHistory });

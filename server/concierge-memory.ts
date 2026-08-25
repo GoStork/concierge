@@ -24,7 +24,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { isAdminOrConcierge } from "./chat-router";
 import { trackGemini } from "./src/lib/gemini-usage";
-import { GEMINI_CHAT_MODEL } from "./src/lib/gemini-models";
+import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -40,7 +40,7 @@ async function fastJson(system: string, user: string, maxTokens = 500): Promise<
     const model = genAI.getGenerativeModel({
       model: GEMINI_CHAT_MODEL,
       systemInstruction: system,
-      generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } as any,
+      generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json", thinkingConfig: thinkingOff(GEMINI_CHAT_MODEL) } as any,
     });
     const memRes = await model.generateContent(user);
     trackGemini("concierge-memory", GEMINI_CHAT_MODEL, memRes);
@@ -70,7 +70,7 @@ async function fastText(system: string, user: string, maxTokens = 600): Promise<
     const model = genAI.getGenerativeModel({
       model: GEMINI_CHAT_MODEL,
       systemInstruction: system,
-      generationConfig: { temperature: 0, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } } as any,
+      generationConfig: { temperature: 0, maxOutputTokens: maxTokens, thinkingConfig: thinkingOff(GEMINI_CHAT_MODEL) } as any,
     });
     const textRes = await model.generateContent(user);
     trackGemini("concierge-memory", GEMINI_CHAT_MODEL, textRes);

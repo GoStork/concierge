@@ -36,3 +36,34 @@ export const GEMINI_BATCH_MODEL = process.env.GEMINI_BATCH_MODEL || "gemini-3.7-
 
 /** Eva and anything else a human reads in real time. */
 export const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || "gemini-3.5-flash";
+
+/**
+ * The "don't think, just answer" generation config for a given model.
+ *
+ * THE TRAP: the parameter changed between model generations and the old one
+ * fails SILENTLY. gemini-3.5-flash honours `thinkingBudget: 0`. gemini-3.7-flash
+ * IGNORES it - no error, no warning, it simply thinks anyway. Measured
+ * 2026-08-25 on an identical prompt:
+ *
+ *   3.5 + thinkingBudget:0     2228ms   0 thinking tokens
+ *   3.7 + thinkingBudget:0     7664ms   617 thinking tokens   <- ignored
+ *   3.7 + thinkingLevel:"low"  2144ms   0 thinking tokens     <- correct
+ *
+ * That silence cost a full afternoon. Moving Tier 2 to 3.7 made concierge turns
+ * slow enough to blow the test harness's 100s per-attempt SSE budget, producing
+ * 24 failures that looked like a streaming or quality regression - while the
+ * model's answers were in fact never once wrong. Hidden thinking also bills as
+ * OUTPUT, the expensive column, so an ignored budget quietly costs money too.
+ *
+ * `"off"`, `"none"` and `"minimal"` are all REJECTED by the API; `"low"` is the
+ * value that actually yields zero thinking tokens.
+ *
+ * When adding a model here, PROBE it - do not assume it inherited the previous
+ * generation's parameter. Send one prompt each way and read
+ * `usageMetadata.thoughtsTokenCount`; anything above 0 means the knob was
+ * ignored.
+ */
+export function thinkingOff(model: string): Record<string, unknown> {
+  if (model.startsWith("gemini-3.7")) return { thinkingLevel: "low" };
+  return { thinkingBudget: 0 };
+}

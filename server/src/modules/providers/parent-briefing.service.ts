@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { trackGemini } from "../../lib/gemini-usage";
-import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
+import { GEMINI_BATCH_MODEL, thinkingOff } from "../../lib/gemini-models";
 
 /**
  * The private parent briefing.
@@ -180,7 +180,7 @@ export class ParentBriefingService {
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 2048,
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: thinkingOff(GEMINI_BATCH_MODEL),
       } as any,
     });
 

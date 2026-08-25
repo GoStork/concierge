@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { trackGemini } from "../../lib/gemini-usage";
-import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
+import { GEMINI_BATCH_MODEL, thinkingOff } from "../../lib/gemini-models";
 
 /**
  * One sentence, in the donor's or surrogate's own words, for the top of their
@@ -139,7 +139,7 @@ export async function selectHighlightQuote(profileData: any): Promise<string | n
       temperature: 0,
       // Without this, 3.5-flash spends the whole output budget thinking and
       // the response arrives truncated mid-preamble ("Here is the JSON requ").
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: thinkingOff(GEMINI_BATCH_MODEL),
       maxOutputTokens: 1024,
       responseMimeType: "application/json",
     } as any,
