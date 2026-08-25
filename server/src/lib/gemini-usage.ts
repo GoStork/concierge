@@ -135,12 +135,35 @@ export function startGeminiUsageFlush(
     void flushGeminiUsage();
   }, intervalMs);
   flushTimer.unref?.();
-  const onExit = () => {
-    void flushGeminiUsage();
+
+  // Signal handling here is a LIABILITY, not a feature. Node's default action
+  // for SIGTERM/SIGINT is to terminate; the moment you register a listener that
+  // default is replaced by your listener. A first cut of this file registered a
+  // handler that only flushed and never exited, which silently made the server
+  // unkillable: `lsof -ti :5001 | xargs kill` (the documented restart in
+  // CLAUDE.md) stopped working, and `systemctl stop` on the prod VM would have
+  // hung until systemd's SIGKILL timeout. These are the only signal handlers in
+  // the app, so nothing else was going to call exit for us.
+  //
+  // So: flush, then exit with the conventional 128+signo, and never let a slow
+  // DB write hold shutdown open. Metering must never change process lifecycle.
+  let exiting = false;
+  const onSignal = (signo: number) => () => {
+    if (exiting) return;
+    exiting = true;
+    const done = () => process.exit(128 + signo);
+    const guard = setTimeout(done, 2000);
+    guard.unref?.();
+    void flushGeminiUsage().finally(() => {
+      clearTimeout(guard);
+      done();
+    });
   };
-  process.once("SIGTERM", onExit);
-  process.once("SIGINT", onExit);
-  process.once("beforeExit", onExit);
+  process.once("SIGTERM", onSignal(15));
+  process.once("SIGINT", onSignal(2));
+  // beforeExit fires only on a natural empty-event-loop exit, never on signals
+  // or process.exit(), so it is additive and cannot block anything.
+  process.once("beforeExit", () => { void flushGeminiUsage(); });
 }
 
 /**
