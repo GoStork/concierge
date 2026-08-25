@@ -25,6 +25,7 @@ import * as crypto from "crypto";
 import { Readable } from "stream";
 import { GoogleGenAI } from "@google/genai";
 import { StorageService } from "../storage/storage.service";
+import { trackGemini } from "../../lib/gemini-usage";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 const PERSONAS_DIR = path.resolve(process.cwd(), "server/personas");
@@ -527,6 +528,9 @@ export class UploadsController {
           responseModalities: ["IMAGE"],
         },
       });
+
+      // Image output bills at $60/M tokens - the priciest call in the app.
+      trackGemini("logo-background-removal", "gemini-3.1-flash-image", response);
 
       const parts = response?.candidates?.[0]?.content?.parts;
       if (!parts) {

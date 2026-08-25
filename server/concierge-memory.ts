@@ -23,6 +23,7 @@ import jwt from "jsonwebtoken";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { isAdminOrConcierge } from "./chat-router";
+import { trackGemini } from "./src/lib/gemini-usage";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -40,7 +41,9 @@ async function fastJson(system: string, user: string, maxTokens = 500): Promise<
       systemInstruction: system,
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } as any,
     });
-    const out = (await model.generateContent(user)).response.text().trim();
+    const memRes = await model.generateContent(user);
+    trackGemini("concierge-memory", "gemini-3.5-flash", memRes);
+    const out = memRes.response.text().trim();
     // The model occasionally returns trailing junk (or two concatenated
     // objects) even in JSON mode - parse the FIRST balanced object.
     try {
@@ -68,7 +71,9 @@ async function fastText(system: string, user: string, maxTokens = 600): Promise<
       systemInstruction: system,
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } } as any,
     });
-    return (await model.generateContent(user)).response.text().trim();
+    const textRes = await model.generateContent(user);
+    trackGemini("concierge-memory", "gemini-3.5-flash", textRes);
+    return textRes.response.text().trim();
   } catch (e: any) {
     console.warn(`[memory] fastText failed: ${e?.message}`);
     return "";

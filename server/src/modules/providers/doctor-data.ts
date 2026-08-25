@@ -15,6 +15,7 @@
  */
 
 import type { GoogleGenerativeAI } from "@google/generative-ai";
+import { trackGemini } from "../../lib/gemini-usage";
 
 // "default" means assumed, not observed - currently only English on a
 // US-practising doctor. It is a distinct value on purpose: it keeps assumed
@@ -455,6 +456,7 @@ Return ONLY the JSON object.`;
   let text: string;
   try {
     const result = await model.generateContent(prompt);
+    trackGemini("doctor-data", "gemini-3.5-flash", result);
     text = result.response.text();
   } catch {
     return null;

@@ -927,6 +927,63 @@ restore.
   volume (~1,385 profiles/day) and the reload failures were a symptom of the
   loop, not a standing misconfiguration. Revisit only if real volume grows.
 
+### 9c. Gemini spend: metering, budget alerts, and project separation
+
+Incident that produced this section (2026-08-20..23): the `resumeInterruptedDonorSyncs`
+loop fixed in b0ee5d93 burned **~$845 of Gemini in four days** - 8,499 failed
+auto-resume runs, each re-enumerating a full donor catalog through
+`extractDonorsFromPage` before dying at ~60s. Measured from Cloud Monitoring
+after the fact:
+
+| Day | Input tokens | Output tokens | Cost |
+|---|---|---|---|
+| Aug 19 (normal) | 42,315 | 242,572 | $2.25 |
+| Aug 20 | 5,586,268 | 22,479,456 | $210.69 |
+| Aug 21 | 10,214,265 | 35,478,674 | $334.63 |
+| Aug 22 | 3,352,145 | 6,937,179 | $67.46 |
+| Aug 23 | 29,135,012 | 12,689,052 | $231.98 |
+| Aug 24 (fixed) | 1,961,197 | 1,709,938 | $18.33 |
+
+Three things that must be true before launch:
+
+- [ ] **Output tokens are the cost, not input.** gemini-3.5-flash bills
+  $1.50/M in but **$9.00/M out** (Cloud Billing Catalog, service
+  `AEFD-7695-64FA`, read 2026-08-25). 95% of the incident cost was output.
+  Any "reduce the prompt size" optimisation is aimed at the cheap half - size
+  the *response*, not the request. `gemini-3.1-flash-image` output is
+  **$60/M**: one doctor-photo upscale run cost $87 on Aug 23 alone.
+- [ ] **The meter now exists - keep it wired.** `server/src/lib/gemini-usage.ts`
+  logs `[gemini-cost] subsystem=... cost=$...` per call and flushes a per-day
+  rollup to `GeminiUsage` every 60s. Grep the server log, or:
+  `SELECT day, subsystem, SUM("costUsd") FROM "GeminiUsage" GROUP BY 1,2 ORDER BY 1 DESC;`
+  When adding a NEW Gemini call site, add a `trackGemini(subsystem, model, result)`
+  line next to it - an uninstrumented call is invisible spend. Unknown models
+  log `UNPRICED`; add them to `PRICES`.
+- [ ] **Set a real GCP budget alert on billing account `01AAE7-19EFE9-CE6C03`.**
+  There was none during the incident - the only warning was an "early signal
+  anomaly" email that arrived a day late, and the auto-reload cap notice.
+- [ ] **Raise auto-reload before launch.** $50 top-up at a $50/day burn means
+  the balance is always one busy day from zero, and hitting Google's daily
+  payment-count cap (which happened 3x: Aug 21 twice, Aug 23) can dry the
+  balance and stop the API. Google's guidance is 3x average daily spend.
+- [ ] **The billing account is shared across FIVE projects** - `gostork`,
+  `gen-lang-client-0051391254` (GoStork 3 = the app's Gemini), and also
+  `gen-lang-client-0377782308` (**AI-Health, an unrelated app**),
+  `babies-island`, `authentic-arch-323315`. So a $50 reload is NOT all GoStork,
+  and GoStork's Gemini cost cannot be read off the invoice total. Decide before
+  launch whether production gets its own billing account; at minimum label the
+  projects so cost reports are attributable.
+
+### 9d. Prisma CLI must stay pinned
+
+`npm run build` shells out to `npx prisma generate`. `prisma` was never in
+package.json, so npx resolved it from the registry - and once 8.0.0-rc shipped
+(which no longer registers `generate`) **every build broke**, on every machine,
+with no code change. Pinned to `prisma@^7.4.0` in devDependencies 2026-08-25.
+
+- [ ] Keep the `prisma` devDependency major-locked to `@prisma/client`. Never
+  rely on npx resolving a CLI from the registry inside a build script.
+
 ## 10. Security hardening (pre-launch)
 
 - [ ] PandaDoc webhook signature verification (section 5).

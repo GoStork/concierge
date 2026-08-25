@@ -18,6 +18,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import { trackGemini } from "./gemini-usage";
 
 // gemini-3.1-flash-image: faithful enhancement (~9s). The older
 // gemini-2.5-flash-image REGENERATED the photo (plasticky AI face); the 3.x
@@ -65,6 +66,10 @@ export async function upscaleImageBuffer(
       ],
       config: { responseModalities: ["IMAGE"] },
     });
+    // Image OUTPUT tokens bill at $60/M - 6.7x the text rate. A single
+    // doctor-photo upscale run cost $87 on 2026-08-23, so this one is worth
+    // watching closely.
+    trackGemini("photo-upscale", UPSCALE_MODEL, response);
     const parts = response?.candidates?.[0]?.content?.parts || [];
     for (const p of parts) {
       if (p?.inlineData?.data) {

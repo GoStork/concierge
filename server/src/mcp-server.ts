@@ -13,6 +13,7 @@ import { computeClinicSuccessRate, type EggSource, type AgeGroup } from "./lib/i
 import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "./lib/doctor-enrichment.js";
 import { resolveCompensationAndTotalCost, getMatchedCostSheetItems } from "./modules/costs/total-cost.utils.js";
 import { fetchImageBytes, searchByImage, type FaceEntityType } from "./modules/face/face-recognition.service.js";
+import { trackGemini } from "./lib/gemini-usage";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -41,6 +42,7 @@ async function detectPhotoAttributes(bytes: Buffer): Promise<{ hairColor?: strin
       { inlineData: { mimeType: "image/jpeg", data: bytes.toString("base64") } },
       { text: `Look at the main person's face. Return ONLY JSON: {"hairColor":"Red|Blonde|Brown|Black|Gray|Other","ethnicity":"Caucasian|Hispanic|Asian|Black|Middle Eastern|South Asian|Other"} based on visible appearance.` },
     ] as any);
+    trackGemini("photo-attributes", "gemini-3.5-flash", res);
     const txt = res.response.text();
     const j = txt.substring(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
     return JSON.parse(j);

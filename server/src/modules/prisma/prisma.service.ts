@@ -438,6 +438,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.$executeRawUnsafe.bind(prisma);
   }
 
+  get geminiUsage() {
+    return prisma.geminiUsage;
+  }
+
   get $queryRawUnsafe() {
     return prisma.$queryRawUnsafe.bind(prisma);
   }

@@ -36,6 +36,11 @@ import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Cost
 // shadows the imported name inside the /chat handler scope.
 import { looksLikeProfileQuestion as isInterrogativeShaped } from "./question-shape";
 import { turnTimingStore, newTurnTimings, mark, recordToolCall, recordInterceptor, snapshotTurnTimings, timeSpan } from "./turn-timing";
+import { trackGemini } from "./src/lib/gemini-usage";
+
+// Tier2 model id, resolved once so the cost meter and the SDK call can never
+// disagree about which model was billed. TIER2_MODEL overrides for A/B.
+const TIER2_MODEL_NAME = process.env.TIER2_MODEL || "gemini-3.5-flash";
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -169,6 +174,8 @@ async function callTier1Gemini(
     const text = chunk.text();
     if (text) { fullText += text; sse.sendToken(text); }
   }
+  // Usage is only final on the resolved response, never on the stream chunks.
+  try { trackGemini("concierge-tier1", "gemini-3.5-flash", await result.response); } catch { /* metering only */ }
 
   // Strip questions that Gemini bundles at the end of long educational messages.
   // These questions must appear as standalone messages so the user sees them clearly
@@ -559,7 +566,7 @@ async function callTier2Claude(
   const model = geminiAI.getGenerativeModel({
     // TIER2_MODEL overrides for A/B (e.g. gemini-3.1-flash-lite); default stays
     // the flagship - the whole 73-test suite is tuned against it.
-    model: process.env.TIER2_MODEL || "gemini-3.5-flash",
+    model: TIER2_MODEL_NAME,
     ...(process.env.TIER2_THINKING === "1" ? {} : { generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }),
     ...(geminiTools ? { tools: geminiTools as any } : {}),
     systemInstruction: fullSystem,
@@ -1005,6 +1012,7 @@ async function callTier2Claude(
   const streamTurn = async (message: any): Promise<{ text: string; functionCalls: any[]; response: any }> => {
     if (forceNonStream) {
       const r = await chat.sendMessage(message);
+      trackGemini("concierge-tier2", TIER2_MODEL_NAME, r);
       const resp = r.response;
       const fcs = resp.functionCalls() || [];
       const txt = fcs.length === 0 ? (resp.text() || "") : (() => { try { return resp.text() || ""; } catch { return ""; } })();
@@ -1021,6 +1029,7 @@ async function callTier2Claude(
     // match cards start vanishing again, flip TIER2_STREAM=0 first.
     if (process.env.TIER2_STREAM === "0") {
       const r = await chat.sendMessage(message);
+      trackGemini("concierge-tier2", TIER2_MODEL_NAME, r);
       const resp = r.response;
       const fcs = resp.functionCalls() || [];
       const txt = fcs.length === 0 ? (resp.text() || "") : (() => { try { return resp.text() || ""; } catch { return ""; } })();
@@ -1050,6 +1059,7 @@ async function callTier2Claude(
       }
     }
     const response = await result.response;
+    trackGemini("concierge-tier2", TIER2_MODEL_NAME, response);
     const functionCalls = response.functionCalls() || [];
     // Flush the tail (or a short-but-final reply that never crossed the peek window)
     if (!freshPhotoUpload && functionCalls.length === 0 && text.length > forwarded) {
@@ -1540,6 +1550,7 @@ async function claudeRetry(messages: any[]): Promise<string> {
   });
   const chat = model.startChat({ history: chatHistory });
   const result = await chat.sendMessage(userMessage);
+  trackGemini("concierge-retry", "gemini-3.5-flash", result);
   return result.response.text();
 }
 

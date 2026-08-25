@@ -20,6 +20,7 @@ import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 import { applyAsrmGate } from "./asrm";
 import { dedupeEntityPhotos } from "./photo-dedup";
 import { resolveDonorLocation } from "@shared/donor-location";
+import { trackGemini } from "../../lib/gemini-usage";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -1619,6 +1620,7 @@ ${imgTags.slice(0, 10000)}`;
       model.generateContent(prompt),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Gemini extraction timed out after 120s")), 120000)),
     ]);
+    trackGemini("donor-catalog", "gemini-3.5-flash", result);
     const text = result.response.text().trim();
     console.log(`[donor-sync] Gemini response received (${text.length} chars)`);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -1768,6 +1770,7 @@ ${imgTags.slice(0, 5000)}`;
           ),
         ]),
       );
+      trackGemini("donor-profile", "gemini-3.5-flash", result);
       const text = (result as any).response.text().trim();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -4293,6 +4296,7 @@ ${uncached.map((f, i) => `${i + 1}. "${f}"`).join("\n")}
 Return ONLY a valid JSON object mapping each input field string to either the matching canonical field name or "SKIP". Example: {"What is your job?": "Occupation", "Favorite color": "SKIP"}`;
 
     const result = await model.generateContent(prompt);
+    trackGemini("donor-field-normalize", "gemini-3.5-flash", result);
     const text = result.response.text().trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return {};
@@ -7769,6 +7773,7 @@ async function processSinglePdf(
           const prompt = pdfPromptTemplate + `\n\nHere is the text content extracted from a surrogate profile PDF:\n\n${extractedText.substring(0, 30000)}`;
           result = await model.generateContent(prompt);
         }
+        trackGemini("pdf-bulk-upload", "gemini-3.5-flash", result);
         return parseJsonRobust(result.response.text());
       })(),
     ]);

@@ -14,6 +14,7 @@ import { AppModule } from "./src/app.module";
 import { SpaFallbackFilter } from "./src/filters/spa-fallback.filter";
 import { PrismaService } from "./src/modules/prisma/prisma.service";
 import { startNightlySyncScheduler, runCatchUpIfStale } from "./src/modules/providers/nightly-sync.scheduler";
+import { startGeminiUsageFlush } from "./src/lib/gemini-usage";
 import { runNightlySync, getNightlySyncStatus } from "./src/modules/providers/profile-sync.service";
 import { StorageService } from "./src/modules/storage/storage.service";
 import { startCalendarHealthScheduler } from "./src/modules/calendar/calendar-health.scheduler";
@@ -324,6 +325,38 @@ export function log(message: string, source = "nestjs") {
   // shared DB and they pile up. Set ENABLE_NIGHTLY_SCHEDULER=true on exactly ONE
   // host if you ever want the in-process cron instead of the pinger. The atomic
   // NightlySyncLock is the safety net either way.
+  // Gemini spend meter. Deliberately started OUTSIDE the PASSIVE_MODE branch:
+  // this is not a sweep, and a passive instance still serves chat traffic and
+  // still spends money. Buffers in memory and flushes a per-day rollup every
+  // 60s - never a write per call, since one donor sync makes thousands.
+  startGeminiUsageFlush(async (rows) => {
+    for (const r of rows) {
+      const day = new Date(`${r.day}T00:00:00.000Z`);
+      await prismaService.geminiUsage.upsert({
+        where: { day_subsystem_model: { day, subsystem: r.subsystem, model: r.model } },
+        create: {
+          day,
+          subsystem: r.subsystem,
+          model: r.model,
+          calls: r.calls,
+          inputTokens: r.inputTokens,
+          outputTokens: r.outputTokens,
+          cachedTokens: r.cachedTokens,
+          costUsd: r.costUsd,
+        },
+        // Increment, never overwrite - both Macs and the prod VM can write the
+        // same (day, subsystem, model) row concurrently.
+        update: {
+          calls: { increment: r.calls },
+          inputTokens: { increment: r.inputTokens },
+          outputTokens: { increment: r.outputTokens },
+          cachedTokens: { increment: r.cachedTokens },
+          costUsd: { increment: r.costUsd },
+        },
+      });
+    }
+  });
+
   if (PASSIVE_MODE) {
     log("[PASSIVE_MODE] Schedulers disabled - no sweeps, reminders, or watchdogs run on this instance");
   } else {

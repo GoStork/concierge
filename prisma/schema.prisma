@@ -3665,3 +3665,30 @@ model TrolleyWebhookEvent {
   error      String?
   createdAt  DateTime @default(now())
 }
+
+
+// Per-day Gemini spend rollup, one row per (day, subsystem, model).
+// Written by the 60s flush loop in server/src/lib/gemini-usage.ts - never per
+// call, because a single donor sync makes thousands of calls.
+//
+// Exists because the Aug 20-23 2026 crash-loop incident (~$845 of Gemini in
+// four days) could not be attributed from the codebase at all; the breakdown
+// had to be rebuilt from Cloud Monitoring afterwards. costUsd is computed at
+// write time from the Cloud Billing Catalog prices baked into that module, so
+// a later price change does not silently rewrite history.
+model GeminiUsage {
+  id           String   @id @default(uuid())
+  day          DateTime @db.Date
+  subsystem    String
+  model        String
+  calls        Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  cachedTokens Int      @default(0)
+  costUsd      Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([day, subsystem, model])
+  @@index([day])
+}

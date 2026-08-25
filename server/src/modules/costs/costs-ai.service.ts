@@ -19,6 +19,7 @@ import {
   isPayTo,
   isPaymentTrigger,
 } from "../../../../shared/payment-schedule";
+import { trackGemini } from "../../lib/gemini-usage";
 
 /**
  * One payment stage extracted from a cost sheet's installment plan.
@@ -265,6 +266,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
         model.generateContent(`${systemPrompt}\n\nDocument content (CSV):\n${textContent}`),
         timeoutPromise,
       ]);
+      trackGemini("cost-sheet-parse-csv", "gemini-3.5-flash", result);
       const responseText = result.response.text();
       return this.parseJsonResponse(responseText);
     } else {
@@ -307,6 +309,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
         ]),
         timeoutPromise,
       ]);
+      trackGemini("cost-sheet-parse-doc", "gemini-3.5-flash", result);
       const responseText = result.response.text();
       return this.parseJsonResponse(responseText);
     }
@@ -811,6 +814,7 @@ ${subtypeTrailingNote}`;
         }
       }
       const finalResponse = await streamResult.response;
+      trackGemini("cost-sheet-parse-stream", "gemini-3.5-flash", finalResponse);
       return { text: accumulated || finalResponse.text() };
     })();
 
@@ -1296,6 +1300,7 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
         model.generateContent(`${systemPrompt}\n\n${userPrompt}`),
         timeoutPromise,
       ]);
+      trackGemini("cost-sheet-classify", "gemini-3.5-flash", result);
       const text = result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {

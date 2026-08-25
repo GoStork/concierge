@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { trackGemini } from "../../lib/gemini-usage";
 
 /**
  * The private parent briefing.
@@ -185,6 +186,7 @@ export class ParentBriefingService {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const res = await model.generateContent(prompt);
+        trackGemini("parent-briefing", "gemini-3.5-flash", res);
         const text = (res.response.text() || "").trim();
         // Guard the truncation case directly: a body that ends mid-bullet or
         // mid-sentence is a failure wearing a success costume.

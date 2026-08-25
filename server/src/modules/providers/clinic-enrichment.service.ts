@@ -8,6 +8,7 @@ import { upscaleMissingDoctorPhotos } from "../../lib/upscale-doctors";
 import { US_STATES } from "./us-states";
 import { clusterPersonVariants, pickBestDisplayName } from "../../lib/doctor-name-dedup";
 import { isClinicianMember } from "./clinician";
+import { trackGemini } from "../../lib/gemini-usage";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -625,6 +626,7 @@ Return ONLY the specific location page URL. Do not include any other words. NEVE
         }),
       ]);
       clearTimeout(timeoutId!);
+      trackGemini("clinic-enrichment-acquisition", "gemini-3.5-flash", result);
       let text = result.response.text().trim();
 
       console.log(`[clinic-enrichment] Gemini acquisition raw response for "${clinicName}": "${text.substring(0, 200)}"`);
@@ -696,6 +698,7 @@ async function geminiWebsiteSearch(
           }),
         ]);
         clearTimeout(timeoutId!);
+        trackGemini("clinic-enrichment-website", "gemini-3.5-flash", result);
         let text = result.response.text().trim();
 
         console.log(`[clinic-enrichment] Gemini raw response for "${searchName}": "${text.substring(0, 200)}"`);

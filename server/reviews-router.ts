@@ -16,6 +16,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
 import { blockContactInfo } from "./contact-guard";
+import { trackGemini } from "./src/lib/gemini-usage";
 
 export const reviewsRouter = Router();
 
@@ -148,6 +149,7 @@ async function aiScreenReview(text: string | null | undefined): Promise<{ ok: bo
       `Honest criticism, negative experiences, and strong opinions are ALLOWED - do not flag them.\n` +
       `Respond as JSON: {"ok": boolean, "reasons": string[]}.\n\nREVIEW:\n${body}`,
     );
+    trackGemini("review-moderation", "gemini-3.5-flash", res);
     const parsed = JSON.parse(res.response.text());
     if (parsed.ok === true) return { ok: true, notes: null };
     return { ok: false, notes: (parsed.reasons || []).join("; ") || "flagged by screen" };

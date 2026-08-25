@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as cheerio from "cheerio";
+import { trackGemini } from "../../lib/gemini-usage";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -558,6 +559,7 @@ async function searchYearFounded(companyName: string, websiteUrl: string): Promi
     });
     const prompt = `Which year was "${companyName}" (${websiteUrl}) founded? Respond with ONLY the 4-digit year number. If you cannot determine it with certainty, respond with just "null".`;
     const result = await model.generateContent(prompt);
+    trackGemini("scrape-year-founded", "gemini-3.5-flash", result);
     const yearText = result.response.text().trim();
     const yearMatch = yearText.match(/(19|20)\d{2}/);
     if (yearMatch) {
@@ -1634,6 +1636,7 @@ Important rules:
   const yearFoundedPromise = searchYearFounded(jsonLdData.name || new URL(effectiveUrl).hostname, effectiveUrl);
 
   const result = await model.generateContent(prompt);
+  trackGemini("scrape-provider-site", "gemini-3.5-flash", result);
   const responseText = result.response.text().trim();
 
   let cleaned = responseText;

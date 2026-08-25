@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { trackGemini } from "../../lib/gemini-usage";
 
 /**
  * One sentence, in the donor's or surrogate's own words, for the top of their
@@ -163,6 +164,7 @@ ${source}
   let raw = "";
   try {
     const res = await model.generateContent(prompt);
+    trackGemini("highlight-quote", "gemini-3.5-flash", res);
     raw = res.response.text() || "";
   } catch (err: any) {
     console.error(`[highlight-quote] model call failed: ${err?.message || err}`);
