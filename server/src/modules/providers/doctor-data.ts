@@ -16,6 +16,7 @@
 
 import type { GoogleGenerativeAI } from "@google/generative-ai";
 import { trackGemini } from "../../lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
 // "default" means assumed, not observed - currently only English on a
 // US-practising doctor. It is a distinct value on purpose: it keeps assumed
@@ -431,7 +432,7 @@ export async function extractDoctorFieldsFromBio(
 ): Promise<BioFields | null> {
   if (!bio || bio.trim().length < 60) return null;
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: "application/json" } as any,
   });
   const prompt = `You are extracting structured facts about a fertility doctor from the text of their professional profile. Extract ONLY facts explicitly stated. Do NOT infer, guess, or add anything not literally present. Empty array / null if not stated.
@@ -456,7 +457,7 @@ Return ONLY the JSON object.`;
   let text: string;
   try {
     const result = await model.generateContent(prompt);
-    trackGemini("doctor-data", "gemini-3.5-flash", result);
+    trackGemini("doctor-data", GEMINI_BATCH_MODEL, result);
     text = result.response.text();
   } catch {
     return null;

@@ -14,6 +14,7 @@ import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "./lib/doctor-enrichment.
 import { resolveCompensationAndTotalCost, getMatchedCostSheetItems } from "./modules/costs/total-cost.utils.js";
 import { fetchImageBytes, searchByImage, type FaceEntityType } from "./modules/face/face-recognition.service.js";
 import { trackGemini } from "./lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "./lib/gemini-models";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -37,12 +38,12 @@ function hairFamily(s?: string | null): string {
 // similar to a HUMAN (e.g. red hair should match red hair). Best-effort.
 async function detectPhotoAttributes(bytes: Buffer): Promise<{ hairColor?: string; ethnicity?: string }> {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_BATCH_MODEL });
     const res = await model.generateContent([
       { inlineData: { mimeType: "image/jpeg", data: bytes.toString("base64") } },
       { text: `Look at the main person's face. Return ONLY JSON: {"hairColor":"Red|Blonde|Brown|Black|Gray|Other","ethnicity":"Caucasian|Hispanic|Asian|Black|Middle Eastern|South Asian|Other"} based on visible appearance.` },
     ] as any);
-    trackGemini("photo-attributes", "gemini-3.5-flash", res);
+    trackGemini("photo-attributes", GEMINI_BATCH_MODEL, res);
     const txt = res.response.text();
     const j = txt.substring(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
     return JSON.parse(j);

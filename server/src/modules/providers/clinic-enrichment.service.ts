@@ -9,6 +9,7 @@ import { US_STATES } from "./us-states";
 import { clusterPersonVariants, pickBestDisplayName } from "../../lib/doctor-name-dedup";
 import { isClinicianMember } from "./clinician";
 import { trackGemini } from "../../lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -599,7 +600,7 @@ async function geminiAcquisitionSearch(
   const BASE_DELAY_MS = 2000;
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: { temperature: 0 } as any,
     tools: [{ googleSearch: {} } as any],
   });
@@ -626,7 +627,7 @@ Return ONLY the specific location page URL. Do not include any other words. NEVE
         }),
       ]);
       clearTimeout(timeoutId!);
-      trackGemini("clinic-enrichment-acquisition", "gemini-3.5-flash", result);
+      trackGemini("clinic-enrichment-acquisition", GEMINI_BATCH_MODEL, result);
       let text = result.response.text().trim();
 
       console.log(`[clinic-enrichment] Gemini acquisition raw response for "${clinicName}": "${text.substring(0, 200)}"`);
@@ -678,7 +679,7 @@ async function geminiWebsiteSearch(
   const BASE_DELAY_MS = 2000;
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: { temperature: 0 } as any,
     tools: [{ googleSearch: {} } as any],
   });
@@ -698,7 +699,7 @@ async function geminiWebsiteSearch(
           }),
         ]);
         clearTimeout(timeoutId!);
-        trackGemini("clinic-enrichment-website", "gemini-3.5-flash", result);
+        trackGemini("clinic-enrichment-website", GEMINI_BATCH_MODEL, result);
         let text = result.response.text().trim();
 
         console.log(`[clinic-enrichment] Gemini raw response for "${searchName}": "${text.substring(0, 200)}"`);

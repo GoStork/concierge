@@ -173,6 +173,7 @@ model Provider {
   parentContactReleases                 ParentContactRelease[]
   parentNotes                           ParentNote[]
   parentTasks                           ParentTask[]
+  parentStageSnapshots                  ParentStageSnapshot[]
   parentOwners                          ParentOwner[]
   taskPlaybooks                         TaskPlaybook[]
 }
@@ -3189,6 +3190,13 @@ model ParentStageSnapshot {
   reachedAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // Must cascade exactly like ParentTask.providerId does. Without this FK,
+  // deleting a Provider left snapshots pointing at a dead id; the silence sweep
+  // read them and threw P2003 on parentTask.create, aborting the WHOLE sweep
+  // every cycle (server/silence-sweep.ts). 7 such orphans sat on DEV from
+  // 2026-08-12 until 2026-08-25.
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([parentAccountId, providerId, serviceLine])
   @@index([updatedAt])

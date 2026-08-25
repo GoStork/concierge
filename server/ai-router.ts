@@ -37,10 +37,11 @@ import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Cost
 import { looksLikeProfileQuestion as isInterrogativeShaped } from "./question-shape";
 import { turnTimingStore, newTurnTimings, mark, recordToolCall, recordInterceptor, snapshotTurnTimings, timeSpan } from "./turn-timing";
 import { trackGemini } from "./src/lib/gemini-usage";
+import { GEMINI_CHAT_MODEL } from "./src/lib/gemini-models";
 
 // Tier2 model id, resolved once so the cost meter and the SDK call can never
 // disagree about which model was billed. TIER2_MODEL overrides for A/B.
-const TIER2_MODEL_NAME = process.env.TIER2_MODEL || "gemini-3.5-flash";
+const TIER2_MODEL_NAME = process.env.TIER2_MODEL || GEMINI_CHAT_MODEL;
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -73,9 +74,9 @@ function getAnthropicClient(): Anthropic {
 // Pre-warm the Anthropic connection on startup to eliminate cold-start TLS handshake latency.
 export async function warmupGeminiConnection(): Promise<void> {
   try {
-    const model = geminiAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+    const model = geminiAI.getGenerativeModel({ model: GEMINI_CHAT_MODEL });
     const warm = await model.generateContent("hi");
-    trackGemini("tier2-prewarm", "gemini-3.5-flash", warm);
+    trackGemini("tier2-prewarm", GEMINI_CHAT_MODEL, warm);
     console.log("[GEMINI] Tier2 connection pre-warmed");
   } catch (e: any) {
     console.log(`[GEMINI] Pre-warm failed (non-critical): ${e.message}`);
@@ -141,7 +142,7 @@ async function callTier1Gemini(
   // runs formatSystemInstruction() on strings, while startChat() forwards the value
   // raw into the API request - a plain string there is a guaranteed 400.
   const model = geminiAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_CHAT_MODEL,
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
     systemInstruction: fullSystemT1,
   });
@@ -176,7 +177,7 @@ async function callTier1Gemini(
     if (text) { fullText += text; sse.sendToken(text); }
   }
   // Usage is only final on the resolved response, never on the stream chunks.
-  try { trackGemini("concierge-tier1", "gemini-3.5-flash", await result.response); } catch { /* metering only */ }
+  try { trackGemini("concierge-tier1", GEMINI_CHAT_MODEL, await result.response); } catch { /* metering only */ }
 
   // Strip questions that Gemini bundles at the end of long educational messages.
   // These questions must appear as standalone messages so the user sees them clearly
@@ -1541,7 +1542,7 @@ async function claudeRetry(messages: any[]): Promise<string> {
   if (!lastMsg) return "";
   const userMessage = lastMsg.parts[0].text;
   const model = geminiAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_CHAT_MODEL,
     // Same thinking-disable as Tier1/Tier2: this was the LAST model path
     // without it, and the hidden reasoning phase (~5-7s, measured 2026-07-17)
     // was the bulk of the 9.3s/6.6s interceptor fires in the Session-2
@@ -1551,7 +1552,7 @@ async function claudeRetry(messages: any[]): Promise<string> {
   });
   const chat = model.startChat({ history: chatHistory });
   const result = await chat.sendMessage(userMessage);
-  trackGemini("concierge-retry", "gemini-3.5-flash", result);
+  trackGemini("concierge-retry", GEMINI_CHAT_MODEL, result);
   return result.response.text();
 }
 
@@ -1579,7 +1580,7 @@ async function claudeRetryStream(messages: any[], onDelta: (delta: string) => vo
   if (!lastMsg) return "";
   const userMessage = lastMsg.parts[0].text;
   const model = geminiAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_CHAT_MODEL,
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
     ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
   });

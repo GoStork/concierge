@@ -27,6 +27,10 @@
 type Price = { input: number; output: number };
 const PRICES: Record<string, Price> = {
   "gemini-3.5-flash": { input: 1.5e-6, output: 9.0e-6 },
+  // 3.6 and 3.7 are priced identically - half the input, 2.4x cheaper output
+  // than 3.5. Since output is ~95% of our spend, that is a ~57% cut.
+  "gemini-3.7-flash": { input: 0.75e-6, output: 3.75e-6 },
+  "gemini-3.6-flash": { input: 0.75e-6, output: 3.75e-6 },
   "gemini-3.5-flash-lite": { input: 0.3e-6, output: 2.5e-6 },
   // Image model: output tokens are IMAGE tokens at $60/M - 6.7x the text rate.
   // One doctor-photo upscale run on 2026-08-23 cost $87 on its own.

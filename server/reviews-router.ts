@@ -17,6 +17,7 @@ import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
 import { blockContactInfo } from "./contact-guard";
 import { trackGemini } from "./src/lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "./src/lib/gemini-models";
 
 export const reviewsRouter = Router();
 
@@ -139,7 +140,7 @@ async function aiScreenReview(text: string | null | undefined): Promise<{ ok: bo
   if (!body) return { ok: true, notes: null };
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_BATCH_MODEL,
       generationConfig: { temperature: 0, maxOutputTokens: 512, responseMimeType: "application/json" } as any,
     });
     const res = await model.generateContent(
@@ -149,7 +150,7 @@ async function aiScreenReview(text: string | null | undefined): Promise<{ ok: bo
       `Honest criticism, negative experiences, and strong opinions are ALLOWED - do not flag them.\n` +
       `Respond as JSON: {"ok": boolean, "reasons": string[]}.\n\nREVIEW:\n${body}`,
     );
-    trackGemini("review-moderation", "gemini-3.5-flash", res);
+    trackGemini("review-moderation", GEMINI_BATCH_MODEL, res);
     const parsed = JSON.parse(res.response.text());
     if (parsed.ok === true) return { ok: true, notes: null };
     return { ok: false, notes: (parsed.reasons || []).join("; ") || "flagged by screen" };

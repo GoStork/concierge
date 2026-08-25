@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as cheerio from "cheerio";
 import { trackGemini } from "../../lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -553,13 +554,13 @@ async function fetchTeamPage(url: string, timeoutMs = 45000): Promise<{ html: st
 async function searchYearFounded(companyName: string, websiteUrl: string): Promise<number | null> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_BATCH_MODEL,
       generationConfig: { temperature: 0 } as any,
       tools: [{ googleSearch: {} } as any],
     });
     const prompt = `Which year was "${companyName}" (${websiteUrl}) founded? Respond with ONLY the 4-digit year number. If you cannot determine it with certainty, respond with just "null".`;
     const result = await model.generateContent(prompt);
-    trackGemini("scrape-year-founded", "gemini-3.5-flash", result);
+    trackGemini("scrape-year-founded", GEMINI_BATCH_MODEL, result);
     const yearText = result.response.text().trim();
     const yearMatch = yearText.match(/(19|20)\d{2}/);
     if (yearMatch) {
@@ -1530,7 +1531,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   combinedTeamHtml = combinedTeamHtml.slice(0, 40000);
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: {
       thinkingConfig: { thinkingBudget: 0 },
     } as any,
@@ -1636,7 +1637,7 @@ Important rules:
   const yearFoundedPromise = searchYearFounded(jsonLdData.name || new URL(effectiveUrl).hostname, effectiveUrl);
 
   const result = await model.generateContent(prompt);
-  trackGemini("scrape-provider-site", "gemini-3.5-flash", result);
+  trackGemini("scrape-provider-site", GEMINI_BATCH_MODEL, result);
   const responseText = result.response.text().trim();
 
   let cleaned = responseText;

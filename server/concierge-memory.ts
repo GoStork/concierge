@@ -24,6 +24,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { isAdminOrConcierge } from "./chat-router";
 import { trackGemini } from "./src/lib/gemini-usage";
+import { GEMINI_CHAT_MODEL } from "./src/lib/gemini-models";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -37,12 +38,12 @@ const KINDS = new Set(["PREFERENCE", "CONSTRAINT", "GOAL", "FACT", "DECISION"]);
 async function fastJson(system: string, user: string, maxTokens = 500): Promise<any | null> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_CHAT_MODEL,
       systemInstruction: system,
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } as any,
     });
     const memRes = await model.generateContent(user);
-    trackGemini("concierge-memory", "gemini-3.5-flash", memRes);
+    trackGemini("concierge-memory", GEMINI_CHAT_MODEL, memRes);
     const out = memRes.response.text().trim();
     // The model occasionally returns trailing junk (or two concatenated
     // objects) even in JSON mode - parse the FIRST balanced object.
@@ -67,12 +68,12 @@ async function fastJson(system: string, user: string, maxTokens = 500): Promise<
 async function fastText(system: string, user: string, maxTokens = 600): Promise<string> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_CHAT_MODEL,
       systemInstruction: system,
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } } as any,
     });
     const textRes = await model.generateContent(user);
-    trackGemini("concierge-memory", "gemini-3.5-flash", textRes);
+    trackGemini("concierge-memory", GEMINI_CHAT_MODEL, textRes);
     return textRes.response.text().trim();
   } catch (e: any) {
     console.warn(`[memory] fastText failed: ${e?.message}`);

@@ -47,6 +47,7 @@ import {
   type ConsentGate,
 } from "./consultation-gates";
 import { trackGemini } from "./src/lib/gemini-usage";
+import { GEMINI_CHAT_MODEL } from "./src/lib/gemini-models";
 
 const storageService = new StorageService();
 
@@ -2211,14 +2212,14 @@ chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async 
     ).join("\n");
 
     const model = providerAssistantAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_CHAT_MODEL,
       systemInstruction: `${promptSection.content}\n\n${personaBlock}${context}`,
     });
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: `${historyText ? `CONVERSATION SO FAR:\n${historyText}\n\n` : ""}PROVIDER (${senderDisplayName}): ${content.trim()}` }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } } as any,
     });
-    trackGemini("provider-assistant", "gemini-3.5-flash", result);
+    trackGemini("provider-assistant", GEMINI_CHAT_MODEL, result);
     const aiText = result.response.text()?.trim();
     if (!aiText) {
       // Loud failure - never fabricate an assistant reply

@@ -21,6 +21,7 @@ import { applyAsrmGate } from "./asrm";
 import { dedupeEntityPhotos } from "./photo-dedup";
 import { resolveDonorLocation } from "@shared/donor-location";
 import { trackGemini } from "../../lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -1596,7 +1597,7 @@ export async function extractDonorsFromPage(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: { temperature: 0 } as any,
   });
 
@@ -1620,7 +1621,7 @@ ${imgTags.slice(0, 10000)}`;
       model.generateContent(prompt),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Gemini extraction timed out after 120s")), 120000)),
     ]);
-    trackGemini("donor-catalog", "gemini-3.5-flash", result);
+    trackGemini("donor-catalog", GEMINI_BATCH_MODEL, result);
     const text = result.response.text().trim();
     console.log(`[donor-sync] Gemini response received (${text.length} chars)`);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -1741,7 +1742,7 @@ async function extractProfileDetailSections(
     { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, threshold: "BLOCK_ONLY_HIGH" as any },
   ];
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: { temperature: 0 } as any,
     safetySettings,
   });
@@ -1770,7 +1771,7 @@ ${imgTags.slice(0, 5000)}`;
           ),
         ]),
       );
-      trackGemini("donor-profile", "gemini-3.5-flash", result);
+      trackGemini("donor-profile", GEMINI_BATCH_MODEL, result);
       const text = (result as any).response.text().trim();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -4282,7 +4283,7 @@ async function normalizeFieldsWithAI(fields: string[]): Promise<Record<string, s
 
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_BATCH_MODEL,
       generationConfig: { temperature: 0 } as any,
     });
 
@@ -4296,7 +4297,7 @@ ${uncached.map((f, i) => `${i + 1}. "${f}"`).join("\n")}
 Return ONLY a valid JSON object mapping each input field string to either the matching canonical field name or "SKIP". Example: {"What is your job?": "Occupation", "Favorite color": "SKIP"}`;
 
     const result = await model.generateContent(prompt);
-    trackGemini("donor-field-normalize", "gemini-3.5-flash", result);
+    trackGemini("donor-field-normalize", GEMINI_BATCH_MODEL, result);
     const text = result.response.text().trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return {};
@@ -7756,7 +7757,7 @@ async function processSinglePdf(
       (async () => {
         if (isJobCancelled(job.id)) return null;
         const model = genAI.getGenerativeModel({
-          model: "gemini-3.5-flash",
+          model: GEMINI_BATCH_MODEL,
           generationConfig: { responseMimeType: "application/json" },
         });
         let result: any;
@@ -7773,7 +7774,7 @@ async function processSinglePdf(
           const prompt = pdfPromptTemplate + `\n\nHere is the text content extracted from a surrogate profile PDF:\n\n${extractedText.substring(0, 30000)}`;
           result = await model.generateContent(prompt);
         }
-        trackGemini("pdf-bulk-upload", "gemini-3.5-flash", result);
+        trackGemini("pdf-bulk-upload", GEMINI_BATCH_MODEL, result);
         return parseJsonRobust(result.response.text());
       })(),
     ]);

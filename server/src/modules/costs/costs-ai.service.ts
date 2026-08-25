@@ -20,6 +20,7 @@ import {
   isPaymentTrigger,
 } from "../../../../shared/payment-schedule";
 import { trackGemini } from "../../lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
 /**
  * One payment stage extracted from a cost sheet's installment plan.
@@ -233,7 +234,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
       textContent = csvParts.join("\n\n");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
+        model: GEMINI_BATCH_MODEL,
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -266,14 +267,14 @@ Return ONLY a valid JSON array with objects having these exact fields:
         model.generateContent(`${systemPrompt}\n\nDocument content (CSV):\n${textContent}`),
         timeoutPromise,
       ]);
-      trackGemini("cost-sheet-parse-csv", "gemini-3.5-flash", result);
+      trackGemini("cost-sheet-parse-csv", GEMINI_BATCH_MODEL, result);
       const responseText = result.response.text();
       return this.parseJsonResponse(responseText);
     } else {
       const base64Data = fileBuffer.toString("base64");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
+        model: GEMINI_BATCH_MODEL,
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -309,7 +310,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
         ]),
         timeoutPromise,
       ]);
-      trackGemini("cost-sheet-parse-doc", "gemini-3.5-flash", result);
+      trackGemini("cost-sheet-parse-doc", GEMINI_BATCH_MODEL, result);
       const responseText = result.response.text();
       return this.parseJsonResponse(responseText);
     }
@@ -761,7 +762,7 @@ ${subtypeTrailingNote}`;
     }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: GEMINI_BATCH_MODEL,
       generationConfig: {
         temperature: 0,
         // 32k headroom: long cost sheets with 30+ items + comments easily
@@ -814,7 +815,7 @@ ${subtypeTrailingNote}`;
         }
       }
       const finalResponse = await streamResult.response;
-      trackGemini("cost-sheet-parse-stream", "gemini-3.5-flash", finalResponse);
+      trackGemini("cost-sheet-parse-stream", GEMINI_BATCH_MODEL, finalResponse);
       return { text: accumulated || finalResponse.text() };
     })();
 
@@ -1268,7 +1269,7 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
 
     try {
       const model = genAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
+        model: GEMINI_BATCH_MODEL,
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -1300,7 +1301,7 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
         model.generateContent(`${systemPrompt}\n\n${userPrompt}`),
         timeoutPromise,
       ]);
-      trackGemini("cost-sheet-classify", "gemini-3.5-flash", result);
+      trackGemini("cost-sheet-classify", GEMINI_BATCH_MODEL, result);
       const text = result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {

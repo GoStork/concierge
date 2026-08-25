@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { trackGemini } from "../../lib/gemini-usage";
+import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
 /**
  * One sentence, in the donor's or surrogate's own words, for the top of their
@@ -133,7 +134,7 @@ export async function selectHighlightQuote(profileData: any): Promise<string | n
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: GEMINI_BATCH_MODEL,
     generationConfig: {
       temperature: 0,
       // Without this, 3.5-flash spends the whole output budget thinking and
@@ -164,7 +165,7 @@ ${source}
   let raw = "";
   try {
     const res = await model.generateContent(prompt);
-    trackGemini("highlight-quote", "gemini-3.5-flash", res);
+    trackGemini("highlight-quote", GEMINI_BATCH_MODEL, res);
     raw = res.response.text() || "";
   } catch (err: any) {
     console.error(`[highlight-quote] model call failed: ${err?.message || err}`);
