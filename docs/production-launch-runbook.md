@@ -959,9 +959,22 @@ Three things that must be true before launch:
   When adding a NEW Gemini call site, add a `trackGemini(subsystem, model, result)`
   line next to it - an uninstrumented call is invisible spend. Unknown models
   log `UNPRICED`; add them to `PRICES`.
-- [ ] **Set a real GCP budget alert on billing account `01AAE7-19EFE9-CE6C03`.**
-  There was none during the incident - the only warning was an "early signal
-  anomaly" email that arrived a day late, and the auto-reload cap notice.
+- [x] **GCP budget alerts - DONE 2026-08-25.** There were none during the
+  incident (confirmed: the budget list was empty); the only warning was an
+  "early signal anomaly" email that arrived a day late. Two now exist on
+  billing account `01AAE7-19EFE9-CE6C03`, both monthly, both alerting at 90%
+  actual / 100% actual / **100% forecasted**, to billing admins by email:
+  | Budget | Amount | Scope |
+  |---|---|---|
+  | Gemini API spike detector | $900/mo | service `AEFD-7695-64FA` only |
+  | All GCP spend (account-wide) | $2,500/mo | every service, all 5 projects |
+  Sized as spike detectors, not monthly nags: normal Gemini is ~$400-550/mo
+  (44-61% of $900, so silent), while the incident's $210-335/day run rate
+  forecasts to ~$6-10k/mo and trips the FORECASTED rule within hours. The
+  $845 actual would also have crossed the 90% line by day 4.
+  Required enabling `billingbudgets.googleapis.com` on project `gostork`.
+  **At launch, re-point or duplicate these onto whatever billing account
+  production ends up on** - a budget is per-billing-account, not per-project.
 - [ ] **Raise auto-reload before launch.** $50 top-up at a $50/day burn means
   the balance is always one busy day from zero, and hitting Google's daily
   payment-count cap (which happened 3x: Aug 21 twice, Aug 23) can dry the
