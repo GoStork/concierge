@@ -927,6 +927,38 @@ restore.
   volume (~1,385 profiles/day) and the reload failures were a symptom of the
   loop, not a standing misconfiguration. Revisit only if real volume grows.
 
+### 9e. The prod deploy loop needs the same attempt cap as the dev boxes
+
+`gostork-2-prod` pulls `main` and runs `prisma migrate deploy` **every minute**.
+That is the same shape as the dev auto-sync loops, on the host where silently
+running stale code actually costs something.
+
+Both dev boxes have now been bitten by it and fixed differently
+(`ops/imac-nightly-sync/`, `ops/macbook-autosync/`). The failure is not "the
+pull errors" - it is that **the retry looks identical to progress**, so the log
+reads healthy while the box serves week-old code. The iMac did that for six days
+and 8,772 restarts; nobody noticed until a $845 Gemini bill forced an audit.
+
+- [ ] **Cap the retries per remote SHA on the prod VM** and log a greppable
+  `WEDGED ... running STALE CODE` after N failures, with the diagnostic
+  commands inline. Copy the shape from `ops/macbook-autosync/auto-sync.sh`
+  (both scripts are documented there); do NOT copy either file verbatim -
+  systemd units and paths differ, and a wrong `launchctl`/`systemctl` target
+  fails silently, which is the exact class of bug being fixed.
+- [ ] **Treat "HEAD did not move" as failure, not success.** A `git pull` that
+  exits 0 while HEAD stays put is the trap that recreates the bug after you
+  think you have fixed it.
+- [ ] **The retry must eventually retry again.** Suppressing forever after N
+  attempts leaves the host stale even after an operator fixes the tree. Shout
+  AND retry on an interval.
+- [ ] **Alert off it.** On prod, a wedge should reach a human (email/Slack via
+  the existing notification path), not just a log line on a box nobody reads.
+  A dev box can afford a log; production cannot.
+- [ ] **`prisma migrate deploy` makes a stale prod loop worse than a dev one:**
+  a wedged deploy can leave code and schema at different commits. Verify the
+  loop fails CLOSED (no partial deploy) rather than applying migrations from a
+  commit whose code never loaded.
+
 ### 9c. Gemini spend: metering, budget alerts, and project separation
 
 Incident that produced this section (2026-08-20..23): the `resumeInterruptedDonorSyncs`
