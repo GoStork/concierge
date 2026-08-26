@@ -1122,8 +1122,11 @@ connected accounts). Remaining tasks are dashboard/bank/insurance:
   for your team" ON; Eran's user has ONLY Authenticator app 2FA (no SMS method
   registered - the 1.0 vector is closed). Login is via Google SSO (no Stripe
   password set), so the Google account's security is part of the perimeter.
-  - [ ] Optional upgrade: add a passkey on Eran's profile (needs Eran's Touch
-    ID in person): https://dashboard.stripe.com/settings/user
+  - [x] Passkey already registered: "Eran's MacBook" (Touch ID) since May 19,
+    2026 - adding it again errors with "already registered", which is correct.
+  - [ ] Optional redundancy: register a SECOND passkey from the iPhone or iMac
+    (must be done on that device): https://dashboard.stripe.com/settings/user
+    And confirm the 24-character backup code is stored safely.
 - [x] Team audit DONE 2026-08-26: exactly 1 member (Eran, Owner/Super Admin),
   0 pending invites. Re-check quarterly + review
   https://dashboard.stripe.com/security_history
