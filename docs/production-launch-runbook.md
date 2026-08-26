@@ -1149,24 +1149,30 @@ connected accounts). Remaining tasks are dashboard/bank/insurance:
   Connected bank account changes, Connected accounts matching Radar rules,
   API key changes, Webhook failures. "Failed payments" email was OFF and is
   now on.
-- [ ] **Split the live keys (NEEDS A MAINTENANCE WINDOW - live payment creds
-  swap: create keys, one-time reveal, install in VM .env, restart, smoke test,
-  delete old key)**: main `STRIPE_SECRET_KEY` becomes a RESTRICTED key; create
-  a second restricted key with Connect account-write as
-  `STRIPE_CONNECT_ONBOARDING_KEY` (code already prefers it for
-  `accounts.create`): https://dashboard.stripe.com/apikeys
-  CAVEAT discovered 2026-08-26: Stripe's restricted-key "Accounts" permission
-  does not split create from update, and the app legitimately needs Connect
-  account WRITE for bank updates, Custom-KYC saves, payout-schedule edits, and
-  the sentry's freeze action. So the main key likely keeps Accounts=Write and
-  the REAL off-box protection is the IP allowlist (below); the split still
-  helps if the main key is scoped to Accounts=Read and account-write paths
-  (incl. sentry freeze - best-effort by design, the alert still fires) route
-  through the onboarding key. Decide the exact permission matrix during the
-  window.
-- [ ] IP-restrict both live restricted keys to the prod VM egress IP
-  (34.85.132.142) so a stolen key is useless off-box (only RESTRICTED keys
-  support IP allowlists - another reason for the swap; same window).
+- [x] **KEY SPLIT + IP ALLOWLIST DONE 2026-08-26** (Claude drove dashboard via
+  Chrome + installed on VM via `gcloud compute ssh --tunnel-through-iap`):
+  - `gostork-server` restricted key (rk_live_...8Jqv) = new
+    `STRIPE_SECRET_KEY` on the VM. "Platform and marketplace payments"
+    template, minus: Connect **Accounts=Read**, Account Links=None.
+  - `gostork-connect-admin` restricted key (rk_live_...qNW4) =
+    `STRIPE_CONNECT_ONBOARDING_KEY`. ONLY Connect Accounts=Write + Account
+    Links=Write (covers persons/external accounts/login links - no separate
+    Persons permission exists; commit 7b9cbed2 routes ALL account-admin ops
+    through it, incl. the sentry freeze).
+  - Access policy `gostork-prod-vm-only` (IP allowlist 34.85.132.142, marked
+    DEFAULT for future keys) assigned to gostork-server, gostork-connect-admin
+    AND the old standard sk_live key (access policies work on standard keys
+    too - the old key is IP-protected even before deletion).
+  - Verified: off-box API call rejected ("does not allow requests from your
+    IP address"); on-VM balance/payment_intents/account reads OK; service
+    restarted healthy (local + public 200); payout schedule still "manual";
+    deploy log shows dist rebuilt with the routing code (check for
+    STRIPE_CONNECT_ONBOARDING_KEY in dist - the function name is minified).
+  - .env backup at /srv/gostork/app/.env.bak-keyswap-20260826 (holds the old
+    sk_live - delete the backup after the old key is deleted).
+- [ ] Delete the old standard `sk_live_...K2hw` Secret key + the unused
+  May 18 unnamed "Restricted key" (rk_live_...mtoy) after Eran confirms -
+  then remove the .env backup above. Until then both are IP-locked anyway.
 - [x] Webhook events DONE 2026-08-26: gostork-2-main-billing now listens to 9
   events (+payout.created); gostork-2-connect now listens to 6 events
   (+account.external_account.created/updated/deleted). Handlers live in
