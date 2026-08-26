@@ -607,8 +607,10 @@ in this order:
 
 - [x] Google OAuth client: app.gostork.com + test-app redirect URIs present;
   publishing status = In production since 2026-08-19 (was Testing).
-- [~] **Google OAuth app verification** (sensitive calendar scopes) - 2026-08-26
-  prep DONE via Claude-driven Chrome session, ONE blocker left (demo video):
+- [~] **Google OAuth app verification** (sensitive calendar scopes) -
+  **SUBMITTED FOR REVIEW 2026-08-26** (Verification Center: "data access is
+  under review"); now waiting on Google (days-weeks; replies go to
+  eran.amir@gostork.com - answer promptly). Full prep trail:
   - [x] Client "GoStork Calendar": removed all 4 replit/ngrok redirect URIs;
     only app.gostork.com / gostork.com / test-app.gostork.com callbacks remain.
     **This intentionally broke NEW Google Calendar connects on both dev Macs'
@@ -624,16 +626,15 @@ in this order:
   - [x] Data Access: registered calendar.readonly + calendar.events
     (sensitive) + userinfo.email, with scope justification text (why
     freebusy/events-only are insufficient).
-  - [ ] **BLOCKER - demo video**: the final "Prepare for verification" Confirm
-    stays disabled until a YouTube link is set on the Data Access page.
-    Eran must record (Claude cannot sign into Google accounts): screen-record
-    the connect flow on test-app.gostork.com - Account > Calendar > Connect
-    Google Calendar, through the consent screen (unverified interstitial is
-    expected and MUST be shown), back to connected state + a booking creating
-    an event. Upload unlisted to YouTube, paste link in Data Access, then
-    Verification Center > Prepare for verification > Confirm ("Additional
-    info" text is already drafted from the session; retype if lost).
-    Until approved: "unverified app" warning + 100-user lifetime cap.
+  - [x] **Demo video recorded + submitted**: 52s screen recording of the
+    connect flow on test-app (Jered Mercer provider, verified GoStork
+    consent screen, connected state), unlisted on Eran's YouTube:
+    https://youtu.be/AtZLv4gaEPs (source .mov on the MacBook Desktop).
+    Link saved in Data Access; questionnaire answered (personal/internal/
+    dev-only/Gmail-SMTP all No), acknowledgments checked, **Submit for
+    verification clicked**. NOTE: branding verification ALONE already
+    removed the scary "unverified app" interstitial - the data-access
+    review mainly lifts the 100-user lifetime cap.
   - Verification is per GCP project/client, NOT per domain - the 1.0 app's
     approval (different client/project) does not cover this one.
   - [~] **Dev Macs on gostork.com custom domains** (2026-08-26): ngrok
