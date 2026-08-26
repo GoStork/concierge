@@ -1117,28 +1117,54 @@ metadata stamp; 24h charge-volume anomaly alarm; live-key pre-commit grep;
 `STRIPE_CONNECT_ONBOARDING_KEY` split so the everyday key cannot create
 connected accounts). Remaining tasks are dashboard/bank/insurance:
 
-- [ ] **2FA: passkeys or hardware security keys for EVERY team member; NO SMS
-  2FA anywhere on the account** (SMS was the 1.0 breach vector; passkeys also
-  defeat real-time phishing proxies that TOTP does not). Enforce "Require
-  two-step authentication for all team members":
-  https://dashboard.stripe.com/settings/security/authentication
-- [ ] Team audit: least-privilege roles, remove stale members, review the
-  security history log quarterly: https://dashboard.stripe.com/security_history
-- [ ] Turn ON all Stripe email + SMS account notifications:
-  https://dashboard.stripe.com/settings/communication-preferences
-- [ ] **Split the live keys**: main `STRIPE_SECRET_KEY` becomes a RESTRICTED
-  key with no Connect account-write permission; create a second restricted key
-  with account-write as `STRIPE_CONNECT_ONBOARDING_KEY` (code already prefers
-  it for `accounts.create`): https://dashboard.stripe.com/apikeys
-- [ ] IP-restrict both live keys to the prod VM egress IP (34.85.132.142) so a
-  stolen key is useless off-box (Dashboard > API keys > key > IP restrictions).
-- [ ] **Add the new webhook events to the live destinations**: platform
-  destination gostork-2-main-billing needs `payout.created` (payout sentry);
-  Connect destination gostork-2-connect needs
-  `account.external_account.created/updated/deleted` (bank-change heads-up).
-  Handlers are already live in billing.controller.ts / connect.controller.ts.
-- [ ] Enable Radar + card-testing protections on the live account; review the
-  default rules: https://dashboard.stripe.com/settings/radar
+- [x] **2FA audited 2026-08-26 (Claude drove Chrome, Eran logged in):** live
+  account (acct_1TYZ1aCGqwxDjN6V) already has "Require two-step authentication
+  for your team" ON; Eran's user has ONLY Authenticator app 2FA (no SMS method
+  registered - the 1.0 vector is closed). Login is via Google SSO (no Stripe
+  password set), so the Google account's security is part of the perimeter.
+  - [ ] Optional upgrade: add a passkey on Eran's profile (needs Eran's Touch
+    ID in person): https://dashboard.stripe.com/settings/user
+- [x] Team audit DONE 2026-08-26: exactly 1 member (Eran, Owner/Super Admin),
+  0 pending invites. Re-check quarterly + review
+  https://dashboard.stripe.com/security_history
+- [x] Notifications DONE 2026-08-26: Email+SMS enabled on every security-
+  relevant row across Account / Transactions and Balances / Connected accounts
+  / API tabs - incl. **New connected account** (the alert that would have
+  caught the 2024 attack on day one), Received debits, Payment disputes,
+  Connected bank account changes, Connected accounts matching Radar rules,
+  API key changes, Webhook failures. "Failed payments" email was OFF and is
+  now on.
+- [ ] **Split the live keys (NEEDS A MAINTENANCE WINDOW - live payment creds
+  swap: create keys, one-time reveal, install in VM .env, restart, smoke test,
+  delete old key)**: main `STRIPE_SECRET_KEY` becomes a RESTRICTED key; create
+  a second restricted key with Connect account-write as
+  `STRIPE_CONNECT_ONBOARDING_KEY` (code already prefers it for
+  `accounts.create`): https://dashboard.stripe.com/apikeys
+  CAVEAT discovered 2026-08-26: Stripe's restricted-key "Accounts" permission
+  does not split create from update, and the app legitimately needs Connect
+  account WRITE for bank updates, Custom-KYC saves, payout-schedule edits, and
+  the sentry's freeze action. So the main key likely keeps Accounts=Write and
+  the REAL off-box protection is the IP allowlist (below); the split still
+  helps if the main key is scoped to Accounts=Read and account-write paths
+  (incl. sentry freeze - best-effort by design, the alert still fires) route
+  through the onboarding key. Decide the exact permission matrix during the
+  window.
+- [ ] IP-restrict both live restricted keys to the prod VM egress IP
+  (34.85.132.142) so a stolen key is useless off-box (only RESTRICTED keys
+  support IP allowlists - another reason for the swap; same window).
+- [x] Webhook events DONE 2026-08-26: gostork-2-main-billing now listens to 9
+  events (+payout.created); gostork-2-connect now listens to 6 events
+  (+account.external_account.created/updated/deleted). Handlers live in
+  billing.controller.ts / connect.controller.ts.
+- [x] Radar DONE 2026-08-26 (free tier fully armed): Radar-on-SetupIntents
+  turned ON (card-testing via saved payment methods); Risk controls now Active:
+  Fraudulent dispute, Early fraud warning, Fraudulent card payments,
+  Fraudulent non-card payments. NOTE: the legacy "Rules" (block if
+  risk_level=highest etc.) show Disabled by design - Stripe replaced them
+  with Risk controls; do not re-enable them.
+  - [ ] Optional paid upgrades if fraud pressure appears: Radar Plus
+    (Adaptive 3DS, custom rules), Radar Pro (Dynamic risk thresholds, Bot
+    detection).
 - [ ] Optional env tuning for the anomaly alarm:
   `STRIPE_DAILY_CHARGE_COUNT_CEILING` (default 50) and
   `STRIPE_DAILY_CHARGE_GROSS_CEILING_CENTS` (default $150,000).
