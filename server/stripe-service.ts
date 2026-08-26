@@ -20,15 +20,18 @@ function getStripe(): Stripe {
 }
 
 /**
- * Connected-account CREATION uses its own key when one is configured.
- * STRIPE_SECRET_KEY should be a restricted key WITHOUT Connect
- * account-write permission (the 1.0 breach monetized stolen credentials by
- * creating 52 fraudulent connected accounts); STRIPE_CONNECT_ONBOARDING_KEY
- * is the only key that can mint accounts, and it is exercised solely by the
- * provider-onboarding path. Falls back to the main key so dev keeps working
- * before the split keys exist.
+ * Connect account ADMIN operations (create, update, KYC persons, external
+ * bank accounts, account/login links, delete, payout freeze) use their own
+ * key when one is configured. STRIPE_SECRET_KEY should be a restricted key
+ * with Connect Accounts = READ only (the 1.0 breach monetized stolen
+ * credentials by creating 52 fraudulent connected accounts);
+ * STRIPE_CONNECT_ONBOARDING_KEY is the only key with account-write, and it
+ * is exercised solely by these admin paths. Stripe's restricted-key
+ * permission model cannot split account-create from account-update, so all
+ * account writes ride this key together. Falls back to the main key so dev
+ * keeps working before the split keys exist.
  */
-function getStripeForAccountCreation(): Stripe {
+function getStripeConnectAdmin(): Stripe {
   const key = process.env.STRIPE_CONNECT_ONBOARDING_KEY || process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_SECRET_KEY is not set");
   return new Stripe(key, { apiVersion: "2026-04-22.dahlia" });
@@ -1166,7 +1169,7 @@ export interface CreateConnectAccountParams {
 }
 
 export async function createConnectAccount(params: CreateConnectAccountParams): Promise<{ accountId: string }> {
-  const stripe = getStripeForAccountCreation();
+  const stripe = getStripeConnectAdmin();
   const dashboardType = params.type === "EXPRESS" ? "express" : "none";
   const requirementCollection = params.type === "EXPRESS" ? "stripe" : "application";
 
@@ -1251,7 +1254,7 @@ export async function createConnectAccountLink(params: {
   returnUrl: string;
   refreshUrl: string;
 }): Promise<{ url: string }> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   const link = await stripe.accountLinks.create({
     account: params.accountId,
     refresh_url: params.refreshUrl,
@@ -1267,7 +1270,7 @@ export async function createConnectAccountLink(params: {
  * "Manage on Stripe" button on the Payouts tab.
  */
 export async function createExpressLoginLink(accountId: string): Promise<{ url: string }> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   const link = await stripe.accounts.createLoginLink(accountId);
   return { url: link.url };
 }
@@ -1350,7 +1353,7 @@ export async function retrieveConnectAccountBalance(accountId: string): Promise<
  * dashboard, which fires our account.application.deauthorized webhook.
  */
 export async function deleteConnectAccount(accountId: string): Promise<void> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   await stripe.accounts.del(accountId);
 }
 
@@ -1447,7 +1450,7 @@ export async function updateConnectAccount(
   accountId: string,
   updates: Stripe.AccountUpdateParams,
 ): Promise<Stripe.Account> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   return await stripe.accounts.update(accountId, updates);
 }
 
@@ -1466,7 +1469,7 @@ export async function attachConnectBankAccount(params: {
   country?: string;
   currency?: string;
 }): Promise<Stripe.BankAccount> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   const result = await stripe.accounts.createExternalAccount(params.accountId, {
     external_account: {
       object: "bank_account",
@@ -1510,7 +1513,7 @@ export async function upsertConnectAccountRepresentative(params: {
     country?: string;
   };
 }): Promise<Stripe.Person> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   const body: Stripe.AccountCreatePersonParams = {
     first_name: params.firstName,
     last_name: params.lastName,
@@ -1652,7 +1655,7 @@ export async function listAllConnectedAccounts(): Promise<ConnectedAccountSummar
  * sentry doesn't recognize; reversible from the Dashboard after review.
  */
 export async function freezeConnectAccountPayouts(accountId: string): Promise<void> {
-  const stripe = getStripe();
+  const stripe = getStripeConnectAdmin();
   await stripe.accounts.update(accountId, {
     settings: { payouts: { schedule: { interval: "manual" } } },
   });
