@@ -181,8 +181,25 @@ NEXT, in order (items marked ERAN need a human in a browser):
    GitLab (`gitlab-1`, `gitlab-runner-2` VMs) - the `34.28.x/35.238.x/34.46.x`
    app IPs are ephemeral GKE load-balancer IPs. Same project also has
    `scrapper`, `gostork-website` (us-east1-b) and `wordpress-1-vm`
-   (us-east1-c). `babies-island` is an older project with everything
-   TERMINATED. `gen-lang-client-0051391254` = GCS/Speech only.
+   (us-east1-c). `babies-island` (the pre-rename legacy project): its VMs
+   are terminated, BUT 1.0 production STILL actively uses its credentials -
+   verified in the console 2026-08-27 (30-day API traffic): Google Calendar
+   API 222k req, Geolocation 9k + Geocoding 5.6k + Places 408 (Maps API
+   keys), Google Drive 5k, Cloud SQL Admin 3.1k, Compute Engine 2.3k,
+   Cloud Logging 1.1M, Cloud Monitoring 500k. So 1.0's calendar sync,
+   address geocoding, and SQL/ops tooling all run on babies-island API
+   keys/service accounts. **Do NOT shut down `babies-island` until 1.0 is
+   decommissioned** - deleting it would break live app.gostork.com.
+   (The 2 inactive OAuth web clients Google flagged for auto-deletion on
+   2026-08-26, client number 676122939877, are NOT what carries this
+   traffic - letting those auto-delete is fine.) At 1.0 decommission time,
+   add babies-island shutdown to the teardown list. `authentic-arch-323315`
+   ("My First Project") = auto-created default project, verified empty
+   2026-08-27 (no keys/clients/service accounts, zero traffic) - safe to
+   shut down anytime. `gen-lang-client-0051391254` = GCS/Speech only.
+   Display names renamed 2026-08-26: `gostork` = "GoStork 1",
+   `gen-lang-client-0051391254` = "GoStork 2" (periods not allowed in
+   GCP project names).
    **DECISION 2026-08-19 (Eran, on recommendation): 2.0 host = one Compute
    Engine VM in project `gostork`, region us-east4 (next to the us-east-1
    Supabase), NOT Cloud Run and NOT the 1.0 GKE cluster.** Rationale: the
