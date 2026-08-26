@@ -1068,6 +1068,17 @@ with no code change. Pinned to `prisma@^7.4.0` in devDependencies 2026-08-25.
 
 ## 10. Security hardening (pre-launch)
 
+- [x] **RLS enabled on all public tables (DONE 2026-08-26, both DEV and PROD).**
+  Supabase's security advisor (emailed 2026-08-23) flagged every public-schema
+  table (113 in PROD incl. User, session, PasswordResetToken, ProviderBankAccount,
+  ProviderW9) as readable/writable through the PostgREST Data API with the anon
+  key. Fixed by `prisma/migrations/20260826_enable_rls_all_public_tables/`:
+  RLS enabled on every table (no policies = deny-all for anon/authenticated) plus
+  REVOKE of all anon/authenticated grants including default privileges for future
+  tables. App unaffected - Prisma connects as the `postgres` table owner, which
+  bypasses RLS. **Standing rule: every future migration that CREATEs a table must
+  include `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` in the same file**, or the
+  advisor alert comes back for that table.
 - [ ] PandaDoc webhook signature verification (section 5).
 - [ ] Audit other inbound webhook/callback routes for auth (Twilio inbound,
   Stripe signature checks, cron route secret?).
