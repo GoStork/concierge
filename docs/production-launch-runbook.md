@@ -636,12 +636,21 @@ in this order:
     Until approved: "unverified app" warning + 100-user lifetime cap.
   - Verification is per GCP project/client, NOT per domain - the 1.0 app's
     approval (different client/project) does not cover this one.
-  - Dev Macs (ngrok URIs are now OFF the client): either a separate
-    unverified dev client (click Advanced -> continue; fine for 2 devs), or
-    the clean fix - ngrok custom domains under gostork.com (e.g.
-    dev-mbp.gostork.com / dev-imac.gostork.com, CNAME to ngrok, DNS-only in
-    Cloudflare) added as redirect URIs on the verified client; subdomains of
-    the authorized domain inherit the verified consent screen.
+  - [~] **Dev Macs on gostork.com custom domains** (2026-08-26): ngrok
+    domains dev-mbp.gostork.com + dev-imac.gostork.com created; Cloudflare
+    CNAMEs added (dev-mbp -> 2ddvk9kfsb8ez6cku.3izttaq3pypcplw8b
+    .ngrok-cname.com, dev-imac -> 5axb335tynf9q3b9v.3izttaq3pypcplw8b
+    .ngrok-cname.com, both **DNS only** - proxying breaks ngrok TLS); both
+    callbacks added to the OAuth client. **MacBook DONE**: the tunnel agent
+    now serves BOTH gostork.ngrok.app (webhooks - Daily.co etc. still point
+    there) AND dev-mbp.gostork.com to port 5001 via
+    ~/.gostork/ngrok-tunnels.yml + run-tunnel.sh `ngrok start gostork
+    gostork-dev`; .env APP_URL=https://dev-mbp.gostork.com; verified 200
+    over TLS on both hosts. **iMac PENDING** - mirror the same three files
+    there (tunnels yml with gostork-imac.ngrok.app + dev-imac.gostork.com,
+    run-tunnel.sh, APP_URL=https://dev-imac.gostork.com) then restart
+    server + tunnel. Browse dev via the new domains from now on; the old
+    ngrok URLs stay alive for webhooks only.
 - [x] Microsoft Graph app registration: test-app + app.gostork.com redirect URIs with the 2.0 path added 2026-08-19.
 - [ ] Apple/CalDAV: no redirect URIs, but verify app-specific password flow
   documentation for users.
