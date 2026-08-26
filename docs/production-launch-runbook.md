@@ -1103,6 +1103,64 @@ with no code change. Pinned to `prisma@^7.4.0` in devDependencies 2026-08-25.
 - [ ] Admin accounts audit; remove/disable test admin logins.
 - [ ] Rate limiting sanity on auth + OTP routes at production traffic levels.
 
+### 10a. Stripe account-takeover defense (lessons from the GoStork 1.0 breach, Aug-Sep 2024)
+
+Background: 1.0's Stripe account was taken over (2FA was SMS - defeated;
+switching to authenticator-app 2FA is what stopped it). Attackers enabled
+Connect, created 52 fraudulent connected accounts, charged ~$100k+ to stolen
+cards, paid it out to themselves; the chargebacks became platform negative
+balances and Stripe debited $42,199.32 from the Chase account with no notice.
+Code-side defenses shipped 2026-08-26 (`stripe-security.sentry.ts`: unknown
+connected accounts frozen + alerted from the Connect webhook AND an hourly
+reconcile sweep; foreign platform payouts alerted via the remainder-sweep
+metadata stamp; 24h charge-volume anomaly alarm; live-key pre-commit grep;
+`STRIPE_CONNECT_ONBOARDING_KEY` split so the everyday key cannot create
+connected accounts). Remaining tasks are dashboard/bank/insurance:
+
+- [ ] **2FA: passkeys or hardware security keys for EVERY team member; NO SMS
+  2FA anywhere on the account** (SMS was the 1.0 breach vector; passkeys also
+  defeat real-time phishing proxies that TOTP does not). Enforce "Require
+  two-step authentication for all team members":
+  https://dashboard.stripe.com/settings/security/authentication
+- [ ] Team audit: least-privilege roles, remove stale members, review the
+  security history log quarterly: https://dashboard.stripe.com/security_history
+- [ ] Turn ON all Stripe email + SMS account notifications:
+  https://dashboard.stripe.com/settings/communication-preferences
+- [ ] **Split the live keys**: main `STRIPE_SECRET_KEY` becomes a RESTRICTED
+  key with no Connect account-write permission; create a second restricted key
+  with account-write as `STRIPE_CONNECT_ONBOARDING_KEY` (code already prefers
+  it for `accounts.create`): https://dashboard.stripe.com/apikeys
+- [ ] IP-restrict both live keys to the prod VM egress IP (34.85.132.142) so a
+  stolen key is useless off-box (Dashboard > API keys > key > IP restrictions).
+- [ ] **Add the new webhook events to the live destinations**: platform
+  destination gostork-2-main-billing needs `payout.created` (payout sentry);
+  Connect destination gostork-2-connect needs
+  `account.external_account.created/updated/deleted` (bank-change heads-up).
+  Handlers are already live in billing.controller.ts / connect.controller.ts.
+- [ ] Enable Radar + card-testing protections on the live account; review the
+  default rules: https://dashboard.stripe.com/settings/radar
+- [ ] Optional env tuning for the anomaly alarm:
+  `STRIPE_DAILY_CHARGE_COUNT_CEILING` (default 50) and
+  `STRIPE_DAILY_CHARGE_GROSS_CEILING_CENTS` (default $150,000).
+- [ ] **Bank-side firewall (Chase)**: dedicated low-balance account as the
+  Stripe payout/debit account, sweep excess out on a schedule; ACH debit
+  filter / positive pay on the main operating accounts so only whitelisted
+  originators can pull. This is the hard stop on "Stripe silently drained us".
+- [ ] **Cyber + Crime insurance** before real payment volume: Coalition /
+  Chubb / Hiscox class policy with Computer Fraud, Funds Transfer Fraud, and
+  Social Engineering endorsements; get WRITTEN confirmation that unauthorized
+  activity on a third-party processor account resulting in bank debits is
+  covered. (Stripe sells no such insurance; Stripe Chargeback Protection only
+  covers disputes on legitimate own-checkout transactions - not this scenario.)
+- [ ] Key-rotation drill: practice the 15-minute rotation (create new
+  restricted key -> install in host .env -> restart -> delete old key) once
+  before launch so it is muscle memory during an incident.
+- [ ] Incident runbook: if the sentry alerts on an unknown connected account:
+  (1) Stripe Dashboard > reject the account, (2) pause payouts on all
+  accounts, (3) rotate BOTH keys, (4) check Team + security history for
+  foreign logins/devices, (5) call Chase to block pending ACH debits,
+  (6) email Stripe support with the account ids; keep all evidence.
+
 ## 11. Launch sequence (staged - two phases)
 
 ### Phase A - beta on test-app.gostork.com

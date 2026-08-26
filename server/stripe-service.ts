@@ -19,6 +19,21 @@ function getStripe(): Stripe {
   return new Stripe(key, { apiVersion: "2026-04-22.dahlia" });
 }
 
+/**
+ * Connected-account CREATION uses its own key when one is configured.
+ * STRIPE_SECRET_KEY should be a restricted key WITHOUT Connect
+ * account-write permission (the 1.0 breach monetized stolen credentials by
+ * creating 52 fraudulent connected accounts); STRIPE_CONNECT_ONBOARDING_KEY
+ * is the only key that can mint accounts, and it is exercised solely by the
+ * provider-onboarding path. Falls back to the main key so dev keeps working
+ * before the split keys exist.
+ */
+function getStripeForAccountCreation(): Stripe {
+  const key = process.env.STRIPE_CONNECT_ONBOARDING_KEY || process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("STRIPE_SECRET_KEY is not set");
+  return new Stripe(key, { apiVersion: "2026-04-22.dahlia" });
+}
+
 export function isStripeConfigured(): boolean {
   return !!process.env.STRIPE_SECRET_KEY;
 }
@@ -1151,7 +1166,7 @@ export interface CreateConnectAccountParams {
 }
 
 export async function createConnectAccount(params: CreateConnectAccountParams): Promise<{ accountId: string }> {
-  const stripe = getStripe();
+  const stripe = getStripeForAccountCreation();
   const dashboardType = params.type === "EXPRESS" ? "express" : "none";
   const requirementCollection = params.type === "EXPRESS" ? "stripe" : "application";
 
@@ -1285,6 +1300,9 @@ export async function createPlatformPayout(amountCents: number, currency: string
       amount: amountCents,
       currency: currency.toLowerCase(),
       description: "GoStork remainder sweep (fees net of provider obligations)",
+      // The payout sentry treats any platform payout WITHOUT this stamp as
+      // foreign (possibly attacker-initiated) and alerts the admins.
+      metadata: { source: "remainder-sweep" },
     },
     { idempotencyKey },
   );
@@ -1575,4 +1593,96 @@ export function constructConnectWebhookEvent(payload: Buffer | string, signature
   if (!secret) throw new Error("STRIPE_CONNECT_WEBHOOK_SECRET is not set");
   const stripe = getStripe();
   return stripe.webhooks.constructEvent(payload, signature, secret);
+}
+
+// ─── Stripe security sentry helpers ──────────────────────────────────────────
+//
+// Defenses derived from the GoStork 1.0 breach (Aug 2024): attackers with
+// dashboard access created 52 fraudulent connected accounts, charged stolen
+// cards through them, and paid the money out to themselves - the chargebacks
+// then came out of GoStork's bank as platform negative-balance debits. These
+// helpers give the sentry (stripe-security.sentry.ts) eyes on every connected
+// account and payout so an unknown account is frozen + alerted within minutes
+// instead of discovered a month later on a bank statement.
+
+export interface ConnectedAccountSummary {
+  id: string;
+  email: string | null;
+  businessName: string | null;
+  created: number;
+  payoutsEnabled: boolean;
+  /** Set at creation by createConnectAccount - absent on foreign accounts. */
+  gostorkProviderTag: boolean;
+}
+
+/**
+ * Lists EVERY connected account on the platform (auto-paginated). The
+ * reconcile sweep diffs this against ProviderBankAccount rows; any account
+ * Stripe knows about that our DB did not create is treated as hostile.
+ */
+export async function listAllConnectedAccounts(): Promise<ConnectedAccountSummary[]> {
+  const stripe = getStripe();
+  const out: ConnectedAccountSummary[] = [];
+  let startingAfter: string | undefined;
+  // Hard page cap so a pathological account explosion (the attack itself)
+  // can't wedge the sweep - 20 pages x 100 = 2,000 accounts is far beyond
+  // any legitimate GoStork roster, and the sweep alerts on count anyway.
+  for (let page = 0; page < 20; page++) {
+    const res = await stripe.accounts.list({ limit: 100, ...(startingAfter ? { starting_after: startingAfter } : {}) });
+    for (const a of res.data) {
+      out.push({
+        id: a.id,
+        email: a.email ?? null,
+        businessName: a.business_profile?.name || (a as any).company?.name || null,
+        created: (a as any).created ?? 0,
+        payoutsEnabled: !!a.payouts_enabled,
+        gostorkProviderTag: a.metadata?.gostorkProvider === "true",
+      });
+    }
+    if (!res.has_more) break;
+    startingAfter = res.data[res.data.length - 1]?.id;
+  }
+  return out;
+}
+
+/**
+ * Freezes a connected account's payouts: schedule to manual (nothing leaves
+ * the balance on its own) - the 1.0 attackers relied on automatic/instant
+ * payouts to extract money before disputes landed. Used on accounts the
+ * sentry doesn't recognize; reversible from the Dashboard after review.
+ */
+export async function freezeConnectAccountPayouts(accountId: string): Promise<void> {
+  const stripe = getStripe();
+  await stripe.accounts.update(accountId, {
+    settings: { payouts: { schedule: { interval: "manual" } } },
+  });
+}
+
+/**
+ * Charge volume over a recent window: count + gross cents. The anomaly alarm
+ * compares this against a ceiling - GoStork's legitimate charge profile is
+ * small and predictable, so a card-testing burst through a hijacked key or
+ * account shows up as an order-of-magnitude spike.
+ */
+export async function summarizeRecentCharges(sinceEpochSeconds: number): Promise<{ count: number; grossCents: number; truncated: boolean }> {
+  const stripe = getStripe();
+  let count = 0;
+  let grossCents = 0;
+  let startingAfter: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const res = await stripe.charges.list({
+      limit: 100,
+      created: { gte: sinceEpochSeconds },
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    for (const c of res.data) {
+      count++;
+      grossCents += c.amount || 0;
+    }
+    if (!res.has_more) return { count, grossCents, truncated: false };
+    startingAfter = res.data[res.data.length - 1]?.id;
+  }
+  // 1,000+ charges in the window - already far past any sane ceiling; the
+  // caller alerts regardless, no need to keep paginating.
+  return { count, grossCents, truncated: true };
 }

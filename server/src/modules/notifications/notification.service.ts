@@ -55,6 +55,9 @@ export type NotificationChannel =
   | "provider_agreement_request"
   | "provider_agreement_completed"
   | "w9_completed"
+  // Stripe security sentry: unknown connected account, foreign payout,
+  // charge-volume spike. Always to GOSTORK_ADMINs, email + in-app.
+  | "security_alert"
   | "sponsorship_payment_request"
   | "sponsorship_activated"
   | "sponsorship_past_due"
@@ -2359,6 +2362,65 @@ export class NotificationService implements OnModuleInit {
         data: { status: "failed" },
       });
     }
+  }
+
+  /**
+   * Security alert to every GOSTORK_ADMIN: branded email + in-app
+   * notification. Used by the Stripe security sentry (unknown connected
+   * account, foreign payout, charge-volume spike). The Notification
+   * dedupeKey (type+channel+recipient+subject+body) makes this safe to fire
+   * from both dev machines' sweeps - the second send is suppressed as long
+   * as the subject/body are identical, so callers should keep per-incident
+   * wording stable (e.g. no timestamps in the body).
+   */
+  async sendSecurityAlertToAdmins(params: {
+    subject: string;
+    title: string;
+    /** One paragraph of context - what fired and why it matters. */
+    summary: string;
+    detailRows?: { label: string; value: string }[];
+    /** What the admin should do right now. */
+    action: string;
+    /** Where to look first. Defaults to the Stripe dashboard. */
+    linkUrl?: string;
+    linkLabel?: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { id: true, email: true },
+    });
+    const html = buildBrandedEmail(brandData, {
+      title: params.title,
+      greeting: "Security alert from the Stripe sentry.",
+      body: esc(params.summary),
+      detailRows: params.detailRows || [],
+      alertBox: { text: esc(params.action), type: "warning" as const },
+      buttons: [{ label: params.linkLabel || "Open Stripe Dashboard", url: params.linkUrl || "https://dashboard.stripe.com" }],
+    });
+    for (const admin of admins) {
+      if (admin.email) {
+        await this.dispatchNotification({
+          userId: admin.id,
+          type: "EMAIL",
+          channel: "security_alert",
+          recipient: admin.email,
+          subject: params.subject,
+          body: html,
+        });
+      }
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "SECURITY_ALERT",
+          payload: {
+            message: `${params.title}: ${params.summary} ${params.action}`,
+            detailRows: params.detailRows || [],
+          },
+        },
+      }).catch((e: any) => this.logger.warn(`Security alert in-app row failed for admin ${admin.id}: ${e?.message}`));
+    }
+    this.logger.warn(`[stripe-sentry] ${params.subject} - alerted ${admins.length} admin(s)`);
   }
 
   async sendPasswordResetEmail(email: string, userName: string | null, resetLink: string) {

@@ -18,6 +18,8 @@ import { normalizeCountry, payoutRailFor, currencyFor, effectivePayoutCountry } 
 import { trolleyEnabled } from "./trolley.client";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { ConnectService, type CustomPayoutFormData } from "./connect.service";
+import { NotificationService } from "../notifications/notification.service";
+import { verifyConnectedAccountKnown } from "./stripe-security.sentry";
 import { prisma } from "../../../db";
 import * as stripeService from "../../../stripe-service";
 import type Stripe from "stripe";
@@ -43,6 +45,7 @@ export class ConnectController {
 
   constructor(
     @Inject(ConnectService) private readonly connectService: ConnectService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
   // ── Provider: read current state ─────────────────────────────────────────
@@ -441,6 +444,10 @@ export class ConnectController {
    *   account.application.deauthorized - provider disconnected
    *   payout.paid                      - provider's bank received the payout
    *   payout.failed                    - provider's bank rejected the payout
+   *   account.external_account.*       - payout bank changed (admin heads-up)
+   *
+   * Every event additionally passes through the Stripe security sentry: an
+   * account id our DB didn't create gets its payouts frozen + admins alerted.
    *
    * Signed with STRIPE_CONNECT_WEBHOOK_SECRET (separate from the
    * platform-events webhook secret).
@@ -455,6 +462,18 @@ export class ConnectController {
       const event = stripeService.constructConnectWebhookEvent(rawBody, sig);
 
       this.logger.log(`Connect webhook: ${event.type} | account: ${(event as any).account || "n/a"}`);
+
+      // Security sentry: EVERY Connect event names the connected account it
+      // fired on. An account our DB didn't create means someone else is
+      // creating connected accounts under our platform (the 2024 breach
+      // pattern) - the sentry freezes its payouts and alerts the admins.
+      // Fire-and-forget so a sentry hiccup never blocks the 200 ack.
+      const sentryAccountId = (event as any).account as string | undefined;
+      if (sentryAccountId) {
+        verifyConnectedAccountKnown(prisma as any, this.notifications, sentryAccountId, `webhook ${event.type}`).catch(
+          (e: any) => this.logger.error(`Sentry check failed for ${sentryAccountId}: ${e?.message}`),
+        );
+      }
 
       switch (event.type) {
         case "account.updated": {
@@ -501,6 +520,23 @@ export class ConnectController {
             } catch (e: any) {
               this.logger.error(`Failed to process ${event.type} for ${accountId}: ${e?.message}`, e?.stack);
             }
+          }
+          break;
+        }
+        case "account.external_account.created" as any:
+        case "account.external_account.updated" as any:
+        case "account.external_account.deleted" as any: {
+          // A connected account's payout BANK changed. Legit when a provider
+          // updates their bank (our form or the Express dashboard), but it is
+          // also the attacker's key move - repointing payouts at their own
+          // bank. Known accounts get an in-app heads-up so an admin sees
+          // every bank change; unknown accounts were already frozen+alerted
+          // by the sentry check above.
+          const accountId = (event as any).account as string | undefined;
+          if (accountId) {
+            await this.notifyAdminBankChanged(accountId, event.type).catch(e =>
+              this.logger.warn(`Bank-change notification failed for ${accountId}: ${e?.message}`),
+            );
           }
           break;
         }
@@ -555,6 +591,39 @@ export class ConnectController {
             amount,
             reason,
             message: `Payout to ${row.provider.name} failed (${amount}). Reason: ${reason}. Money is still in their Stripe Connect balance - they need to update their bank info.`,
+          },
+        },
+      });
+    }
+  }
+
+  /**
+   * In-app heads-up when a KNOWN connected account's external bank account
+   * changed. Low-volume by nature (a handful of providers, rare changes),
+   * but a repointed payout bank is how the 2024 attackers extracted money -
+   * every change deserves an admin's eyes.
+   */
+  private async notifyAdminBankChanged(stripeAccountId: string, eventType: string) {
+    const row = await prisma.providerBankAccount.findFirst({
+      where: { stripeConnectAccountId: stripeAccountId },
+      include: { provider: { select: { id: true, name: true } } },
+    });
+    if (!row?.provider) return; // unknown account - sentry already handled it
+    const admins = await prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    const change = eventType.endsWith("deleted") ? "removed" : eventType.endsWith("created") ? "added" : "updated";
+    for (const admin of admins) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "CONNECT_BANK_CHANGED",
+          payload: {
+            providerId: row.provider.id,
+            providerName: row.provider.name,
+            stripeAccountId,
+            message: `${row.provider.name} ${change} a payout bank account on their Stripe Connect account. Expected if they just updated their bank info - verify with the provider if not.`,
           },
         },
       });

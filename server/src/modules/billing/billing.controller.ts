@@ -21,6 +21,8 @@ import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService, humanizeLineServiceType } from "./billing.service";
 import { releaseSubjectHold, RELEASE_COUNTDOWN_MS, PAY_SOON_EXTENSION_MS, fmtHoldDeadline } from "./donor-hold.sweep";
 import { SponsorshipService } from "../sponsorship/sponsorship.service";
+import { NotificationService } from "../notifications/notification.service";
+import { handlePlatformPayout } from "./stripe-security.sentry";
 import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
 import { canSendProviderMessage } from "../../../../shared/roles";
@@ -106,6 +108,7 @@ export class BillingController {
   constructor(
     @Inject(BillingService) private readonly billingService: BillingService,
     @Inject(SponsorshipService) private readonly sponsorshipService: SponsorshipService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -870,6 +873,17 @@ export class BillingController {
       // verify callback in server/index.ts.
       const rawBody = (req as any).rawBody ?? req.body;
       const event = stripeService.constructWebhookEvent(rawBody, sig);
+
+      // Security sentry: a payout from the PLATFORM balance that our code
+      // didn't create (no remainder-sweep metadata stamp) means someone else
+      // is moving GoStork's money - alert the admins. Fire-and-forget so it
+      // never blocks the 200 ack.
+      if (event.type === "payout.created") {
+        handlePlatformPayout(this.notifications, event.data.object as any).catch((e: any) =>
+          this.logger.error(`Payout sentry failed for ${(event.data.object as any)?.id}: ${e?.message}`),
+        );
+      }
+
       const parsed = stripeService.parseWebhookEvent(event);
 
       if (parsed) {

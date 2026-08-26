@@ -22,6 +22,7 @@ import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-shee
 import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-recoup.scheduler";
 import { startPayoutRetryScheduler } from "./src/modules/billing/payout-retry.scheduler";
 import { startRemainderSweepScheduler } from "./src/modules/billing/remainder-sweep.scheduler";
+import { startStripeSecuritySweep } from "./src/modules/billing/stripe-security.sentry";
 import { ConnectService } from "./src/modules/billing/connect.service";
 import { BillingService } from "./src/modules/billing/billing.service";
 import { startWhisperSlaScheduler } from "./src/modules/providers/whisper-sla.scheduler";
@@ -377,6 +378,7 @@ export function log(message: string, source = "nestjs") {
   startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));
   startRankSnapshotScheduler(prismaService);
   startTwilioAbuseWatchdog(prismaService, notificationService);
+  startStripeSecuritySweep(prismaService as any, notificationService);
   }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
