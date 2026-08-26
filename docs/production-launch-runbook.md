@@ -613,6 +613,23 @@ in this order:
   demo video. Until approved: "unverified app" warning on connect + 100
   users lifetime cap (3 used). Do this early in the beta - review takes
   days to weeks.
+  - **Before submitting: REMOVE the ngrok + Replit redirect URIs from the
+    client.** `ngrok.app` cannot be an authorized domain (we don't own it)
+    and Google reviews every redirect URI on the client - unowned domains
+    block verification. Keep only test-app + app.gostork.com.
+  - Verification is per GCP project/client, NOT per domain - the warning
+    shows on test-app.gostork.com too until this review passes. Shortcut
+    to check first: if the 1.0 product's OAuth client is already VERIFIED
+    for the same calendar scopes, add the 2.0 callback URIs to it and swap
+    GOOGLE_CLIENT_ID/SECRET on the prod VM instead of waiting on review.
+    (If 1.0 was only verified for sign-in scopes, no shortcut - adding
+    calendar scopes re-triggers review.)
+  - Dev Macs after the ngrok URIs come off: either a separate unverified
+    dev client (click Advanced -> continue; fine for 2 devs), or the clean
+    fix - ngrok custom domains under gostork.com (e.g. dev-mbp.gostork.com
+    / dev-imac.gostork.com, CNAME to ngrok, DNS-only in Cloudflare) added
+    as redirect URIs on the verified client; subdomains of the authorized
+    domain inherit the verified consent screen.
 - [x] Microsoft Graph app registration: test-app + app.gostork.com redirect URIs with the 2.0 path added 2026-08-19.
 - [ ] Apple/CalDAV: no redirect URIs, but verify app-specific password flow
   documentation for users.
