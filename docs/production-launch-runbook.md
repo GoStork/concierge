@@ -607,29 +607,41 @@ in this order:
 
 - [x] Google OAuth client: app.gostork.com + test-app redirect URIs present;
   publishing status = In production since 2026-08-19 (was Testing).
-- [ ] **Google OAuth app verification** (sensitive calendar scopes):
-  submit at https://console.cloud.google.com/auth/verification?project=gen-lang-client-0051391254
-  - needs homepage, privacy policy URL, scope justification, possibly a
-  demo video. Until approved: "unverified app" warning on connect + 100
-  users lifetime cap (3 used). Do this early in the beta - review takes
-  days to weeks.
-  - **Before submitting: REMOVE the ngrok + Replit redirect URIs from the
-    client.** `ngrok.app` cannot be an authorized domain (we don't own it)
-    and Google reviews every redirect URI on the client - unowned domains
-    block verification. Keep only test-app + app.gostork.com.
-  - Verification is per GCP project/client, NOT per domain - the warning
-    shows on test-app.gostork.com too until this review passes. Shortcut
-    to check first: if the 1.0 product's OAuth client is already VERIFIED
-    for the same calendar scopes, add the 2.0 callback URIs to it and swap
-    GOOGLE_CLIENT_ID/SECRET on the prod VM instead of waiting on review.
-    (If 1.0 was only verified for sign-in scopes, no shortcut - adding
-    calendar scopes re-triggers review.)
-  - Dev Macs after the ngrok URIs come off: either a separate unverified
-    dev client (click Advanced -> continue; fine for 2 devs), or the clean
-    fix - ngrok custom domains under gostork.com (e.g. dev-mbp.gostork.com
-    / dev-imac.gostork.com, CNAME to ngrok, DNS-only in Cloudflare) added
-    as redirect URIs on the verified client; subdomains of the authorized
-    domain inherit the verified consent screen.
+- [~] **Google OAuth app verification** (sensitive calendar scopes) - 2026-08-26
+  prep DONE via Claude-driven Chrome session, ONE blocker left (demo video):
+  - [x] Client "GoStork Calendar": removed all 4 replit/ngrok redirect URIs;
+    only app.gostork.com / gostork.com / test-app.gostork.com callbacks remain.
+    **This intentionally broke NEW Google Calendar connects on both dev Macs'
+    ngrok URLs** (already-connected calendars keep syncing).
+  - [x] Branding: homepage https://www.gostork.com, privacy
+    https://www.gostork.com/privacy-policy/, terms
+    https://www.gostork.com/terms-and-conditions/; authorized domains cut to
+    gostork.com only; NEW teal square logo uploaded (source:
+    MacBook ~/Desktop/Logos/3.0-TEAL/Full Square, padded to 512x512).
+  - [x] **Branding VERIFIED and PUBLISHED** (automated check, ~2 min) -
+    consent screen now shows "GoStork" + teal logo instead of the raw
+    redirect domain.
+  - [x] Data Access: registered calendar.readonly + calendar.events
+    (sensitive) + userinfo.email, with scope justification text (why
+    freebusy/events-only are insufficient).
+  - [ ] **BLOCKER - demo video**: the final "Prepare for verification" Confirm
+    stays disabled until a YouTube link is set on the Data Access page.
+    Eran must record (Claude cannot sign into Google accounts): screen-record
+    the connect flow on test-app.gostork.com - Account > Calendar > Connect
+    Google Calendar, through the consent screen (unverified interstitial is
+    expected and MUST be shown), back to connected state + a booking creating
+    an event. Upload unlisted to YouTube, paste link in Data Access, then
+    Verification Center > Prepare for verification > Confirm ("Additional
+    info" text is already drafted from the session; retype if lost).
+    Until approved: "unverified app" warning + 100-user lifetime cap.
+  - Verification is per GCP project/client, NOT per domain - the 1.0 app's
+    approval (different client/project) does not cover this one.
+  - Dev Macs (ngrok URIs are now OFF the client): either a separate
+    unverified dev client (click Advanced -> continue; fine for 2 devs), or
+    the clean fix - ngrok custom domains under gostork.com (e.g.
+    dev-mbp.gostork.com / dev-imac.gostork.com, CNAME to ngrok, DNS-only in
+    Cloudflare) added as redirect URIs on the verified client; subdomains of
+    the authorized domain inherit the verified consent screen.
 - [x] Microsoft Graph app registration: test-app + app.gostork.com redirect URIs with the 2.0 path added 2026-08-19.
 - [ ] Apple/CalDAV: no redirect URIs, but verify app-specific password flow
   documentation for users.
