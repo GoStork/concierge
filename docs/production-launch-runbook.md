@@ -1170,9 +1170,15 @@ connected accounts). Remaining tasks are dashboard/bank/insurance:
     STRIPE_CONNECT_ONBOARDING_KEY in dist - the function name is minified).
   - .env backup at /srv/gostork/app/.env.bak-keyswap-20260826 (holds the old
     sk_live - delete the backup after the old key is deleted).
-- [ ] Delete the old standard `sk_live_...K2hw` Secret key + the unused
-  May 18 unnamed "Restricted key" (rk_live_...mtoy) after Eran confirms -
-  then remove the .env backup above. Until then both are IP-locked anyway.
+- [x] OLD KEYS RETIRED 2026-08-26 (Eran confirmed + passkey-verified): the
+  May-18 unnamed restricted key (rk_live_...mtoy, never used) EXPIRED; the
+  old standard `sk_live_...K2hw` EXPIRED via rotate-with-expire-now (Stripe
+  requires one standard key to exist, so rotation minted `sk_live_...YAXS` -
+  deliberately UNUSED, stored nowhere, and covered by the default
+  gostork-prod-vm-only IP policy; if ever needed, rotate it). VM .env backup
+  deleted. Post-expiry verify: service active, health 200, zero Stripe
+  errors in logs. Every live key on the account is now IP-locked to
+  34.85.132.142.
 - [x] Webhook events DONE 2026-08-26: gostork-2-main-billing now listens to 9
   events (+payout.created); gostork-2-connect now listens to 6 events
   (+account.external_account.created/updated/deleted). Handlers live in
