@@ -13,6 +13,7 @@
  * two contexts, per the no-fork rule in CLAUDE.md.
  */
 import { type ReactNode } from "react";
+import { firstNameOf } from "@/lib/display-name";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
@@ -336,7 +337,7 @@ export function OwnerCell({ owner, testId }: { owner?: { name: string | null; ph
       </span>
     );
   }
-  const first = owner.name.split(" ")[0];
+  const first = firstNameOf(owner.name) || owner.name;
   return (
     <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap" title={owner.name} data-testid={testId}>
       <DoctorAvatar name={owner.name} photoUrl={owner.photoUrl} size={20} rounded="999px" />

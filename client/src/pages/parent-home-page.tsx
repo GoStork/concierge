@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { greetingNameOf } from "@/lib/display-name";
 import { useConciergeName } from "@/hooks/use-concierge-name";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { Map } from "lucide-react";
@@ -55,7 +56,7 @@ export default function ParentHomePage() {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
-  const firstName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "there";
+  const firstName = greetingNameOf(user as any);
   const isViewer = (user as any)?.parentAccountRole === "VIEWER";
 
   // Dashboard queries always refetch on mount/focus - the app's global

@@ -10,6 +10,7 @@
  */
 
 import { useState } from "react";
+import { greetingNameOf } from "@/lib/display-name";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookingDetailDialog } from "@/components/booking-detail-dialog";
 import { useNavigate , Link } from "react-router-dom";
@@ -99,7 +100,7 @@ function fmtWhen(iso: string) {
 export default function AdminHomePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const firstName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "there";
+  const firstName = greetingNameOf(user as any);
 
   const { data, isLoading } = useQuery<AdminDashboard>({
     queryKey: ["/api/admin/dashboard"],

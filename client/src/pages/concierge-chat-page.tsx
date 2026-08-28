@@ -1,4 +1,5 @@
 import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
+import { greetingNameOf } from "@/lib/display-name";
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { ivfContextSearch } from "@/components/ivf-success-rates-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
@@ -3861,7 +3862,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // For donor deep-links: build greeting client-side immediately (no profile needed)
     if (donorIdParam) {
       const u = user as any;
-      const firstName = u.firstName || u.name?.split(" ")[0] || "there";
+      const firstName = greetingNameOf(u);
       const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : donorTypeParam === "clinic" ? "Clinic" : donorTypeParam === "agency" ? "Surrogacy Agency" : donorTypeParam === "doctor" ? "Doctor" : "Egg Donor";
       const greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have. Do you have a specific question about this ${donorLabel.toLowerCase()}?`;
       // Doctors render through the doctorCards path (keyed by slug); everything

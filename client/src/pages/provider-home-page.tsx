@@ -10,6 +10,7 @@
  */
 
 import { useState } from "react";
+import { greetingNameOf } from "@/lib/display-name";
 import { useConciergeName } from "@/hooks/use-concierge-name";
 import { useQuery } from "@tanstack/react-query";
 import { BookingDetailDialog } from "@/components/booking-detail-dialog";
@@ -113,7 +114,7 @@ export default function ProviderHomePage() {
     },
     staleTime: 60_000,
   });
-  const firstName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "there";
+  const firstName = greetingNameOf(user as any);
 
   // Always refetch on mount/focus - global defaults cache forever, which
   // would leave resolved queue items on screen until a hard refresh.

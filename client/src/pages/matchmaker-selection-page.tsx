@@ -1,4 +1,5 @@
 import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
+import { greetingNameOf } from "@/lib/display-name";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
@@ -67,7 +68,7 @@ export default function MatchmakerSelectionPage() {
     }
   }, [existingSessions, matchmakers, checkedExisting, navigate]);
 
-  const userName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "";
+  const userName = greetingNameOf(user as any, "");
 
   const handleContinue = () => {
     if (!selectedId) return;

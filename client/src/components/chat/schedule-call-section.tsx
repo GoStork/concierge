@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { firstNameOf } from "@/lib/display-name";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CalendarCheck, Loader2, X, Users, Send } from "lucide-react";
@@ -217,7 +218,7 @@ export function ScheduleCallSection({
         {selectedHost && (
           <div className="space-y-1.5">
             <label className="t-helper">
-              Pick up to 6 time options on {selectedHost.name.split(" ")[0]}'s calendar ({selectedHost.meetingDuration} min)
+              Pick up to 6 time options on {firstNameOf(selectedHost.name) || selectedHost.name}'s calendar ({selectedHost.meetingDuration} min)
             </label>
             <div className="rounded-md border bg-background flex justify-center">
               <Calendar
