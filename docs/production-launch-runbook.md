@@ -677,10 +677,24 @@ in this order:
     have made the deletion segment of the video unfilmable. Both Google and
     Outlook syncs now delete the event they already track before creating its
     replacement; verified end to end (same cycle now leaves zero events).
-    Note for the future: one booking still legitimately produces TWO entries
-    on the provider's calendar - the event they organize plus an invite to the
-    separate parent-side event GoStork also creates. Worth revisiting whether
-    that dual write is needed at all.
+  - [x] **Second bug found and fixed the same day (commit f46a6c79) - this
+    one was a privacy leak, not cosmetics.** The parent-side sync added the
+    provider as an attendee on the event written to the PARENT's calendar.
+    That produced the duplicate entry on the provider's calendar, and because
+    the invite's organizer is the parent's own mailbox, the provider could
+    read the parent's email address off it no matter what Gate B said - a
+    back door around `calendarAttendeesFor`, which correctly sends no
+    attendees while contact is sealed. On Outlook it was worse: Graph emails
+    invitees, so the parent's mailbox mailed the provider directly. Booking a
+    call is only supposed to open Gate A (name); contact opens solely on a
+    committing action (IP form, invoice, agreement, callback, admin unlock -
+    see server/parent-privacy.ts). The provider already gets their own copy
+    and their name is in the parent event's summary, so they are simply no
+    longer invited. Verified live: one confirmed booking now puts exactly one
+    entry on the provider's calendar. **The demo video predates this fix, so
+    it shows the old two-entry behaviour - harmless for the Google review
+    (both entries appear and disappear correctly) but re-shoot if the video is
+    ever re-cut.**
   - [x] Client "GoStork Calendar": removed all 4 replit/ngrok redirect URIs;
     only app.gostork.com / gostork.com / test-app.gostork.com callbacks remain.
     **This intentionally broke NEW Google Calendar connects on both dev Macs'
