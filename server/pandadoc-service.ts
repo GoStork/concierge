@@ -2121,11 +2121,61 @@ export async function sendProviderAgreement(params: {
     data: { supersededAt: new Date() },
   });
 
+  // No GoStork role on the template = the provider can sign IMMEDIATELY, and
+  // the webhook's AWAITING_GOSTORK -> SENT transition (which normally emails
+  // + tasks the provider and mints the guest link) will never fire. Notify
+  // them right here instead - a send the provider never hears about is not a
+  // send. Failures are logged loudly but do not roll back the send.
+  if (!gostorkRole) {
+    await notifyProviderAgreementProviderTurn(agreement.id, requestedBy.userId)
+      .catch((e: any) => console.error(`[ProviderAgreement] direct-SENT provider notification failed for ${agreement.id}: ${e?.message}`));
+  }
+
   return {
     agreement,
     signer: { email: signer.email, userId: signer.userId, name: `${signer.firstName} ${signer.lastName}`.trim() },
     hasGoStorkRole: !!gostorkRole,
   };
+}
+
+/**
+ * Email + Home-task the provider that the GoStork agreement awaits their
+ * signature, via the login-free guest link (minted here when missing).
+ * Used by: direct-SENT sends (no GoStork signer role) and admin reminders.
+ * The webhook path (GoStork signs first) has its own copy of this sequence
+ * in chat-router's handleProviderAgreementWebhook.
+ */
+export async function notifyProviderAgreementProviderTurn(agreementId: string, requestedByUserId: string): Promise<void> {
+  const pa = await (prisma as any).providerAgreement.findUnique({
+    where: { id: agreementId },
+    include: { provider: { select: { name: true, email: true } } },
+  });
+  if (!pa || pa.status !== "SENT") return;
+
+  const { randomBytes } = await import("crypto");
+  const guestToken = pa.guestToken || randomBytes(24).toString("hex");
+  await (prisma as any).providerAgreement.update({
+    where: { id: pa.id },
+    data: { guestToken, providerNotifiedAt: new Date() },
+  });
+
+  await raiseProviderAgreementTask(pa.providerId, requestedByUserId, pa.id);
+
+  const { getNestApp } = await import("./nest-app-ref");
+  const nestApp = getNestApp();
+  if (!nestApp) {
+    console.error(`[ProviderAgreement] Nest app unavailable - provider notification email NOT sent for ${agreementId}`);
+    return;
+  }
+  const { NotificationService } = await import("./src/modules/notifications/notification.service");
+  const notifService = nestApp.get(NotificationService);
+  const { getBaseUrl } = await import("./src/lib/get-base-url");
+  await notifService.sendProviderAgreementRequestNotification({
+    providerId: pa.providerId,
+    providerName: pa.provider?.name || "Provider",
+    signingUrl: `${getBaseUrl()}/sign-agreement/${guestToken}`,
+    fallbackSigner: { userId: pa.signerUserId, email: pa.signerEmail || pa.provider?.email || "", name: pa.provider?.name || "" },
+  });
 }
 
 /** Signing session for a ProviderAgreement - the viewer determines the

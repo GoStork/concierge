@@ -188,10 +188,12 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
     const res = await (await apiRequest("POST", "/api/admin/provider-agreements/send", { providerId: selectedProviderId })).json();
     toast({
       title: "Agreement sent",
-      description: "Your signature is next: fill in the referral fees and sign, then the provider gets notified.",
+      description: res?.status === "SENT"
+        ? "The provider has been emailed a signing link - no GoStork signature needed on this template."
+        : "Your signature is next: fill in the referral fees and sign, then the provider gets notified.",
     });
     refresh();
-    if (res?.agreementId) navigate(`/provider-agreement/${res.agreementId}`);
+    if (res?.agreementId && res?.status !== "SENT") navigate(`/provider-agreement/${res.agreementId}`);
   });
 
   const startCustom = () => run("start-custom", async () => {
@@ -201,10 +203,12 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
   });
 
   const sendCustom = (id: string) => run(`send-custom-${id}`, async () => {
-    await apiRequest("POST", `/api/admin/provider-agreements/${id}/send`, {});
+    const res = await (await apiRequest("POST", `/api/admin/provider-agreements/${id}/send`, {})).json();
     toast({
       title: "Custom agreement sent",
-      description: "Your signature is next: fill in the referral fees and sign, then the provider gets notified.",
+      description: res?.status === "SENT"
+        ? "The provider has been emailed a signing link - no GoStork signature needed on this template."
+        : "Your signature is next: fill in the referral fees and sign, then the provider gets notified.",
     });
     setDraft(null);
     refresh();
@@ -218,7 +222,7 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
 
   const remind = (row: AgreementRow) => run(`remind-${row.id}`, async () => {
     await apiRequest("POST", `/api/admin/provider-agreements/${row.id}/remind`, {});
-    toast({ title: "Reminder task created", description: `"Sign your GoStork agreement" now sits on ${row.providerName}'s Home page.` });
+    toast({ title: "Reminder sent", description: `${row.providerName} got a fresh signing-link email, and "Sign your GoStork agreement" sits on their Home page.` });
     refresh();
   });
 

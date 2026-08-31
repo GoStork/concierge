@@ -45,7 +45,7 @@ import {
   createProviderAgreementEditingSession,
   refreshProviderAgreementRoles,
   getProviderAgreementSigningSession,
-  raiseProviderAgreementTask,
+  notifyProviderAgreementProviderTurn,
   fetchDocumentViewUrl,
 } from "../../../pandadoc-service";
 
@@ -264,7 +264,10 @@ export class ProviderAgreementController {
     if (!row) throw new HttpException("Agreement not found", HttpStatus.NOT_FOUND);
     if (row.status === "COMPLETED") throw new HttpException("This agreement is already signed.", HttpStatus.BAD_REQUEST);
     if (row.status !== "SENT") throw new HttpException("The provider cannot sign yet - complete the GoStork signature first.", HttpStatus.BAD_REQUEST);
-    await raiseProviderAgreementTask(row.providerId, (req.user as any).id, row.id);
+    // Full reminder: re-send the signing email (guest link, minted if
+    // missing) AND reopen the Home-page task - a nudge nobody is emailed
+    // about is not a nudge.
+    await notifyProviderAgreementProviderTurn(row.id, (req.user as any).id);
     return { success: true };
   }
 
