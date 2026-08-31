@@ -4120,6 +4120,19 @@ I'll check in with you right after the call. You've got this!`;
         : isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl
         : `${getBaseUrl()}/room/${booking.id}`;
 
+      // Idempotency: this sync runs more than once for the same booking (on
+      // confirm, and again when a reschedule re-confirms it). Creating
+      // unconditionally overwrote googleEventId and left the previous event
+      // stranded on the calendar - cancellation only knows the last id, so the
+      // stale copy could never be removed. Drop the tracked event first.
+      if (booking.googleEventId) {
+        try {
+          await this.googleCalendar.deleteEvent(booking.providerUserId, calendarId, booking.googleEventId);
+        } catch (err: any) {
+          console.warn(`[calendar] Could not remove superseded Google event ${booking.googleEventId}: ${err.message}`);
+        }
+      }
+
       const googleEventId = await this.googleCalendar.createEvent(
         booking.providerUserId,
         calendarId,
@@ -4196,6 +4209,19 @@ I'll check in with you right after the call. You've got this!`;
             });
             for (const m of allMembers) {
               parentAttendees.push({ email: m.email, displayName: m.name || undefined });
+            }
+          }
+
+          // Same idempotency rule as the provider-side sync above: drop any
+          // event we already created for this member before making its
+          // replacement, or the old one is orphaned the moment existingMap is
+          // overwritten below.
+          const priorEventId = existingMap[memberId];
+          if (priorEventId) {
+            try {
+              await this.googleCalendar.deleteEvent(memberId, calendarId, priorEventId);
+            } catch (err: any) {
+              console.warn(`[calendar] Could not remove superseded parent Google event ${priorEventId}: ${err.message}`);
             }
           }
 
@@ -4344,6 +4370,16 @@ I'll check in with you right after the call. You've got this!`;
         : isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl
         : `${getBaseUrl()}/room/${booking.id}`;
 
+      // Same idempotency rule as the Google sync: a re-run would otherwise
+      // strand the previously created event where cancellation can't reach it.
+      if (booking.outlookEventId) {
+        try {
+          await this.microsoftCalendar.deleteEvent(booking.providerUserId, calendarId, booking.outlookEventId);
+        } catch (err: any) {
+          console.warn(`[calendar] Could not remove superseded Outlook event ${booking.outlookEventId}: ${err.message}`);
+        }
+      }
+
       const outlookEventId = await this.microsoftCalendar.createEvent(
         booking.providerUserId,
         calendarId,
@@ -4420,6 +4456,15 @@ I'll check in with you right after the call. You've got this!`;
             });
             for (const m of allMembers) {
               parentAttendees.push({ email: m.email, displayName: m.name || undefined });
+            }
+          }
+
+          const priorEventId = existingMap[memberId];
+          if (priorEventId) {
+            try {
+              await this.microsoftCalendar.deleteEvent(memberId, calendarId, priorEventId);
+            } catch (err: any) {
+              console.warn(`[calendar] Could not remove superseded parent Outlook event ${priorEventId}: ${err.message}`);
             }
           }
 
