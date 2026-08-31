@@ -49,8 +49,28 @@ export function GostorkAgreementCard() {
     onError: (e: Error) => toast({ title: "Could not share", description: e.message, variant: "destructive" }),
   });
 
-  const agreement = data?.agreement;
-  if (!agreement) return null;
+  // Render nothing only while loading; once loaded, the section is ALWAYS
+  // shown - a placeholder before the agreement is sent, so providers know
+  // where their contract will live.
+  if (!data) return null;
+  const agreement = data.agreement;
+  if (!agreement) {
+    return (
+      <section className="space-y-3" data-testid="gostork-agreement-section">
+        <div>
+          <h2 className="text-lg font-heading flex items-center gap-2">
+            <FileSignature className="w-5 h-5 text-primary" /> GoStork Agreement
+          </h2>
+          <p className="t-helper mt-0.5">Your service agreement with GoStork.</p>
+        </div>
+        <Card className="p-6 text-center">
+          <p className="t-helper">
+            GoStork has not sent your service agreement yet. Once it arrives you will review and sign it here, and your signed copy will stay available to open, download, and share.
+          </p>
+        </Card>
+      </section>
+    );
+  }
   const signed = agreement.status === "COMPLETED";
 
   return (
