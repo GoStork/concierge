@@ -123,6 +123,8 @@ export class ProviderAgreementController {
         requestedAt: a.requestedAt,
         completedAt: a.completedAt,
         supersededAt: a.supersededAt,
+        guestOpenedAt: a.guestOpenedAt,
+        autoRemindCount: a.autoRemindCount,
         reminderOpen: !a.supersededAt && openReminders.has(`pagr:${a.providerId}`),
       })),
     };

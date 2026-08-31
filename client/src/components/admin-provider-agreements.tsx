@@ -48,6 +48,8 @@ interface AgreementRow {
   requestedAt: string | null;
   completedAt: string | null;
   supersededAt: string | null;
+  guestOpenedAt: string | null;
+  autoRemindCount: number;
   reminderOpen: boolean;
 }
 
@@ -364,7 +366,7 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
       {/* ── Tracking table ── */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-lg font-heading">Sent contracts</h2>
+          <h2 className="text-lg font-heading">Sent GoStork Agreements</h2>
           <p className="t-helper mt-0.5">
             {isFixed
               ? "Every GoStork agreement sent to this provider - sign your part, nudge them, and download signed copies."
@@ -444,9 +446,17 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
                               Superseded{a.status === "COMPLETED" ? " (signed)" : ""}
                             </span>
                           ) : (
-                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLES[a.status] || STATUS_STYLES.DRAFT}`}>
-                              {STATUS_LABELS[a.status] || a.status}
-                            </span>
+                            <>
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLES[a.status] || STATUS_STYLES.DRAFT}`}>
+                                {STATUS_LABELS[a.status] || a.status}
+                              </span>
+                              {a.status === "SENT" && (
+                                <div className="t-helper mt-1 whitespace-nowrap">
+                                  {a.guestOpenedAt ? `Opened ${fmtDate(a.guestOpenedAt)}` : "Not opened yet"}
+                                  {a.autoRemindCount > 0 ? ` · reminded ${a.autoRemindCount}x` : ""}
+                                </div>
+                              )}
+                            </>
                           )}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">{fmtDate(a.requestedAt) || "-"}</TableCell>
