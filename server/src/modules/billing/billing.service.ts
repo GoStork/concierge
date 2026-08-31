@@ -141,7 +141,11 @@ export class BillingService {
           depositMilestone: true,
           averageClearanceDays: true,
           services: {
-            where: { status: "APPROVED" },
+            // Fees are configured DURING onboarding, before the service is
+            // approved (approval = published in the marketplace). Anything
+            // not declined gets a config tab, so the admin never has to
+            // publish a provider just to set their referral fee.
+            where: { status: { not: "DECLINED" } },
             include: { providerType: { select: { name: true } } },
           },
         },

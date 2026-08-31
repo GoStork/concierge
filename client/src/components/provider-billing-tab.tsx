@@ -167,7 +167,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
           <div className="rounded-lg border p-6 bg-secondary/40">
             <p className="text-sm font-medium">No services enabled yet</p>
             <p className="t-helper mt-1">
-              This provider has no APPROVED services. Approve a service in the Profile tab before configuring referral fees.
+              This provider has no services. Add a service in the Profile tab (Manage Services) before configuring referral fees - it does not need to be approved yet.
             </p>
           </div>
         ) : (

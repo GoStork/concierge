@@ -189,18 +189,6 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   });
 
   // ── Phase B - Admin setup ──
-  const newServices = (provider.services as any[]).filter((s) => s.status === "NEW");
-  steps.push({
-    key: "services", group: "admin_setup", label: "Approve services",
-    detail: provider.services.length === 0
-      ? "No services yet - add the services this provider offers."
-      : newServices.length
-        ? `${newServices.length} scraped service(s) awaiting your approval: ${newServices.map((s: any) => s.providerType?.name).filter(Boolean).join(", ")}.`
-        : "All services approved.",
-    status: provider.services.length > 0 && newServices.length === 0 ? "done" : "pending",
-    deepLink: editLink("profile"),
-  });
-
   const profileComplete = Boolean(provider.logoUrl && provider.about && provider.phone && provider.locations.length > 0);
   steps.push({
     key: "profile", group: "admin_setup", label: "Profile complete",
@@ -232,7 +220,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   // Billing: a negotiated referral fee config per approved service line.
   const approvedLineKeys = Array.from(new Set(
     (provider.services as any[])
-      .filter((s) => s.status === "APPROVED" || s.status === "NEW")
+      .filter((s) => s.status !== "DECLINED")
       .map((s) => serviceTypeKey(s.providerType?.name || "")),
   ));
   // A fee config only counts once its economics are actually set (a flat
@@ -246,7 +234,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   steps.push({
     key: "billing", group: "admin_setup", label: "Set billing & referral fees",
     detail: approvedLineKeys.length === 0
-      ? "Approve services first, then set the referral fee for each service line."
+      ? "Add the provider's services first (Profile tab), then set the referral fee for each service line."
       : missingFeeLines.length
         ? `Referral fee not configured for: ${missingFeeLines.join(", ")}.`
         : "Referral fees configured for every service line.",
@@ -351,6 +339,21 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("sponsorship", "onbsponsor", "Sponsorship", false, "Marked done by the provider.", "Optional - sponsored placement.", "sponsorship", true);
 
   // ── Phase D - Go-live review ──
+  // Approving a service IS the publish switch: every marketplace and Eva
+  // query filters on ProviderService.status === "APPROVED". Configuration
+  // (fees, scrapers, cost sheets) works on unapproved services, so this
+  // deliberately sits LAST - approve when the provider is ready to be seen.
+  const unapprovedServices = (provider.services as any[]).filter((s) => s.status !== "APPROVED" && s.status !== "DECLINED");
+  steps.push({
+    key: "services", group: "go_live", label: "Approve services (publish)",
+    detail: provider.services.length === 0
+      ? "No services yet - add the services this provider offers on the Profile tab."
+      : unapprovedServices.length
+        ? `Approving publishes this provider in the marketplace and to Eva. Awaiting approval: ${unapprovedServices.map((s: any) => s.providerType?.name).filter(Boolean).join(", ")}.`
+        : "All services approved - this provider is visible in the marketplace.",
+    status: provider.services.length > 0 && unapprovedServices.length === 0 ? "done" : "pending",
+    deepLink: editLink("profile"),
+  });
   const pendingSheets = (costSheets as any[]).filter((s) => s.status === "PENDING").length;
   const approvedSheets = (costSheets as any[]).filter((s) => s.status === "APPROVED").length;
   const costApprovalStatus: StepStatus = costSheets.length === 0
