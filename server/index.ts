@@ -19,6 +19,7 @@ import { runNightlySync, getNightlySyncStatus } from "./src/modules/providers/pr
 import { StorageService } from "./src/modules/storage/storage.service";
 import { startCalendarHealthScheduler } from "./src/modules/calendar/calendar-health.scheduler";
 import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-sheet-reminder.scheduler";
+import { startDocumentReminderScheduler } from "./src/modules/billing/document-reminder.scheduler";
 import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-recoup.scheduler";
 import { startPayoutRetryScheduler } from "./src/modules/billing/payout-retry.scheduler";
 import { startRemainderSweepScheduler } from "./src/modules/billing/remainder-sweep.scheduler";
@@ -370,6 +371,7 @@ export function log(message: string, source = "nestjs") {
   }
   startCalendarHealthScheduler(prismaService, notificationService);
   startCostSheetReminderScheduler(prismaService, notificationService);
+  startDocumentReminderScheduler(notificationService);
   startReversalRecoupScheduler(prismaService);
   startPayoutRetryScheduler(prismaService, nestApp.get(ConnectService));
   startRemainderSweepScheduler(prismaService);

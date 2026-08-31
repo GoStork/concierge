@@ -22,6 +22,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { LoginDto, LoginResponseDto, LogoutResponseDto, ErrorResponseDto } from "../../dto/auth.dto";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { verifyTurnstile, turnstileSiteKey } from "../../../turnstile";
+import { prisma as dbPrisma } from "../../../db";
 
 @ApiTags("Auth")
 @Controller("api/auth")
@@ -49,6 +50,12 @@ export class AuthController {
           return;
         }
         const enriched = await this.authService.getUserWithProvider(user.id);
+        // First-login tracking: null lastLoginAt = never logged in, which
+        // gates onboarding emails (e.g. the task digest stays silent until
+        // the provider actually has a working login).
+        (dbPrisma as any).user
+          .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+          .catch(() => {});
         const result = enriched || user;
         const { password: _, ...safe } = result;
         const token = this.authService.generateToken(user);

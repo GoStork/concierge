@@ -464,6 +464,10 @@ model User {
   partnerAge             Int?
   referralSource         String?
   roles                  String[]                @default(["PARENT"])
+  /// Stamped on every successful login. Null = never logged in - used to
+  /// suppress task-digest emails to provider users who have no working
+  /// login yet (accounts are created silently during onboarding).
+  lastLoginAt            DateTime?
   providerId             String?
   allLocations           Boolean                 @default(false)
   mustCompleteProfile    Boolean                 @default(false)
@@ -2716,6 +2720,8 @@ model ProviderW9 {
   /// Login-free signing (mirrors ProviderAgreement): the request email links
   /// to /sign-w9/<guestToken> so the signer needs no GoStork account.
   guestToken         String?   @unique
+  /// Automatic signing reminders already sent (day 3/7/10 ladder, max 3).
+  autoRemindCount    Int       @default(0)
   /// First open of the guest link - "did they see it" tracking.
   guestOpenedAt      DateTime?
   createdAt          DateTime  @default(now())
@@ -2762,6 +2768,10 @@ model ProviderAgreement {
   /// Generated when the provider is notified; validated by the public session
   /// endpoint (no auth).
   guestToken                 String?   @unique
+  /// Automatic signing reminders already sent (day 3/7/10 ladder, max 3).
+  /// Doubles as the cross-machine claim: the sweep increments it atomically
+  /// before emailing, so two servers on the same tick send once.
+  autoRemindCount            Int       @default(0)
   /// First time the guest signing link was opened - the admin's "did they see
   /// it yet" tracking signal (signed = status COMPLETED, as before).
   guestOpenedAt              DateTime?

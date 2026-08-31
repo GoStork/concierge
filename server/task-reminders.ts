@@ -141,12 +141,18 @@ export async function runTaskDigestSweep(db: Db, notifications: any): Promise<vo
 
     const userIds = Array.from(new Set(open.map((t: any) => t.assigneeUserId))) as string[];
     const [users, tzById] = await Promise.all([
-      db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } }),
+      db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true, providerId: true, lastLoginAt: true } }),
       timezonesFor(db, userIds),
     ]);
 
     for (const user of users as any[]) {
       if (!user.email) continue;
+      // A provider user who has NEVER logged in has no working login yet
+      // (accounts are created silently during onboarding; credentials arrive
+      // with the welcome email). Emailing them a daily task list before that
+      // is noise pointing at pages they cannot open - stay silent until
+      // their first real login.
+      if (user.providerId && !user.lastLoginAt) continue;
       const tz = tzById.get(user.id) || FALLBACK_TZ;
       const { hour, date } = localNow(tz, now);
       // Only in the 8am hour for THIS person. The cron ticks every 10 minutes,

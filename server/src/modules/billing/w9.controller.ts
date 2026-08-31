@@ -49,7 +49,7 @@ function isAdmin(user: any): boolean {
 
 /** Login-free signing link (mirrors ProviderAgreement.guestToken): mints the
  *  token on first use so pre-existing rows get one on resend/remind. */
-async function mintW9GuestToken(w9Id: string, existingToken: string | null): Promise<string> {
+export async function mintW9GuestToken(w9Id: string, existingToken: string | null): Promise<string> {
   if (existingToken) return existingToken;
   const { randomBytes } = await import("crypto");
   const guestToken = randomBytes(24).toString("hex");
@@ -100,7 +100,7 @@ function formTypeOf(req: Request): "W9" | "W8BENE" {
 // Called on BOTH the initial admin send and every reminder, so the request is
 // always visible as a to-do; the PandaDoc completion webhook closes it
 // (chat-router handleW9Webhook).
-async function raiseW9Task(providerId: string, createdByUserId: string) {
+export async function raiseW9Task(providerId: string, createdByUserId: string) {
   const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
   await (prisma as any).parentTask.upsert({
     where: { systemKey: `w9:${providerId}` },
