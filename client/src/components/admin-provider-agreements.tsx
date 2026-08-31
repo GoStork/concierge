@@ -413,8 +413,8 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
                   <TableRow>
                     <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={handleSort} />
                     <SortableTableHead label="Contract" sortKey="contract" currentSort={sortConfig} onSort={handleSort} />
-                    <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} />
                     <SortableTableHead label="Sent" sortKey="sent" currentSort={sortConfig} onSort={handleSort} />
+                    <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} />
                     <SortableTableHead label="Signed" sortKey="signed" currentSort={sortConfig} onSort={handleSort} />
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -440,6 +440,7 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
                         <TableCell className="text-sm" title={a.templateSource === "CUSTOM" ? (a.customTemplateOriginalName || undefined) : undefined}>
                           {a.templateSource === "CUSTOM" ? "Custom" : "Default"}
                         </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">{fmtDate(a.requestedAt) || "-"}</TableCell>
                         <TableCell>
                           {superseded ? (
                             <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap bg-muted text-muted-foreground">
@@ -459,7 +460,6 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
                             </>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm whitespace-nowrap">{fmtDate(a.requestedAt) || "-"}</TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
                           {a.completedAt ? (
                             <span className="inline-flex items-center gap-1">

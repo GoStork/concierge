@@ -200,8 +200,8 @@ export function AgreementRows({
                 {hasProvider && <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />}
                 <SortableTableHead label="Agreement" sortKey="type" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <SortableTableHead label="Sent" sortKey="sent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
-                <SortableTableHead label="Signed" sortKey="signed" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Signed" sortKey="signed" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -217,7 +217,6 @@ export function AgreementRows({
                   {hasProvider && <TableCell className="t-helper whitespace-nowrap">{item.providerName || "-"}</TableCell>}
                   <TableCell className="t-helper whitespace-nowrap">{item.documentType}</TableCell>
                   <TableCell className="t-helper whitespace-nowrap">{fmtDate(item.createdAt)}</TableCell>
-                  <TableCell className="t-helper whitespace-nowrap">{item.signedAt ? fmtDate(item.signedAt) : "-"}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {agreementStatusBadge(item.status)}
                     {item.progressLabel && (
@@ -226,6 +225,7 @@ export function AgreementRows({
                       </span>
                     )}
                   </TableCell>
+                  <TableCell className="t-helper whitespace-nowrap">{item.signedAt ? fmtDate(item.signedAt) : "-"}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"
