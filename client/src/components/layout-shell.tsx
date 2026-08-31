@@ -860,7 +860,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const reminderPopup = <MeetingReminderPopup />;
 
-  const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge", "/w9"];
+  // Public booking links (/book/:slug, /booking/:token) are sent by email and
+  // opened by parents who may also happen to be signed in. They render their own
+  // full-page layout, so wrapping them in the app chrome double-stacks two
+  // min-h-screen containers and drops the fixed mobile bottom nav on top of the
+  // Reschedule/Cancel row, making those actions unclickable.
+  const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge", "/w9", "/book/", "/booking/"];
   if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{reminderPopup}{children}</>;
 
   const ALL_MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [

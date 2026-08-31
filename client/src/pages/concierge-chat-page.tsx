@@ -476,6 +476,7 @@ export function RescheduleCalendarPicker({
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const bookerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = startOfDay(new Date());
   const calendarDays = generateCalendarDays(currentMonth);
@@ -507,6 +508,7 @@ export function RescheduleCalendarPicker({
   async function handleReschedule() {
     if (!selectedDate || !selectedSlot || !booking.publicToken) return;
     setSubmitting(true);
+    setError(null);
     try {
       const scheduledAt = `${format(selectedDate, "yyyy-MM-dd")}T${selectedSlot}:00`;
       const res = await fetch(`/api/calendar/booking/${booking.publicToken}/reschedule-public`, {
@@ -518,8 +520,14 @@ export function RescheduleCalendarPicker({
       if (res.ok) {
         const newBooking = await res.json();
         onRescheduled(newBooking);
+      } else {
+        // A silently swallowed failure here reads to the user as a dead button.
+        const body = await res.json().catch(() => null);
+        setError(body?.message || "We could not move this meeting. Please try another time.");
       }
-    } catch {} finally { setSubmitting(false); }
+    } catch {
+      setError("We could not move this meeting. Please check your connection and try again.");
+    } finally { setSubmitting(false); }
   }
 
   return (
@@ -573,6 +581,9 @@ export function RescheduleCalendarPicker({
           brandColor={brandColor}
           onSelectSlot={setSelectedSlot}
         />
+      )}
+      {error && (
+        <p className="text-xs text-destructive" data-testid="text-reschedule-picker-error">{error}</p>
       )}
       {selectedSlot && (
         <div className="flex gap-2">

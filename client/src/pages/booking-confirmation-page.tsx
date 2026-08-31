@@ -12,8 +12,9 @@ import {
   Loader2, Calendar, Clock, Video, User, Users, Check, X, RefreshCw
 } from "lucide-react";
 import { AddToCalendarButtons } from "@/components/calendar/add-to-calendar-buttons";
+import { RescheduleCalendarPicker } from "@/pages/concierge-chat-page";
 import { format } from "date-fns";
-import { useCompanyName } from "@/hooks/use-brand-settings";
+import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
 function formatTime12(date: Date): string {
   return format(date, "h:mm a");
@@ -22,6 +23,8 @@ function formatTime12(date: Date): string {
 export default function BookingConfirmationPage() {
   const { bookingId: token } = useParams<{ bookingId: string }>();
   const companyName = useCompanyName();
+  const { data: brand } = useBrandSettings();
+  const brandColor = brand?.primaryColor || "hsl(var(--primary))";
   const [cancelOpen, setCancelOpen] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [newDate, setNewDate] = useState("");
@@ -61,6 +64,11 @@ export default function BookingConfirmationPage() {
     },
   });
 
+  // Reschedule against the host's real availability whenever their booking page
+  // is configured; the manual date/time form is only a fallback for hosts with
+  // no booking page slug, so the button is never a dead end.
+  const bookingPageSlug: string | undefined = booking?.providerUser?.scheduleConfig?.bookingPageSlug || undefined;
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -90,7 +98,7 @@ export default function BookingConfirmationPage() {
   const providerPhoto = getPhotoSrc(booking.providerUser?.photoUrl);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-start justify-center p-4 py-8">
       <div className="w-full max-w-md">
         <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8">
           <div className="text-center mb-6">
@@ -248,15 +256,62 @@ export default function BookingConfirmationPage() {
             </div>
           )}
 
+          {isActive && rescheduleOpen && (
+            <div className="border border-border/50 rounded-[var(--radius)] p-4 mb-4 space-y-3" data-testid="section-reschedule">
+              <p className="text-sm font-ui">Pick a new time</p>
+              {bookingPageSlug ? (
+                <RescheduleCalendarPicker
+                  slug={bookingPageSlug}
+                  booking={booking}
+                  brandColor={brandColor}
+                  onRescheduled={(nb: any) => {
+                    if (nb?.publicToken) window.location.href = `/booking/${nb.publicToken}`;
+                    else {
+                      setRescheduleOpen(false);
+                      queryClient.invalidateQueries({ queryKey: ["/api/calendar/booking", token] });
+                    }
+                  }}
+                  onCancel={() => setRescheduleOpen(false)}
+                />
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <Label>New Date</Label>
+                    <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} data-testid="input-reschedule-date" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>New Time</Label>
+                    <Input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} data-testid="input-reschedule-time" />
+                  </div>
+                  {rescheduleMutation.isError && (
+                    <p className="text-sm text-destructive" data-testid="text-reschedule-error">{(rescheduleMutation.error as Error).message}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setRescheduleOpen(false)}>Back</Button>
+                    <Button className="flex-1" onClick={() => rescheduleMutation.mutate()} disabled={rescheduleMutation.isPending} data-testid="button-confirm-reschedule">
+                      {rescheduleMutation.isPending ? "Rescheduling..." : "Reschedule"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {isActive && (
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setRescheduleOpen(true)} data-testid="button-reschedule">
+              <Button variant="outline" className="flex-1" onClick={() => setRescheduleOpen((v) => !v)} data-testid="button-reschedule">
                 <RefreshCw className="w-4 h-4 mr-1" /> Reschedule
               </Button>
               <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)} data-testid="button-cancel">
                 <X className="w-4 h-4 mr-1" /> Cancel
               </Button>
             </div>
+          )}
+
+          {cancelMutation.isError && (
+            <p className="text-sm text-destructive mt-3 text-center" data-testid="text-cancel-error">
+              {(cancelMutation.error as Error).message || "Could not cancel this booking. Please try again."}
+            </p>
           )}
         </div>
 
@@ -271,6 +326,11 @@ export default function BookingConfirmationPage() {
             <DialogTitle>Cancel Booking</DialogTitle>
             <DialogDescription>Are you sure you want to cancel this booking? This cannot be undone.</DialogDescription>
           </DialogHeader>
+          {cancelMutation.isError && (
+            <p className="text-sm text-destructive" data-testid="text-cancel-dialog-error">
+              {(cancelMutation.error as Error).message || "Could not cancel this booking. Please try again."}
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelOpen(false)}>Keep Booking</Button>
             <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-confirm-cancel">
@@ -280,33 +340,6 @@ export default function BookingConfirmationPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reschedule Booking</DialogTitle>
-            <DialogDescription>Select a new date and time for your appointment.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label>New Date</Label>
-              <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} data-testid="input-reschedule-date" />
-            </div>
-            <div className="space-y-1">
-              <Label>New Time</Label>
-              <Input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} data-testid="input-reschedule-time" />
-            </div>
-            {rescheduleMutation.isError && (
-              <p className="text-sm text-destructive">{(rescheduleMutation.error as Error).message}</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRescheduleOpen(false)}>Cancel</Button>
-            <Button onClick={() => rescheduleMutation.mutate()} disabled={rescheduleMutation.isPending} data-testid="button-confirm-reschedule">
-              {rescheduleMutation.isPending ? "Rescheduling..." : "Reschedule"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

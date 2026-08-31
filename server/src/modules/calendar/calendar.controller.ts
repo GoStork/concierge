@@ -2870,6 +2870,9 @@ I'll check in with you right after the call. You've got this!`;
           select: {
             id: true, name: true, email: true, photoUrl: true, providerId: true, dailyRoomUrl: true,
             provider: { select: { id: true, name: true, logoUrl: true } },
+            // The public confirmation page reschedules against the host's real
+            // availability, so it needs the booking page slug to query slots.
+            scheduleConfig: { select: { bookingPageSlug: true } },
           },
         },
         parentUser: {
