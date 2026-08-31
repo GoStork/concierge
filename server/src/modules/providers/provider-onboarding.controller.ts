@@ -53,6 +53,9 @@ export type OnboardingStep = {
 const MARKABLE_STEP_KEYS = new Set([
   "parent_form", "parent_form_provider", "partner_clinics", "knowledge",
   "playbooks", "automation", "branding", "sponsorship",
+  // Providers without a database to scrape (they send PDFs / upload manually)
+  // close these by hand.
+  "scraper_egg", "scraper_surrogate", "scraper_sperm",
 ]);
 
 export type OnboardingSummary = {
@@ -191,6 +194,30 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     detail: hasProviderAdmin ? "A PROVIDER_ADMIN account exists." : "Create the provider's admin account so they can log in.",
     status: hasProviderAdmin ? "done" : "pending", deepLink: editLink("users"),
   });
+
+  // The agreement goes out right after the admin user exists (sending needs
+  // a signer member, and the provider signs BEFORE doing anything else),
+  // then the W-9. Signing is the provider's part, tracked in Phase C.
+  const pagrStatus = pagr?.status || "NOT_SENT";
+  const pagrSent = ["SENT", "COMPLETED"].includes(pagrStatus);
+  steps.push({
+    key: "send_agreement", group: "admin_setup", label: "Send provider agreement",
+    detail: pagrSent
+      ? "Agreement sent to the provider."
+      : pagrStatus === "AWAITING_GOSTORK"
+        ? "GoStork signs first - fill referral fees and sign (Agreements tab)."
+        : hasProviderAdmin
+          ? "Send the GoStork agreement from the Agreements tab."
+          : "Create the provider admin user first, then send the GoStork agreement from the Agreements tab.",
+    status: pagrSent ? "done" : "pending", deepLink: editLink("agreements"),
+  });
+  const w9Status = w9?.status || "NOT_SENT";
+  const w9Sent = ["SENT", "COMPLETED"].includes(w9Status);
+  steps.push({
+    key: "send_w9", group: "admin_setup", label: "Send W-9",
+    detail: w9Sent ? "W-9 sent to the provider." : "Send the W-9 request from the Legal tab.",
+    status: w9Sent ? "done" : "pending", deepLink: editLink("legal-identity"),
+  });
   const profileComplete = Boolean(provider.logoUrl && provider.about && provider.phone && provider.locations.length > 0);
   steps.push({
     key: "profile", group: "admin_setup", label: "Profile complete",
@@ -201,17 +228,23 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     status: profileComplete ? "done" : "pending", deepLink: editLink("profile"),
   });
 
+  // The step is about PROFILES EXISTING, not about scraping per se: some
+  // providers have no database to sync and upload profiles manually / via
+  // PDF, which counts just the same. A configured-but-failing sync stays
+  // pending even with records (it needs attention); no-database providers
+  // with nothing to import can be marked done manually.
   const scraperStep = (key: string, label: string, tab: string, cfg: any, count: number) => {
-    const ok = Boolean(cfg) && ["SUCCESS", "PARTIAL", "COMPLETED"].includes(String(cfg?.syncStatus || "").toUpperCase()) && count > 0;
+    const syncHealthy = !cfg || ["SUCCESS", "PARTIAL", "COMPLETED"].includes(String(cfg?.syncStatus || "").toUpperCase());
+    const ok = count > 0 && syncHealthy;
     steps.push({
       key, group: "admin_setup", label,
-      detail: !cfg
-        ? "No sync configured - set the source URL and credentials, then run Sync 10 Profiles."
-        : count === 0
-          ? "Sync configured but no records imported yet."
-          : ok
-            ? `${count} profile(s) synced.`
-            : `Sync configured (${count} record(s)) - last run status: ${cfg.syncStatus}.`,
+      detail: ok
+        ? `${count} profile(s)${cfg ? " synced" : " (uploaded manually)"}.`
+        : cfg
+          ? count === 0
+            ? "Sync configured but no records imported yet."
+            : `Sync configured (${count} record(s)) - last run status: ${cfg.syncStatus}.`
+          : "Set up a sync (source URL + credentials, then Sync 10 Profiles), upload profiles manually - or mark done if this provider has no database and sends PDFs instead.",
       status: ok ? "done" : "pending", deepLink: editLink(tab),
     });
   };
@@ -253,27 +286,6 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     key: "knowledge", group: "admin_setup", label: "Seed knowledge base",
     detail: knowledgeCount > 0 ? `${knowledgeCount} knowledge chunk(s) indexed.` : "Sync their website or upload documents so the AI answers from their real content.",
     status: knowledgeCount > 0 ? "done" : "optional", deepLink: editLink("knowledge"), isOptional: true,
-  });
-
-  // Sending the compliance documents is the ADMIN's action - the signing is
-  // the provider's (tracked in Phase C, locked until these are sent).
-  const w9Status = w9?.status || "NOT_SENT";
-  const w9Sent = ["SENT", "COMPLETED"].includes(w9Status);
-  steps.push({
-    key: "send_w9", group: "admin_setup", label: "Send W-9",
-    detail: w9Sent ? "W-9 sent to the provider." : "Send the W-9 request from the Legal tab.",
-    status: w9Sent ? "done" : "pending", deepLink: editLink("legal-identity"),
-  });
-  const pagrStatus = pagr?.status || "NOT_SENT";
-  const pagrSent = ["SENT", "COMPLETED"].includes(pagrStatus);
-  steps.push({
-    key: "send_agreement", group: "admin_setup", label: "Send provider agreement",
-    detail: pagrSent
-      ? "Agreement sent to the provider."
-      : pagrStatus === "AWAITING_GOSTORK"
-        ? "GoStork signs first - fill referral fees and sign (Agreements tab)."
-        : "Send the GoStork agreement from the Agreements tab.",
-    status: pagrSent ? "done" : "pending", deepLink: editLink("agreements"),
   });
 
   // ── Phase C - Provider setup (handoff) ──
