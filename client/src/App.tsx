@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
 import { Provider as ReduxProvider } from "react-redux";
 import { store } from "@/store";
 import { queryClient } from "./lib/queryClient";
@@ -125,11 +126,58 @@ function DashboardRoute() {
   return <Navigate to="/marketplace" replace />;
 }
 
+/**
+ * Global filter persistence: every page keeps its filters, tabs, and sort
+ * state in URL search params, so remembering the last search string per path
+ * makes EVERY filter on the platform sticky - leave a page and come back and
+ * it looks exactly as you left it.
+ *
+ * Rules:
+ *  - Arriving on a path WITH params saves them (deep links behave normally).
+ *  - Changing params on the same page saves the new state - including
+ *    clearing them, so "reset filters" stays reset.
+ *  - Arriving on a path WITHOUT params restores the saved state, if any.
+ * sessionStorage scope: per browser tab, gone when the tab closes - sticky
+ * enough for a work session without resurrecting week-old filters.
+ * Auth/guest flows are excluded - a restored ?returnTo= or token param
+ * there could misroute a login.
+ */
+const FILTER_PERSIST_EXCLUDED = ["/auth", "/login", "/reset-password", "/complete-profile", "/sign-agreement", "/agreements/guest", "/onboarding", "/"];
+
+function FilterPersistence() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const prevPathRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const path = location.pathname;
+    const excluded = FILTER_PERSIST_EXCLUDED.some(p => p === "/" ? path === "/" : path === p || path.startsWith(`${p}/`));
+    if (excluded) { prevPathRef.current = path; return; }
+    const key = `pagefilters:${path}`;
+    const samePage = prevPathRef.current === path;
+    prevPathRef.current = path;
+    try {
+      if (location.search) {
+        sessionStorage.setItem(key, location.search);
+      } else if (samePage) {
+        // The user cleared the params on this page - remember "cleared".
+        sessionStorage.setItem(key, "");
+      } else {
+        const saved = sessionStorage.getItem(key);
+        if (saved) navigate({ pathname: path, search: saved }, { replace: true });
+      }
+    } catch { /* storage unavailable (private mode) - filters just don't stick */ }
+  }, [location.pathname, location.search, navigate]);
+
+  return null;
+}
+
 function AppRoutes() {
   useBrandSettings();
 
   return (
     <LayoutShell>
+      <FilterPersistence />
       <Routes>
         <Route path="/" element={<AuthPage />} />
         <Route path="/login" element={<AuthPage />} />
