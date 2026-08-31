@@ -429,6 +429,15 @@ export class ProviderOnboardingController {
         createdAt: { gte: since },
         isTestData: false,
         ...(houseId ? { id: { not: houseId } } : { NOT: { name: { equals: "gostork", mode: "insensitive" } } }),
+        // The CDC pipeline bulk-creates hundreds of IVF clinic profiles
+        // (cdcClinicId set) that nobody is actively onboarding - they must
+        // NOT flood the admin Home queue. A CDC clinic only counts as "in
+        // onboarding" once someone deliberately started it by creating its
+        // provider admin user; manually created providers count immediately.
+        OR: [
+          { cdcClinicId: null },
+          { users: { some: { isDisabled: false, roles: { has: "PROVIDER_ADMIN" } } } },
+        ],
       },
       select: { id: true },
       orderBy: { createdAt: "desc" },
