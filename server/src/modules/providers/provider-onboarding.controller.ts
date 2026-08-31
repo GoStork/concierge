@@ -104,6 +104,7 @@ const HANDOFF_TASKS: Array<{
   { prefix: "onbcal", title: "Connect your calendar", notes: "Connect Google, Outlook, or Apple Calendar so parents can book consultations with your team.", deepLink: "/account/calendar", priority: "HIGH" },
   { prefix: "onbstripe", title: "Connect payouts", notes: "Set up your payout account so GoStork can send you money.", deepLink: "/account/payouts", priority: "HIGH" },
   { prefix: "onbcosts", title: "Upload your cost sheet(s)", notes: "Upload a cost sheet for each service you offer. GoStork reviews and approves them before they go live.", deepLink: "/account/company", priority: "HIGH" },
+  { prefix: "onbtemplates", title: "Upload your parent agreement templates", notes: "Upload the agreement(s) parents sign for each of your services and assign the signature fields.", deepLink: "/account/documents", priority: "HIGH" },
   { prefix: "onbpaybasis", title: "Choose how parents are invoiced", notes: "On the Billing page, pick your Parent Pays Basis for each service: the full quoted total, or a default first payment amount.", deepLink: "/account/billing", priority: "HIGH" },
   { prefix: "onbprofile", title: "Review your company profile", notes: "Check your logo, about text, locations, and contact details - parents see these on your marketplace profile.", deepLink: "/account/company", priority: "MEDIUM" },
   { prefix: "onbteam", title: "Add your team members and assign roles", notes: "Invite your staff and assign their roles and locations so the right people get the right work.", deepLink: "/account/team", priority: "MEDIUM" },
@@ -137,7 +138,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     eggCount, surroCount, spermCount,
     costSheets, referralFees, w9, pagr,
     calendarCount, bank, knowledgeCount, playbookCount, autoReplyCount,
-    ipFormOverrideCount, onbTasks,
+    ipFormOverrideCount, agreementTemplates, onbTasks,
   ] = await Promise.all([
     db.user.findMany({ where: { providerId }, select: { id: true, roles: true } }),
     hasEgg ? db.eggDonorSyncConfig.findUnique({ where: { providerId } }) : null,
@@ -156,6 +157,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     db.taskPlaybook.count({ where: { providerId } }),
     db.providerAutoReply.count({ where: { providerId } }),
     db.ipFormProviderOverride.count({ where: { providerId } }),
+    db.providerAgreementTemplate.findMany({ where: { providerId }, select: { serviceType: true, agreementTemplateUrl: true } }),
     db.parentTask.findMany({
       where: { providerId, source: "SYSTEM", systemKey: { startsWith: "onb" } },
       select: { systemKey: true, status: true, createdAt: true },
@@ -372,6 +374,24 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("calendar", "onbcal", "Calendar connected", calendarCount > 0, `${calendarCount} calendar connection(s).`, "Waiting for the provider to connect a calendar.", "calendar");
   providerStep("stripe", "onbstripe", "Payouts connected", Boolean(bank?.payoutsEnabled), "Stripe payouts enabled.", bank?.stripeConnectAccountId ? "Stripe onboarding started but payouts not enabled yet." : "Waiting for the provider to set up payouts.", "payouts", false, bank?.stripeConnectAccountId && !bank?.payoutsEnabled ? "Started" : undefined);
   providerStep("costs_uploaded", "onbcosts", "Cost sheets uploaded", costSheets.length > 0, `${costSheets.length} cost sheet(s) uploaded.`, "Waiting for the provider to upload cost sheets.", "costs");
+  // Parent agreement templates: one per service line (the contracts parents
+  // sign). The legacy single-template fields on Provider cover the first
+  // line for providers set up before per-service templates existed.
+  const tplKeys = new Set(
+    (agreementTemplates as any[]).filter((t) => t.agreementTemplateUrl).map((t) => t.serviceType),
+  );
+  const tplMissing = approvedLineKeys.filter((k, i) => !tplKeys.has(k) && !(i === 0 && provider.agreementTemplateUrl));
+  providerStep(
+    "agreement_templates", "onbtemplates", "Parent agreement templates uploaded",
+    approvedLineKeys.length > 0 && tplMissing.length === 0,
+    "Agreement template(s) uploaded for every service line.",
+    tplMissing.length && tplMissing.length < approvedLineKeys.length
+      ? `Waiting for templates for: ${tplMissing.join(", ")}.`
+      : "Waiting for the provider to upload the agreement(s) parents sign.",
+    "agreements",
+    false,
+    tplMissing.length && tplMissing.length < approvedLineKeys.length ? "Started" : undefined,
+  );
   // Parent Pays Basis is decided by the provider on their Billing page. A
   // line counts as decided once its config says TOTAL_COST or carries a
   // default first-payment amount - DEFAULT_FIRST_PAYMENT with no amount is

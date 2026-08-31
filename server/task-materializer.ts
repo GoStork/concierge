@@ -752,6 +752,16 @@ async function reconcileOnboardingTasks<T extends { id: string; source?: string;
       return cfgs.length > 0 && cfgs.every((c: any) => c.parentPaysBasis === "TOTAL_COST" || c.defaultServiceAmount != null);
     },
     onbteam: async (pid) => (await db.user.count({ where: { providerId: pid } })) >= 2,
+    // Any parent-agreement template (per-service row or the legacy single
+    // fields on Provider) closes the upload task; per-line completeness stays
+    // visible on the admin checklist.
+    onbtemplates: async (pid) => {
+      const [rows, p] = await Promise.all([
+        db.providerAgreementTemplate.count({ where: { providerId: pid, agreementTemplateUrl: { not: null } } }),
+        db.provider.findUnique({ where: { id: pid }, select: { agreementTemplateUrl: true } }),
+      ]);
+      return rows > 0 || Boolean(p?.agreementTemplateUrl);
+    },
     onbplaybooks: async (pid) => (await db.taskPlaybook.count({ where: { providerId: pid } })) > 0,
     onbauto: async (pid) => (await db.providerAutoReply.count({ where: { providerId: pid } })) > 0,
   };
