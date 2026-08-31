@@ -636,6 +636,25 @@ in this order:
   **SUBMITTED FOR REVIEW 2026-08-26** (Verification Center: "data access is
   under review"); now waiting on Google (days-weeks; replies go to
   eran.amir@gostork.com - answer promptly). Full prep trail:
+  - [ ] **BLOCKED ON US 2026-08-28: Google replied "[Action Needed] OAuth
+    Verification Request Acknowledgement" (from
+    api-oauth-dev-verification-reply+28ihckz1z2dc91d@google.com) and the
+    review is STALLED until we reply to that email.** They rejected the 52s
+    demo video as insufficient: it shows the connect/consent flow but not the
+    actual in-app use of each scope, so it does not evidence why
+    calendar.readonly + calendar.events are needed instead of narrower
+    permissions. What they demand: (1) a NEW comprehensive video showing the
+    FULL operational functionality of each requested scope, and (2) for the
+    write scope, "source account impact" - the change made in GoStork must be
+    shown appearing in the user's actual Google Calendar. Also: do not
+    exercise unverified scopes on production traffic (it burns the 100-user
+    cap) - record on a staging environment or a separate project, keeping
+    publishing status "In Production". Re-shoot plan: connect calendar ->
+    show GoStork reading busy/free to grey out taken slots (calendar.readonly)
+    -> book a consultation -> cut to Google Calendar showing the created event
+    -> reschedule and cancel in GoStork -> cut back to Google Calendar showing
+    the event updated then removed (calendar.events). Then reply directly to
+    that email thread with the new unlisted YouTube link.
   - [x] Client "GoStork Calendar": removed all 4 replit/ngrok redirect URIs;
     only app.gostork.com / gostork.com / test-app.gostork.com callbacks remain.
     **This intentionally broke NEW Google Calendar connects on both dev Macs'
