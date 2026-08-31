@@ -790,6 +790,13 @@ export class UsersController {
       },
     });
     if (!target) throw new NotFoundException("User not found");
+    // Self-heal: rooms are provisioned at creation, so accounts that predate
+    // that logic (early GoStork admins included) have none. Provision on view
+    // for any role that qualifies, exactly as creation would have.
+    if (!target.dailyRoomUrl && (target.roles || []).some((r: string) => ROLES_NEEDING_VIDEO_ROOM.includes(r))) {
+      const url = await this.provisionVideoRoom(target.id, target.roles || []);
+      if (url) (target as any).dailyRoomUrl = url;
+    }
     return target;
   }
 
