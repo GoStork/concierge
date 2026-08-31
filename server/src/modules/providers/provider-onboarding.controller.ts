@@ -21,6 +21,7 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  Inject,
   UseGuards,
 } from "@nestjs/common";
 import { Request } from "express";
@@ -484,7 +485,9 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
 
 @Controller()
 export class ProviderOnboardingController {
-  constructor(private readonly notificationService: NotificationService) {}
+  // Explicit @Inject: the esbuild bundle emits no design:type metadata, so
+  // plain constructor injection resolves to undefined at runtime.
+  constructor(@Inject(NotificationService) private readonly notificationService: NotificationService) {}
 
   /** Send the provider admin(s) their welcome email: login email + a
    *  set-password link (7-day token). The onboarding "Send welcome email"

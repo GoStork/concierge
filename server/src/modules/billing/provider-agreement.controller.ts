@@ -32,6 +32,7 @@ import {
   Res,
   HttpException,
   HttpStatus,
+  Inject,
   Logger,
   UseGuards,
 } from "@nestjs/common";
@@ -67,7 +68,9 @@ function requesterFromUser(user: any): { userId: string; email: string; firstNam
 export class ProviderAgreementController {
   private readonly logger = new Logger(ProviderAgreementController.name);
 
-  constructor(private readonly notificationService: NotificationService) {}
+  // Explicit @Inject: the esbuild bundle emits no design:type metadata, so
+  // plain constructor injection resolves to undefined at runtime.
+  constructor(@Inject(NotificationService) private readonly notificationService: NotificationService) {}
 
   // ── Admin overview: eligible providers + all agreement rows ──
   // Eligible = the account exists and someone there can actually sign: at
