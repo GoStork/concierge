@@ -181,14 +181,16 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     detail: "Profile scraped from the website and approved.",
     status: "done", deepLink: editLink("profile"),
   });
+
+  // ── Phase B - Admin setup ──
+  // Creating the provider's admin account is the GoStork admin's action (Team
+  // tab), so it leads THIS phase rather than sitting in "Created".
   const hasProviderAdmin = (users as any[]).some((u) => (u.roles || []).includes("PROVIDER_ADMIN"));
   steps.push({
-    key: "admin_user", group: "created", label: "Provider admin user created",
+    key: "admin_user", group: "admin_setup", label: "Create provider admin user",
     detail: hasProviderAdmin ? "A PROVIDER_ADMIN account exists." : "Create the provider's admin account so they can log in.",
     status: hasProviderAdmin ? "done" : "pending", deepLink: editLink("users"),
   });
-
-  // ── Phase B - Admin setup ──
   const profileComplete = Boolean(provider.logoUrl && provider.about && provider.phone && provider.locations.length > 0);
   steps.push({
     key: "profile", group: "admin_setup", label: "Profile complete",
