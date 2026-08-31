@@ -3154,6 +3154,32 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /** Provider (or admin) shares the GoStork service agreement with arbitrary
+   *  recipients - lawyers, partners, colleagues. The email carries the
+   *  token-gated public link, so recipients need no GoStork account. */
+  async sendProviderAgreementShareEmail(params: {
+    toEmails: string[];
+    providerName: string;
+    sharedByName: string;
+    /** Public token-gated link (view/sign/download - no login needed). */
+    url: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const companyName = brandData.companyName;
+    const subject = `${params.sharedByName} shared the ${companyName} agreement for ${params.providerName}`;
+    for (const email of params.toEmails) {
+      const html = buildBrandedEmail(brandData, {
+        title: "An Agreement Was Shared With You",
+        greeting: "Hi,",
+        body: `${this.escapeHtml(params.sharedByName)} shared the ${this.escapeHtml(companyName)} service agreement for <strong>${this.escapeHtml(params.providerName)}</strong> with you. Use the button below to view it - no account needed.`,
+        buttons: [{ label: "Open Agreement", url: params.url }],
+        footer: "If you were not expecting this document, you can ignore this email.",
+      });
+      await this.sendRawEmail(email, subject, html)
+        .catch(e => this.logger.error(`Failed to send agreement share email to ${email}: ${e.message}`));
+    }
+  }
+
   /** Tell a GoStork admin the provider signed the GoStork service agreement. */
   async sendProviderAgreementCompletedNotification(params: {
     adminUserId: string;

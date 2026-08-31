@@ -271,9 +271,9 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     detail: pagrSent
       ? "Agreement sent to the provider."
       : pagrStatus === "AWAITING_GOSTORK"
-        ? "GoStork signs first - fill referral fees and sign on the Legal tab."
-        : "Send the GoStork agreement from the Legal tab.",
-    status: pagrSent ? "done" : "pending", deepLink: editLink("legal-identity"),
+        ? "GoStork signs first - fill referral fees and sign (Agreements tab)."
+        : "Send the GoStork agreement from the Agreements tab.",
+    status: pagrSent ? "done" : "pending", deepLink: editLink("agreements"),
   });
 
   // ── Phase C - Provider setup (handoff) ──
@@ -293,7 +293,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
           : "Sent - the provider has not opened the signing link yet."
         : "Locked until the agreement is sent (admin step above).",
     status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "locked",
-    deepLink: editLink("legal-identity"),
+    deepLink: editLink("agreements"),
   });
   const partnerIds = Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : [];
   if (hasSurrogacy || hasEgg) {

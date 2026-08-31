@@ -297,6 +297,47 @@ export class ProviderAgreementController {
     };
   }
 
+  /** Share the agreement with arbitrary email recipients (lawyers, partners).
+   *  Provider members share their own agreement; admins any. Sends each
+   *  recipient the token-gated public link - no GoStork account needed.
+   *  Mints the guest token on demand for agreements created before guest
+   *  signing existed. */
+  @Post("api/provider-agreements/:id/share")
+  @UseGuards(SessionOrJwtGuard)
+  async share(@Req() req: Request, @Param("id") id: string, @Body() body: { emails?: string[] }) {
+    const user = req.user as any;
+    const row = await (prisma as any).providerAgreement.findUnique({
+      where: { id },
+      select: { id: true, providerId: true, status: true, guestToken: true, provider: { select: { name: true } } },
+    });
+    if (!row) throw new HttpException("Agreement not found", HttpStatus.NOT_FOUND);
+    if (!isAdmin(user) && user.providerId !== row.providerId) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    if (!["SENT", "COMPLETED"].includes(row.status)) {
+      throw new HttpException("This agreement has not been sent yet", HttpStatus.BAD_REQUEST);
+    }
+    const emails = Array.from(new Set((body?.emails || [])
+      .map((e) => String(e || "").trim().toLowerCase())
+      .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))));
+    if (!emails.length) throw new HttpException("Add at least one valid email address", HttpStatus.BAD_REQUEST);
+    if (emails.length > 10) throw new HttpException("At most 10 recipients per share", HttpStatus.BAD_REQUEST);
+
+    let guestToken = row.guestToken;
+    if (!guestToken) {
+      guestToken = (await import("crypto")).randomBytes(24).toString("hex");
+      await (prisma as any).providerAgreement.update({ where: { id }, data: { guestToken } });
+    }
+    const { getBaseUrl } = await import("../../lib/get-base-url");
+    await this.notificationService.sendProviderAgreementShareEmail({
+      toEmails: emails,
+      providerName: row.provider?.name || "Provider",
+      sharedByName: user.name || user.email || "A GoStork member",
+      url: `${getBaseUrl()}/sign-agreement/${guestToken}`,
+    });
+    return { shared: emails.length };
+  }
+
   // ── Public: login-free guest signing (token-gated, NO auth) ──
   //
   // The provider signs the agreement BEFORE they ever log in - their

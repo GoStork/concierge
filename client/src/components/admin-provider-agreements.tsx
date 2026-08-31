@@ -71,13 +71,17 @@ const STATUS_RANK: Record<string, number> = { AWAITING_GOSTORK: 0, DRAFT: 1, SEN
 
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString() : null);
 
-export function AdminProviderAgreements() {
+export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?: string } = {}) {
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { sortConfig, handleSort, sortData } = useTableSort();
 
-  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
+  // Fixed mode: mounted on a specific provider's Agreements tab (admin edit
+  // page) - the provider is preselected and locked, and the table shows only
+  // that provider's contracts.
+  const isFixed = !!fixedProviderId;
+  const [selectedProviderId, setSelectedProviderId] = useState<string>(fixedProviderId || "");
   const [contractMode, setContractMode] = useState<"default" | "custom">("default");
   const [draft, setDraft] = useState<AgreementRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -150,6 +154,7 @@ export function AdminProviderAgreements() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return agreements.filter(a => {
+      if (isFixed && a.providerId !== fixedProviderId) return false;
       if (statusFilter === "superseded" ? !a.supersededAt : (statusFilter !== "all" && (a.supersededAt || a.status !== statusFilter))) return false;
       if (!q) return true;
       return [a.providerName, a.signerEmail, a.customTemplateOriginalName, a.templateSource === "CUSTOM" ? "custom" : "default"]
@@ -237,15 +242,22 @@ export function AdminProviderAgreements() {
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-heading flex items-center gap-2">
-            <FileSignature className="w-5 h-5 text-primary" /> Send agreement to a provider
+            <FileSignature className="w-5 h-5 text-primary" /> {isFixed ? "GoStork Agreement" : "Send agreement to a provider"}
           </h2>
           <p className="t-helper mt-0.5">
-            Providers with a team member who can sign (Provider Admin or Billing Manager). You fill
-            the referral fees and sign first; they are emailed and tasked once your part is done.
+            {isFixed
+              ? "Send this provider the GoStork service agreement and track its signature. You fill the referral fees and sign first; they are emailed once your part is done."
+              : "Providers with a team member who can sign (Provider Admin or Billing Manager). You fill the referral fees and sign first; they are emailed and tasked once your part is done."}
           </p>
         </div>
         <Card className="p-5 space-y-4">
+          {isFixed && !isLoading && !selectedProvider && (
+            <p className="text-sm rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] bg-[hsl(var(--brand-warning)/0.08)] px-3 py-2">
+              This provider has no team member who can sign yet - create their Provider Admin user (Team tab) first, then send the agreement.
+            </p>
+          )}
           <div className="grid gap-4 sm:grid-cols-[minmax(240px,1fr)_auto] sm:items-end">
+            {!isFixed && (
             <div className="space-y-1.5">
               <Label>Provider</Label>
               <Select value={selectedProviderId} onValueChange={(v) => { setSelectedProviderId(v); setDraft(null); }}>
@@ -261,6 +273,7 @@ export function AdminProviderAgreements() {
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div className="flex rounded-[var(--radius)] border overflow-hidden w-fit">
               {(["default", "custom"] as const).map(mode => (
                 <button
@@ -286,7 +299,7 @@ export function AdminProviderAgreements() {
               </p>
               <Button
                 onClick={sendDefault}
-                disabled={!selectedProviderId || busy === "send-default"}
+                disabled={!selectedProviderId || (isFixed && !selectedProvider) || busy === "send-default"}
                 data-testid="agreement-send-default"
               >
                 {busy === "send-default" ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
@@ -299,7 +312,7 @@ export function AdminProviderAgreements() {
                 Upload a modified contract just for {selectedProvider?.name || "this provider"}, assign the
                 signature fields in PandaDoc, then send it to them alone.
               </p>
-              <Button onClick={startCustom} disabled={!selectedProviderId || busy === "start-custom"} data-testid="agreement-start-custom">
+              <Button onClick={startCustom} disabled={!selectedProviderId || (isFixed && !selectedProvider) || busy === "start-custom"} data-testid="agreement-start-custom">
                 {busy === "start-custom" ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <PenLine className="w-4 h-4 mr-1.5" />}
                 Configure custom contract
               </Button>
@@ -349,10 +362,12 @@ export function AdminProviderAgreements() {
         <div>
           <h2 className="text-lg font-heading">Sent contracts</h2>
           <p className="t-helper mt-0.5">
-            Every GoStork agreement sent to a provider. Sign your part, nudge the ones still
-            outstanding (a task on the provider's Home page), and download signed copies.
+            {isFixed
+              ? "Every GoStork agreement sent to this provider - sign your part, nudge them, and download signed copies."
+              : "Every GoStork agreement sent to a provider. Sign your part, nudge the ones still outstanding (a task on the provider's Home page), and download signed copies."}
           </p>
         </div>
+        {!isFixed && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -379,6 +394,7 @@ export function AdminProviderAgreements() {
             </SelectContent>
           </Select>
         </div>
+        )}
         {isLoading ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading agreements...

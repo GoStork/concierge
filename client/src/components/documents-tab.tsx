@@ -21,6 +21,7 @@ import { FileText, RefreshCw, Zap } from "lucide-react";
 import { PandaDocTemplateEditor } from "./pandadoc-template-editor";
 import { AgreementRows } from "./agreements-list";
 import { AdminProviderAgreements } from "./admin-provider-agreements";
+import { GostorkAgreementCard } from "./gostork-agreement-card";
 
 interface Agreement {
   id: string;
@@ -198,6 +199,15 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
       {/* GoStork admin: send + track provider service agreements. The parent
           agreement sections below are provider self-service concerns. */}
       {isGoStorkAdmin && <AdminProviderAgreements />}
+
+      {/* Admin viewing a specific provider: same send/track UI, locked to
+          this provider (the onboarding checklist's "Send provider agreement"
+          step deep-links here). */}
+      {adminForProvider && <AdminProviderAgreements fixedProviderId={providerId} />}
+
+      {/* Provider self-view: their GoStork agreement - sign, reopen,
+          download, and share by email. */}
+      {!isGoStorkAdmin && !adminForProvider && <GostorkAgreementCard />}
 
       {/* Agreement automation moved to the consolidated Automation tab. */}
       {!isGoStorkAdmin && (
