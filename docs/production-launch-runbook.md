@@ -235,6 +235,14 @@ NEXT, in order (items marked ERAN need a human in a browser):
    CLI DATABASE_URL (pgbouncer :6543) - fixed in c434d6d4 (CLI now uses
    DIRECT_URL), and the deploy script wraps migrate in `timeout 300` so a
    hang can never wedge the timer again (it logs a WARN instead).
+   [ ] **Deploys briefly serve plain-text "Not Found"** (observed 2026-08-31:
+   admin clicked an email link ~3 min after a push and hit Express's 404
+   while `npm run build` was replacing dist/public). Harmless in testing,
+   bad at launch - any provider/parent clicking an email during a deploy
+   sees it. Fix before launch: build into a staging dir and atomically swap
+   (or serve the old dist until the new build finishes, e.g. build to
+   dist-next then mv), so the running server never points at a half-built
+   dist.
    [x] Prod `.env` on the host: built from `.env.production.example` -
    [copy] keys from the MacBook dev .env (dotenv-parsed, round-trip
    verified), [fresh] SESSION_SECRET / JWT_SECRET / FIELD_ENCRYPTION_KEY /
