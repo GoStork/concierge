@@ -662,7 +662,7 @@ in this order:
     review mainly lifts the 100-user lifetime cap.
   - Verification is per GCP project/client, NOT per domain - the 1.0 app's
     approval (different client/project) does not cover this one.
-  - [~] **Dev Macs on gostork.com custom domains** (2026-08-26): ngrok
+  - [x] **Dev Macs on gostork.com custom domains** (2026-08-26): ngrok
     domains dev-mbp.gostork.com + dev-imac.gostork.com created; Cloudflare
     CNAMEs added (dev-mbp -> 2ddvk9kfsb8ez6cku.3izttaq3pypcplw8b
     .ngrok-cname.com, dev-imac -> 5axb335tynf9q3b9v.3izttaq3pypcplw8b
@@ -672,11 +672,23 @@ in this order:
     there) AND dev-mbp.gostork.com to port 5001 via
     ~/.gostork/ngrok-tunnels.yml + run-tunnel.sh `ngrok start gostork
     gostork-dev`; .env APP_URL=https://dev-mbp.gostork.com; verified 200
-    over TLS on both hosts. **iMac PENDING** - mirror the same three files
-    there (tunnels yml with gostork-imac.ngrok.app + dev-imac.gostork.com,
-    run-tunnel.sh, APP_URL=https://dev-imac.gostork.com) then restart
-    server + tunnel. Browse dev via the new domains from now on; the old
+    over TLS on both hosts. **iMac DONE 2026-08-31**: same three files
+    mirrored (ngrok-tunnels.yml with gostork-imac.ngrok.app +
+    dev-imac.gostork.com, run-tunnel.sh switched to `ngrok start gostork
+    gostork-dev`, .env APP_URL=https://dev-imac.gostork.com); both hosts
+    verified 200 on /api/brand/settings, TLS already provisioned so no
+    wait was needed. Browse dev via the new domains from now on; the old
     ngrok URLs stay alive for webhooks only.
+
+    iMac-specific gotchas (the MacBook recipe does NOT transfer verbatim):
+    the tunnel and server are **system LaunchDaemons**, not user agents -
+    `system/com.gostork.tunnel` and `system/com.gostork.nightly-sync`.
+    There is no `com.gostork.server` and no `gui/501/com.gostork.tunnel`
+    on this box. Passwordless sudo covers `kickstart` on nightly-sync but
+    NOT on the tunnel, so restart the tunnel by killing its ngrok PID and
+    letting KeepAlive respawn it - and target that exact PID, because this
+    iMac also runs unrelated ngrok agents (nutrition-planner :5002,
+    ai-health :3000) that a broad `pkill -f ngrok` will take down with it.
 - [x] Microsoft Graph app registration: test-app + app.gostork.com redirect URIs with the 2.0 path added 2026-08-19.
 - [ ] Apple/CalDAV: no redirect URIs, but verify app-specific password flow
   documentation for users.
