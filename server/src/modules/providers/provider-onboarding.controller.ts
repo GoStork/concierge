@@ -45,6 +45,9 @@ export type OnboardingStep = {
   manuallyMarkable?: boolean;
   /** True when its done status came from the admin's manual mark. */
   manuallyDone?: boolean;
+  /** Short progress signal for provider-side steps ("Sent", "Opened 8/31",
+   *  "Started") - shows the admin how far the provider actually got. */
+  progress?: string;
 };
 
 /** Optional steps the admin can check off by hand when there is nothing to
@@ -145,7 +148,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     hasSperm ? db.spermDonor.count({ where: { providerId } }) : 0,
     db.providerCostSheet.findMany({ where: { providerId }, select: { status: true } }),
     db.referralFeeConfig.findMany({ where: { providerId, isActive: true }, select: { serviceType: true, feeType: true, flatAmount: true, percentage: true, parentPaysBasis: true, defaultServiceAmount: true } }),
-    db.providerW9.findUnique({ where: { providerId }, select: { status: true } }),
+    db.providerW9.findUnique({ where: { providerId }, select: { status: true, guestOpenedAt: true } }),
     db.providerAgreement.findFirst({ where: { providerId }, orderBy: { createdAt: "desc" }, select: { status: true, guestOpenedAt: true } }),
     db.calendarConnection.count({ where: { connected: true, tokenValid: true, user: { providerId } } }),
     db.providerBankAccount.findUnique({ where: { providerId }, select: { payoutsEnabled: true, stripeConnectAccountId: true } }),
@@ -309,12 +312,24 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
         : "Locked until the agreement is sent (admin step above).",
     status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "locked",
     deepLink: editLink("agreements"),
+    progress: pagrStatus === "SENT"
+      ? pagr?.guestOpenedAt ? `Opened ${new Date(pagr.guestOpenedAt).toLocaleDateString()}` : "Sent"
+      : undefined,
   });
   steps.push({
     key: "w9", group: "provider_setup", label: "W-9 signed",
-    detail: w9Status === "COMPLETED" ? "W-9 on file." : w9Status === "SENT" ? "Sent - waiting for the provider to sign." : "Locked until the W-9 is sent (admin step above).",
+    detail: w9Status === "COMPLETED"
+      ? "W-9 on file."
+      : w9Status === "SENT"
+        ? w9?.guestOpenedAt
+          ? `Sent - the provider opened it on ${new Date(w9.guestOpenedAt).toLocaleDateString()}, waiting for their signature.`
+          : "Sent - the provider has not opened the signing link yet."
+        : "Locked until the W-9 is sent (admin step above).",
     status: w9Status === "COMPLETED" ? "done" : w9Status === "SENT" ? "waiting_on_provider" : "locked",
     deepLink: editLink("legal-identity"),
+    progress: w9Status === "SENT"
+      ? w9?.guestOpenedAt ? `Opened ${new Date(w9.guestOpenedAt).toLocaleDateString()}` : "Sent"
+      : undefined,
   });
   // Welcome email: accounts are created silently (the admin never shares the
   // temp password), so once the agreement is signed and the W-9 is on file
@@ -341,17 +356,21 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     });
   }
 
-  const providerStep = (key: string, prefix: string, label: string, doneWhen: boolean, doneDetail: string, waitDetail: string, tab: string, optional = false) => {
+  const providerStep = (key: string, prefix: string, label: string, doneWhen: boolean, doneDetail: string, waitDetail: string, tab: string, optional = false, startedWhen?: string) => {
     const done = doneWhen || taskDone(prefix);
     steps.push({
       key, group: "provider_setup", label,
       detail: done ? doneDetail : taskRaised(prefix) ? waitDetail : `${waitDetail} (task not sent yet)`,
       status: done ? "done" : optional ? "optional" : "waiting_on_provider",
       deepLink: editLink(tab), isOptional: optional,
+      // Progress signal: "Started" when we can see partial work, else "Task
+      // sent" once the handoff task went out. Done rows carry their own
+      // green check - no chip needed.
+      progress: done ? undefined : startedWhen ? startedWhen : taskRaised(prefix) ? "Task sent" : undefined,
     });
   };
   providerStep("calendar", "onbcal", "Calendar connected", calendarCount > 0, `${calendarCount} calendar connection(s).`, "Waiting for the provider to connect a calendar.", "calendar");
-  providerStep("stripe", "onbstripe", "Payouts connected", Boolean(bank?.payoutsEnabled), "Stripe payouts enabled.", bank?.stripeConnectAccountId ? "Stripe onboarding started but payouts not enabled yet." : "Waiting for the provider to set up payouts.", "payouts");
+  providerStep("stripe", "onbstripe", "Payouts connected", Boolean(bank?.payoutsEnabled), "Stripe payouts enabled.", bank?.stripeConnectAccountId ? "Stripe onboarding started but payouts not enabled yet." : "Waiting for the provider to set up payouts.", "payouts", false, bank?.stripeConnectAccountId && !bank?.payoutsEnabled ? "Started" : undefined);
   providerStep("costs_uploaded", "onbcosts", "Cost sheets uploaded", costSheets.length > 0, `${costSheets.length} cost sheet(s) uploaded.`, "Waiting for the provider to upload cost sheets.", "costs");
   // Parent Pays Basis is decided by the provider on their Billing page. A
   // line counts as decided once its config says TOTAL_COST or carries a

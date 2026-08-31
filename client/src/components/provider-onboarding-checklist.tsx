@@ -32,6 +32,8 @@ type OnboardingStep = {
   isOptional?: boolean;
   manuallyMarkable?: boolean;
   manuallyDone?: boolean;
+  /** Progress signal for provider-side steps ("Sent", "Opened 8/31", "Started"). */
+  progress?: string;
 };
 
 type OnboardingSummary = {
@@ -264,6 +266,11 @@ export default function ProviderOnboardingChecklist({
                             {sendWelcomeMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
                             Send welcome email
                           </Button>
+                        )}
+                        {step.progress && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-secondary text-secondary-foreground" data-testid={`onboarding-progress-${step.key}`}>
+                            {step.progress}
+                          </span>
                         )}
                         {badge && (
                           <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${badge.cls}`}>{badge.label}</span>
