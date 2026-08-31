@@ -655,6 +655,32 @@ in this order:
     -> reschedule and cancel in GoStork -> cut back to Google Calendar showing
     the event updated then removed (calendar.events). Then reply directly to
     that email thread with the new unlisted YouTube link.
+  - [x] **New demo video RECORDED 2026-08-31** - 5m57s, 1512x926, at
+    `~/Desktop/gostork-oauth-calendar-demo.mp4` on the MacBook (raw segments
+    in the session scratchpad). Shot on dev-mbp.gostork.com (staging surface,
+    dev DB - NOT production traffic, per Google's instruction), provider
+    eran.amir@gostork.com + parent natan123@gmail.com. Covers, in order:
+    calendar.readonly (a Google event created live at 8:00 makes the 8:00 slot
+    vanish from the booking page while 8:45 survives), the parent booking,
+    provider confirmation creating the event ON the Google Calendar,
+    reschedule moving it, and cancellation removing it - the last three are
+    the "source account impact" Google demanded. STILL TO DO: upload unlisted
+    to Eran's YouTube and reply on the api-oauth-dev-verification thread with
+    the link + timestamps.
+  - [x] **Blocker found and fixed while filming (commit a29c5e9e)**: the
+    calendar syncs called createEvent unconditionally and overwrote the stored
+    event id. Those syncs run more than once per booking (reschedule creates a
+    PENDING booking and syncs it, then confirming syncs again), so each extra
+    run stranded the previous event - and cancellation, which only knows the
+    last id, could never remove it. A book/confirm/reschedule/confirm/cancel
+    cycle left 2 stale events on the provider's Google Calendar, which would
+    have made the deletion segment of the video unfilmable. Both Google and
+    Outlook syncs now delete the event they already track before creating its
+    replacement; verified end to end (same cycle now leaves zero events).
+    Note for the future: one booking still legitimately produces TWO entries
+    on the provider's calendar - the event they organize plus an invite to the
+    separate parent-side event GoStork also creates. Worth revisiting whether
+    that dual write is needed at all.
   - [x] Client "GoStork Calendar": removed all 4 replit/ngrok redirect URIs;
     only app.gostork.com / gostork.com / test-app.gostork.com callbacks remain.
     **This intentionally broke NEW Google Calendar connects on both dev Macs'
