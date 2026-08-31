@@ -664,9 +664,13 @@ in this order:
     vanish from the booking page while 8:45 survives), the parent booking,
     provider confirmation creating the event ON the Google Calendar,
     reschedule moving it, and cancellation removing it - the last three are
-    the "source account impact" Google demanded. STILL TO DO: upload unlisted
-    to Eran's YouTube and reply on the api-oauth-dev-verification thread with
-    the link + timestamps.
+    the "source account impact" Google demanded. **UPLOADED UNLISTED
+    2026-08-31: https://youtu.be/swIb_oEmfOg** (same channel as the rejected
+    first attempt - eran.amir@gostork.com / @eranamir2771 - so both demos sit
+    together; description carries the scope justification and per-scope
+    timestamps). STILL TO DO: reply on the api-oauth-dev-verification thread
+    (Gmail thread id 1a0472ae1a47c28f) with that link. The review stays
+    stalled until that reply is sent.
   - [x] **Blocker found and fixed while filming (commit a29c5e9e)**: the
     calendar syncs called createEvent unconditionally and overwrote the stored
     event id. Those syncs run more than once per booking (reschedule creates a
