@@ -4198,10 +4198,18 @@ I'll check in with you right after the call. You've got this!`;
           });
           if (!conn) continue;
           const calendarId = conn.calendarId || conn.email || "primary";
+          // The provider is deliberately NOT invited to the parent's copy.
+          // Inviting them did two bad things: the provider's calendar showed a
+          // SECOND entry for one meeting (their own event plus this invite),
+          // and - worse - the invite's organizer is the parent's own mailbox,
+          // so the provider could read the parent's address off it no matter
+          // what Gate B said. See server/parent-privacy.ts: a booking opens
+          // Gate A (name) only; contact details stay sealed until the parent
+          // takes a committing action (IP form, invoice, agreement, callback,
+          // admin unlock). The provider already has their own copy of this
+          // meeting from syncBookingToGoogleCalendar, and the provider's name
+          // is in this event's summary, so nothing is lost by leaving them off.
           const parentAttendees: { email: string; displayName?: string }[] = [];
-          if (booking.providerUser?.email) {
-            parentAttendees.push({ email: booking.providerUser.email, displayName: providerName });
-          }
           if (parentUser?.parentAccountId) {
             const allMembers = await this.prisma.user.findMany({
               where: { parentAccountId: parentUser.parentAccountId, id: { not: memberId }, isDisabled: false },
@@ -4445,10 +4453,18 @@ I'll check in with you right after the call. You've got this!`;
           });
           if (!conn || !conn.calendarId) continue;
           const calendarId = conn.calendarId;
+          // The provider is deliberately NOT invited to the parent's copy.
+          // Inviting them did two bad things: the provider's calendar showed a
+          // SECOND entry for one meeting (their own event plus this invite),
+          // and - worse - the invite's organizer is the parent's own mailbox,
+          // so the provider could read the parent's address off it no matter
+          // what Gate B said. See server/parent-privacy.ts: a booking opens
+          // Gate A (name) only; contact details stay sealed until the parent
+          // takes a committing action (IP form, invoice, agreement, callback,
+          // admin unlock). The provider already has their own copy of this
+          // meeting from syncBookingToGoogleCalendar, and the provider's name
+          // is in this event's summary, so nothing is lost by leaving them off.
           const parentAttendees: { email: string; displayName?: string }[] = [];
-          if (booking.providerUser?.email) {
-            parentAttendees.push({ email: booking.providerUser.email, displayName: providerName });
-          }
           if (parentUser?.parentAccountId) {
             const allMembers = await this.prisma.user.findMany({
               where: { parentAccountId: parentUser.parentAccountId, id: { not: memberId }, isDisabled: false },
