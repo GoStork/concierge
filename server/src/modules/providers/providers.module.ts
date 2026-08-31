@@ -13,9 +13,10 @@ import { AutoReplyService } from "./auto-reply.service";
 import { ParentBriefingService } from "./parent-briefing.service";
 import { StorageModule } from "../storage/storage.module";
 import { KnowledgeModule } from "../knowledge/knowledge.module";
+import { NotificationModule } from "../notifications/notification.module";
 
 @Module({
-  imports: [StorageModule, KnowledgeModule],
+  imports: [StorageModule, KnowledgeModule, NotificationModule],
   providers: [AutoReplyService, ParentBriefingService],
   exports: [AutoReplyService, ParentBriefingService],
   controllers: [

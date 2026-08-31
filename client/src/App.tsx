@@ -142,7 +142,7 @@ function DashboardRoute() {
  * Auth/guest flows are excluded - a restored ?returnTo= or token param
  * there could misroute a login.
  */
-const FILTER_PERSIST_EXCLUDED = ["/auth", "/login", "/reset-password", "/complete-profile", "/sign-agreement", "/agreements/guest", "/onboarding", "/"];
+const FILTER_PERSIST_EXCLUDED = ["/auth", "/login", "/reset-password", "/complete-profile", "/sign-agreement", "/sign-w9", "/agreements/guest", "/onboarding", "/"];
 
 function FilterPersistence() {
   const location = useLocation();
@@ -240,6 +240,8 @@ function AppRoutes() {
         {/* Template editor lives under account settings; keep the old URL working */}
         <Route path="/admin/ip-form-template" element={<Navigate to="/account/ip-form-template" replace />} />
         <Route path="/w9/:id" element={<ProtectedRoute><W9SigningPage /></ProtectedRoute>} />
+        {/* Login-free W-9 guest signing (token-gated, public). */}
+        <Route path="/sign-w9/:token" element={<W9SigningPage />} />
         <Route path="/provider-agreement/:id" element={<ProtectedRoute><ProviderAgreementSigningPage /></ProtectedRoute>} />
         {/* Login-free guest signing: providers sign BEFORE first login (token-gated, public). */}
         <Route path="/sign-agreement/:token" element={<ProviderAgreementSigningPage />} />

@@ -117,6 +117,21 @@ export default function ProviderOnboardingChecklist({
     },
   });
 
+  // Welcome email: login email + set-password link, once agreement + W-9 are in.
+  const sendWelcomeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/admin/providers/${providerId}/onboarding/send-welcome`);
+      return res.json();
+    },
+    onSuccess: (d: any) => {
+      toast({ title: "Welcome email sent", description: `${d.sent} provider admin(s) received their login and set-password link.`, variant: "success" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/providers", providerId, "onboarding"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not send welcome email", description: err.message, variant: "destructive" });
+    },
+  });
+
   const sendTasksMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/admin/providers/${providerId}/onboarding/send-tasks`);
@@ -237,6 +252,18 @@ export default function ProviderOnboardingChecklist({
                           >
                             Mark done
                           </button>
+                        )}
+                        {step.key === "welcome" && step.status === "pending" && (
+                          <Button
+                            size="sm"
+                            className="h-7 shrink-0 text-xs"
+                            disabled={sendWelcomeMutation.isPending}
+                            onClick={(e) => { e.stopPropagation(); sendWelcomeMutation.mutate(); }}
+                            data-testid="onboarding-send-welcome"
+                          >
+                            {sendWelcomeMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
+                            Send welcome email
+                          </Button>
                         )}
                         {badge && (
                           <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${badge.cls}`}>{badge.label}</span>

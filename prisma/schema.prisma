@@ -2713,6 +2713,11 @@ model ProviderW9 {
   // was created. When the admin updates the template, ensureW9Document() sees
   // this mismatch and regenerates the doc so providers always sign the latest.
   templateUpdatedAt  DateTime?
+  /// Login-free signing (mirrors ProviderAgreement): the request email links
+  /// to /sign-w9/<guestToken> so the signer needs no GoStork account.
+  guestToken         String?   @unique
+  /// First open of the guest link - "did they see it" tracking.
+  guestOpenedAt      DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

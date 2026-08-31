@@ -40,10 +40,21 @@ import {
   resolveTaxFormTemplate,
   TAX_FORM_SETTINGS_FIELDS,
   getW9SigningSession,
+  fetchDocumentViewUrl,
 } from "../../../pandadoc-service";
 
 function isAdmin(user: any): boolean {
   return !!user?.roles?.includes("GOSTORK_ADMIN");
+}
+
+/** Login-free signing link (mirrors ProviderAgreement.guestToken): mints the
+ *  token on first use so pre-existing rows get one on resend/remind. */
+async function mintW9GuestToken(w9Id: string, existingToken: string | null): Promise<string> {
+  if (existingToken) return existingToken;
+  const { randomBytes } = await import("crypto");
+  const guestToken = randomBytes(24).toString("hex");
+  await (prisma as any).providerW9.update({ where: { id: w9Id }, data: { guestToken } });
+  return guestToken;
 }
 
 function appBaseUrl(): string {
@@ -304,11 +315,78 @@ export class W9Controller {
     if (w9?.status === "COMPLETED") {
       throw new HttpException("This provider's W-9 is already completed.", HttpStatus.BAD_REQUEST);
     }
-    const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { id: true } });
+    const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { id: true, name: true, email: true } });
     if (!provider) throw new HttpException("Provider not found", HttpStatus.NOT_FOUND);
 
     await raiseW9Task(providerId, user.id);
+
+    // A nudge nobody is emailed about is not a nudge: re-send the request
+    // email with the login-free link (same as agreement reminders).
+    if (w9 && w9.status === "SENT") {
+      try {
+        const guestToken = await mintW9GuestToken(w9.id, w9.guestToken || null);
+        await this.notificationService.sendW9RequestNotification({
+          providerId,
+          providerName: provider.name || "Provider",
+          signingUrl: `${appBaseUrl()}/sign-w9/${guestToken}`,
+          fallbackSigner: { userId: w9.signerUserId, email: w9.signerEmail || provider.email || "", name: provider.name || "" },
+        });
+      } catch (notifErr: any) {
+        this.logger.error(`[W-9] Reminder notification failed: ${notifErr?.message}`);
+      }
+    }
     return { success: true };
+  }
+
+  // ── Public: login-free guest signing (token-gated, NO auth) ──
+  // Mirrors the provider-agreement guest flow: the W-9 request email links
+  // here so a signer with no GoStork account can fill and sign. First open
+  // stamps guestOpenedAt; completion is tracked by the PandaDoc webhook.
+
+  @Get("api/public/w9/:token/session")
+  async guestW9Session(@Param("token") token: string) {
+    if (!token || token.length < 20) throw new HttpException("Invalid signing link", HttpStatus.NOT_FOUND);
+    const row = await (prisma as any).providerW9.findUnique({
+      where: { guestToken: token },
+      select: { id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true },
+    });
+    if (!row) throw new HttpException("Invalid or expired signing link", HttpStatus.NOT_FOUND);
+    if (!row.guestOpenedAt) {
+      await (prisma as any).providerW9.update({ where: { id: row.id }, data: { guestOpenedAt: new Date() } }).catch(() => {});
+    }
+    if (row.status === "COMPLETED") {
+      return { isCompletedView: true, status: row.status };
+    }
+    if (!row.signerEmail || !row.pandaDocDocumentId) {
+      throw new HttpException("W-9 has no signer on record", HttpStatus.BAD_REQUEST);
+    }
+    const apiKey = process.env.PANDADOC_API_KEY;
+    if (!apiKey) throw new HttpException("PandaDoc not configured", HttpStatus.INTERNAL_SERVER_ERROR);
+    const signingUrl = await fetchDocumentViewUrl(apiKey, row.pandaDocDocumentId, row.signerEmail);
+    if (!signingUrl) throw new HttpException("Could not create signing session - document may not be ready yet", HttpStatus.BAD_REQUEST);
+    return { isCompletedView: false, signingUrl };
+  }
+
+  @Get("api/public/w9/:token/download")
+  async guestW9Download(@Res() res: Response, @Param("token") token: string) {
+    if (!token || token.length < 20) throw new HttpException("Invalid link", HttpStatus.NOT_FOUND);
+    const row = await (prisma as any).providerW9.findUnique({
+      where: { guestToken: token },
+      select: { status: true, pandaDocDocumentId: true },
+    });
+    if (!row || row.status !== "COMPLETED" || !row.pandaDocDocumentId) {
+      throw new HttpException("Not available", HttpStatus.NOT_FOUND);
+    }
+    const apiKey = process.env.PANDADOC_API_KEY;
+    if (!apiKey) throw new HttpException("PandaDoc not configured", HttpStatus.INTERNAL_SERVER_ERROR);
+    const pdRes = await fetch(
+      `https://api.pandadoc.com/public/v1/documents/${row.pandaDocDocumentId}/download`,
+      { headers: { "Authorization": `API-Key ${apiKey}` } },
+    );
+    if (!pdRes.ok) throw new HttpException("Failed to download", HttpStatus.BAD_GATEWAY);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="gostork-w9.pdf"`);
+    res.send(Buffer.from(await pdRes.arrayBuffer()));
   }
 
   // ── Admin: per-provider W-9 status + send request ──
@@ -350,10 +428,14 @@ export class W9Controller {
       const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } });
 
       try {
+        // Login-free link: the signer often has no working GoStork account
+        // yet (W-9s go out during onboarding), so the email must not point
+        // at an auth-guarded page.
+        const guestToken = await mintW9GuestToken(w9.id, w9.guestToken || null);
         await this.notificationService.sendW9RequestNotification({
           providerId,
           providerName: provider?.name || "Provider",
-          signingUrl: `${appBaseUrl()}/w9/${w9.id}`,
+          signingUrl: `${appBaseUrl()}/sign-w9/${guestToken}`,
           fallbackSigner: { userId: signer.userId, email: signer.email, name: signer.name || signer.email },
         });
       } catch (notifErr: any) {

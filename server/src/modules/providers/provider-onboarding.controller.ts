@@ -25,6 +25,8 @@ import {
 } from "@nestjs/common";
 import { Request } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { NotificationService } from "../notifications/notification.service";
+import { getBaseUrl } from "../../lib/get-base-url";
 import { prisma } from "../../../db";
 
 type StepStatus = "done" | "pending" | "waiting_on_provider" | "optional" | "locked";
@@ -168,7 +170,11 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     }
     if (parts[0]) taskByPrefix.set(parts[0], t);
   }
-  const handoffTasks = (onbTasks as any[]).filter((t) => !String(t.systemKey || "").startsWith("onbmark:"));
+  const handoffTasks = (onbTasks as any[]).filter((t) => {
+    const k = String(t.systemKey || "");
+    // Markers, not handoff tasks: manual check-offs + the welcome-email flag.
+    return !k.startsWith("onbmark:") && !k.startsWith("onbwelcome:");
+  });
   const tasksSentAt: string | null = handoffTasks.length
     ? new Date(Math.min(...handoffTasks.map((t) => new Date(t.createdAt).getTime()))).toISOString()
     : null;
@@ -289,12 +295,9 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   });
 
   // ── Phase C - Provider setup (handoff) ──
-  steps.push({
-    key: "w9", group: "provider_setup", label: "W-9 signed",
-    detail: w9Status === "COMPLETED" ? "W-9 on file." : w9Status === "SENT" ? "Sent - waiting for the provider to sign." : "Locked until the W-9 is sent (admin step above).",
-    status: w9Status === "COMPLETED" ? "done" : w9Status === "SENT" ? "waiting_on_provider" : "locked",
-    deepLink: editLink("legal-identity"),
-  });
+  // Order mirrors the real flow: the agreement is signed FIRST (it activates
+  // the partnership), then the W-9, then the welcome email that gives them
+  // their login.
   steps.push({
     key: "agreement", group: "provider_setup", label: "Provider agreement signed",
     detail: pagrStatus === "COMPLETED"
@@ -306,6 +309,28 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
         : "Locked until the agreement is sent (admin step above).",
     status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "locked",
     deepLink: editLink("agreements"),
+  });
+  steps.push({
+    key: "w9", group: "provider_setup", label: "W-9 signed",
+    detail: w9Status === "COMPLETED" ? "W-9 on file." : w9Status === "SENT" ? "Sent - waiting for the provider to sign." : "Locked until the W-9 is sent (admin step above).",
+    status: w9Status === "COMPLETED" ? "done" : w9Status === "SENT" ? "waiting_on_provider" : "locked",
+    deepLink: editLink("legal-identity"),
+  });
+  // Welcome email: accounts are created silently (the admin never shares the
+  // temp password), so once the agreement is signed and the W-9 is on file
+  // the admin sends the welcome email - login email + set-password link -
+  // and the provider can start their own setup.
+  const welcomeSent = taskRaised("onbwelcome");
+  const welcomeReady = pagrStatus === "COMPLETED" && w9Status === "COMPLETED";
+  steps.push({
+    key: "welcome", group: "provider_setup", label: "Send welcome email",
+    detail: welcomeSent
+      ? "Welcome email sent - the provider has their login and set-password link."
+      : welcomeReady
+        ? "Agreement signed and W-9 on file - send the provider their welcome email with a set-password link."
+        : "Unlocks once the agreement is signed and the W-9 is completed.",
+    status: welcomeSent ? "done" : welcomeReady ? "pending" : "locked",
+    deepLink: editLink("users"),
   });
   const partnerIds = Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : [];
   if (hasSurrogacy || hasEgg) {
@@ -420,6 +445,70 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
 
 @Controller()
 export class ProviderOnboardingController {
+  constructor(private readonly notificationService: NotificationService) {}
+
+  /** Send the provider admin(s) their welcome email: login email + a
+   *  set-password link (7-day token). The onboarding "Send welcome email"
+   *  step - accounts are created silently, so this is the moment the
+   *  provider actually gets their credentials. Marked sent via the
+   *  onbwelcome:<providerId> DONE task so the step stays derived. */
+  @Post("api/admin/providers/:id/onboarding/send-welcome")
+  @UseGuards(SessionOrJwtGuard)
+  async sendWelcome(@Req() req: Request, @Param("id") id: string) {
+    requireAdmin(req);
+    const db = prisma as any;
+    const provider = await db.provider.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!provider) throw new NotFoundException("Provider not found");
+    const admins = await db.user.findMany({
+      where: { providerId: id, isDisabled: false, roles: { has: "PROVIDER_ADMIN" } },
+      select: { id: true, email: true, name: true, firstName: true },
+    });
+    if (!admins.length) throw new BadRequestException("This provider has no admin user yet - create one on the Team tab first.");
+
+    const { randomBytes } = await import("crypto");
+    const appUrl = getBaseUrl();
+    let sent = 0;
+    for (const u of admins) {
+      if (!u.email) continue;
+      const token = randomBytes(32).toString("hex");
+      await db.passwordResetToken.create({
+        data: { token, userId: u.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+      });
+      await this.notificationService.sendProviderWelcomeEmail({
+        userId: u.id,
+        email: u.email,
+        firstName: (u.firstName || u.name || "there").split(" ")[0],
+        providerName: provider.name,
+        resetUrl: `${appUrl}/reset-password/${token}`,
+        appUrl,
+      });
+      sent++;
+    }
+    if (!sent) throw new BadRequestException("No admin user with an email address found.");
+
+    const userId = (req.user as any)?.id;
+    const now = new Date();
+    await db.parentTask.upsert({
+      where: { systemKey: `onbwelcome:${id}` },
+      create: {
+        parentAccountId: id,
+        scope: "PROVIDER",
+        providerId: id,
+        title: "Welcome email sent by GoStork admin",
+        type: "TODO",
+        priority: "LOW",
+        source: "SYSTEM",
+        systemKey: `onbwelcome:${id}`,
+        status: "DONE",
+        dueAt: now,
+        completedAt: now,
+        completedByUserId: userId,
+        createdByUserId: userId,
+      },
+      update: { status: "DONE", completedAt: now, completedByUserId: userId },
+    });
+    return { sent };
+  }
   @Get("api/admin/providers/:id/onboarding")
   @UseGuards(SessionOrJwtGuard)
   async getOne(@Req() req: Request, @Param("id") id: string) {

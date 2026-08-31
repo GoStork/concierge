@@ -11,22 +11,29 @@ type W9SigningSessionResponse =
   | { isCompletedView: false; signingUrl: string; w9Id: string; providerId: string };
 
 export default function W9SigningPage() {
-  const { id: w9Id } = useParams<{ id: string }>();
+  // Two routes, one page: /w9/:id (auth-guarded, in-app) and /sign-w9/:token
+  // (PUBLIC guest link from the request email - the signer usually has no
+  // GoStork account yet).
+  const { id: w9Id, token } = useParams<{ id?: string; token?: string }>();
+  const isGuest = !!token && !w9Id;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: brand } = useBrandSettings();
 
+  const sessionUrl = isGuest ? `/api/public/w9/${token}/session` : `/api/w9/${w9Id}/signing-session`;
+  const downloadUrl = isGuest ? `/api/public/w9/${token}/download` : `/api/w9/${w9Id}/download`;
+
   const { data, isLoading, error } = useQuery<W9SigningSessionResponse>({
-    queryKey: ["/api/w9", w9Id, "signing-session"],
+    queryKey: [sessionUrl],
     queryFn: async () => {
-      const res = await fetch(`/api/w9/${w9Id}/signing-session`, { credentials: "include" });
+      const res = await fetch(sessionUrl, { credentials: "include" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "Failed to load W-9" }));
         throw new Error(err.message || "Failed to load W-9");
       }
       return res.json();
     },
-    enabled: !!w9Id,
+    enabled: !!(w9Id || token),
     retry: false,
   });
 
@@ -40,15 +47,21 @@ export default function W9SigningPage() {
     function onMessage(e: MessageEvent) {
       const t = typeof e.data === "string" ? e.data : String((e.data as any)?.type || (e.data as any)?.event || "");
       if (t.includes("session_view.document.completed")) {
-        // Give PandaDoc's own confirmation a beat to render first.
-        setTimeout(() => handleBack(), 1500);
+        // Guest signers have no app to bounce back to - flip to the signed
+        // view instead. Logged-in signers go back where they started.
+        if (isGuest) {
+          setTimeout(() => queryClient.invalidateQueries({ queryKey: [sessionUrl] }), 1500);
+        } else {
+          // Give PandaDoc's own confirmation a beat to render first.
+          setTimeout(() => handleBack(), 1500);
+        }
       }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
     // handleBack closes over stable refs; re-binding per render is pointless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isGuest, sessionUrl]);
   const logoSrc = brand?.logoUrl ? (getPhotoSrc(brand.logoUrl) || brand.logoUrl) : null;
   const companyName = brand?.companyName || "GoStork";
 
@@ -82,10 +95,12 @@ export default function W9SigningPage() {
     <div className="flex flex-col" style={{ height: "100dvh" }}>
       {/* Unified header - same for both entry points (billing tab + email link). */}
       <div className="flex items-center gap-3 px-4 h-14 border-b bg-card shrink-0">
-        <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5 shrink-0">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Button>
+        {!isGuest && (
+          <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5 shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+        )}
 
         <div className="flex items-center gap-2 min-w-0">
           {logoSrc ? (
@@ -108,7 +123,7 @@ export default function W9SigningPage() {
 
         {isCompleted && (
           <a
-            href={`/api/w9/${w9Id}/download`}
+            href={downloadUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="ml-auto flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline shrink-0"
@@ -133,16 +148,18 @@ export default function W9SigningPage() {
             <AlertCircle className="w-10 h-10 text-destructive" />
             <p className="text-sm font-medium">Could not load the W-9</p>
             <p className="t-helper max-w-sm">{(error as Error).message}</p>
-            <Button variant="outline" size="sm" onClick={handleBack}>
-              Go Back
-            </Button>
+            {!isGuest && (
+              <Button variant="outline" size="sm" onClick={handleBack}>
+                Go Back
+              </Button>
+            )}
           </div>
         )}
 
         {/* Completed - render signed PDF inline */}
         {isCompleted && (
           <iframe
-            src={`/api/w9/${w9Id}/download`}
+            src={downloadUrl}
             className="w-full h-full border-0"
             title="Signed W-9"
           />

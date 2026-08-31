@@ -3154,6 +3154,38 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /** Welcome email for a provider admin whose account was created silently:
+   *  their login email + a set-password link. Sent by the GoStork admin as
+   *  the onboarding step after the agreement is signed and the W-9 is in. */
+  async sendProviderWelcomeEmail(params: {
+    userId: string;
+    email: string;
+    firstName: string;
+    providerName: string;
+    resetUrl: string;
+    appUrl: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const companyName = brandData.companyName;
+    const subject = `Welcome to ${companyName} - set your password`;
+    const html = buildBrandedEmail(brandData, {
+      title: `Welcome to ${companyName}`,
+      greeting: `Hi ${this.escapeHtml(params.firstName)},`,
+      body: `Your ${this.escapeHtml(companyName)} account for <strong>${this.escapeHtml(params.providerName)}</strong> is ready. Your login email is <strong>${this.escapeHtml(params.email)}</strong> - set your password with the button below, then sign in at <a href="${params.appUrl}">${params.appUrl.replace(/^https?:\/\//, "")}</a> to manage your profile, calendar, and parent conversations.`,
+      alertBox: { text: "The set-password link is valid for 7 days. You can always request a new one with \"Forgot your password\" on the login page.", type: "info" },
+      buttons: [{ label: "Set Your Password", url: params.resetUrl }],
+      footer: "If you have any questions, just reply to this email.",
+    });
+    await this.dispatchNotification({
+      userId: params.userId,
+      type: "EMAIL",
+      channel: "provider_welcome" as any,
+      recipient: params.email,
+      subject,
+      body: html,
+    });
+  }
+
   /** Provider (or admin) shares the GoStork service agreement with arbitrary
    *  recipients - lawyers, partners, colleagues. The email carries the
    *  token-gated public link, so recipients need no GoStork account. */
