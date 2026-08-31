@@ -339,21 +339,6 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("sponsorship", "onbsponsor", "Sponsorship", false, "Marked done by the provider.", "Optional - sponsored placement.", "sponsorship", true);
 
   // ── Phase D - Go-live review ──
-  // Approving a service IS the publish switch: every marketplace and Eva
-  // query filters on ProviderService.status === "APPROVED". Configuration
-  // (fees, scrapers, cost sheets) works on unapproved services, so this
-  // deliberately sits LAST - approve when the provider is ready to be seen.
-  const unapprovedServices = (provider.services as any[]).filter((s) => s.status !== "APPROVED" && s.status !== "DECLINED");
-  steps.push({
-    key: "services", group: "go_live", label: "Approve services (publish)",
-    detail: provider.services.length === 0
-      ? "No services yet - add the services this provider offers on the Profile tab."
-      : unapprovedServices.length
-        ? `Approving publishes this provider in the marketplace and to Eva. Awaiting approval: ${unapprovedServices.map((s: any) => s.providerType?.name).filter(Boolean).join(", ")}.`
-        : "All services approved - this provider is visible in the marketplace.",
-    status: provider.services.length > 0 && unapprovedServices.length === 0 ? "done" : "pending",
-    deepLink: editLink("profile"),
-  });
   const pendingSheets = (costSheets as any[]).filter((s) => s.status === "PENDING").length;
   const approvedSheets = (costSheets as any[]).filter((s) => s.status === "APPROVED").length;
   const costApprovalStatus: StepStatus = costSheets.length === 0
@@ -388,10 +373,26 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   const required = steps.filter((s) => !s.isOptional && s.key !== "go_live");
   const doneCount = required.filter((s) => s.status === "done").length;
   const allDone = doneCount === required.length;
+
+  // Go live = approve the services. Approval IS the publish switch (every
+  // marketplace and Eva query filters ProviderService.status === "APPROVED"),
+  // so the very last step of onboarding is the approval itself: locked while
+  // prerequisite steps remain, "your turn" once everything else is done, and
+  // done the moment every service line is approved - configuration (fees,
+  // scrapers, cost sheets) never required approval.
+  const unapprovedServices = (provider.services as any[]).filter((s) => s.status !== "APPROVED" && s.status !== "DECLINED");
+  const published = provider.services.length > 0 && unapprovedServices.length === 0;
   steps.push({
-    key: "go_live", group: "go_live", label: "Go live",
-    detail: allDone ? "Everything is done - this provider is fully live." : "Completes automatically when every required step above is done.",
-    status: allDone ? "done" : "locked", deepLink: editLink("profile"),
+    key: "go_live", group: "go_live", label: "Go live - approve services (publish)",
+    detail: published
+      ? "All services approved - this provider is live in the marketplace and Eva."
+      : provider.services.length === 0
+        ? "No services yet - add the services this provider offers on the Profile tab."
+        : allDone
+          ? `Everything is ready - approve the services on the Profile tab to publish. Awaiting approval: ${unapprovedServices.map((s: any) => s.providerType?.name).filter(Boolean).join(", ")}.`
+          : "Unlocks when every required step above is done; approving the services then publishes this provider in the marketplace and to Eva.",
+    status: published ? "done" : allDone ? "pending" : "locked",
+    deepLink: editLink("profile"),
   });
 
   const requiredCount = required.length;
