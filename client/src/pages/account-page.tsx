@@ -292,6 +292,7 @@ function AccountTab() {
   const mobileNumberDisplay = (user as any).mobileNumberDisplay as string | null;
   const providerName = (user as any).provider?.name as string | null | undefined;
   const isProviderUser = hasProviderRole(roles);
+  const isGostorkTeamUser = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE", "GOSTORK_DEVELOPER"].some((r) => roles.includes(r));
   const isParent = roles.includes("PARENT");
   const userCity = (user as any).city as string | null;
   const userState = (user as any).state as string | null;
@@ -1250,12 +1251,13 @@ function AccountTab() {
       </div>
     </Card>
 
-    {/* Provider users: the rest of "everything about me" - video room,
-        connected calendars, booking link (shared with the Team user editor,
-        user-access-sections.tsx). The onboarding step "Review your video
-        room" lands here. */}
-    {isProviderUser && (user as any)?.providerId && (
-      <MyAccessSections providerId={(user as any).providerId} userId={(user as any).id} />
+    {/* Provider users AND GoStork team: the rest of "everything about me" -
+        video room, connected calendars, booking link (shared with the Team
+        user editor, user-access-sections.tsx). The onboarding step "Review
+        your video room" lands here. GoStork team members have no providerId;
+        the component then reads /api/users/:id (GoStork-team endpoint). */}
+    {(isProviderUser || isGostorkTeamUser) && (
+      <MyAccessSections providerId={(user as any)?.providerId} userId={(user as any).id} />
     )}
 
     {isParent && (() => {
