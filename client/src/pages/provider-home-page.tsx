@@ -43,7 +43,7 @@ import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { taskLinkTarget } from "@/components/parents/parent-crm-ui";
-import { ProviderOwnOnboarding } from "@/components/provider-own-onboarding";
+import { ProviderOwnOnboarding, useProviderOnboarding, isOnboardingTaskKey } from "@/components/provider-own-onboarding";
 
 interface ProviderTask {
   id: string;
@@ -53,6 +53,7 @@ interface ProviderTask {
   dueAt: string;
   overdue: boolean;
   source: string;
+  systemKey?: string | null;
   deepLink: string | null;
   chatSessionId?: string | null;
   assigneeName: string | null;
@@ -212,7 +213,17 @@ export default function ProviderHomePage() {
     retry: 2,
     ...fresh,
   });
-  const tasks = taskData?.tasks || [];
+  // Queue merge with the Getting Started panel: while onboarding is still
+  // underway, the panel is the ONE surface for onboarding facts (derived
+  // live), so the materialized onboarding snapshots (onb*/w9:/pagr: tasks)
+  // are hidden here - two sources on one screen drifted apart. They still
+  // power reminder emails behind the scenes, and reappear if somehow open
+  // after onboarding completes.
+  const { data: onboarding } = useProviderOnboarding();
+  const onboardingActive = !!onboarding && onboarding.percent < 100;
+  const tasks = (taskData?.tasks || []).filter(
+    (t) => !(onboardingActive && isOnboardingTaskKey(t.systemKey)),
+  );
 
   const { data: pendingBookings = [] } = useQuery<any[]>({
     queryKey: ["/api/calendar/bookings/pending"],

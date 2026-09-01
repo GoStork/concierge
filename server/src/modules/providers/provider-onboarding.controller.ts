@@ -616,23 +616,39 @@ export class ProviderOnboardingController {
     const summary = await computeOnboarding(user.providerId);
     if (!summary) throw new NotFoundException("Provider not found");
 
-    const VIEW: Record<string, { label: string; link: string }> = {
-      agreement: { label: "Sign the GoStork agreement", link: "/account/documents" },
-      w9: { label: "Complete your W-9", link: "/account/legal-identity" },
-      password_reset: { label: "Set your password", link: "/account" },
-      profile_review: { label: "Review your company profile", link: "/account/company" },
-      calendar: { label: "Connect your calendar", link: "/account/calendar" },
-      stripe: { label: "Connect payouts", link: "/account/payouts" },
-      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs" },
-      agreement_templates: { label: "Upload your parent agreement templates", link: "/account/documents" },
-      pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing" },
-      team: { label: "Add your team & assign roles", link: "/account/team" },
-      ai: { label: "Set up your AI Concierge", link: "/account/concierge" },
-      parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form" },
-      playbooks: { label: "Configure playbooks", link: "/account/playbooks" },
-      automation: { label: "Review automations", link: "/account/automation" },
-      branding: { label: "Review your branding", link: "/account/branding" },
-      sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship" },
+    const VIEW: Record<string, { label: string; link: string; description: string; minutes: number }> = {
+      agreement: { label: "Sign the GoStork agreement", link: "/account/documents", minutes: 5,
+        description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." },
+      w9: { label: "Complete your W-9", link: "/account/legal-identity", minutes: 3,
+        description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." },
+      password_reset: { label: "Set your password", link: "/account", minutes: 1,
+        description: "Create your password from the welcome email so you can sign in anytime." },
+      profile_review: { label: "Review your company profile", link: "/account/company", minutes: 10,
+        description: "Check the profile we built for you - description, photos, locations - and fix anything that is off. This is what parents see." },
+      calendar: { label: "Connect your calendar", link: "/account/calendar", minutes: 2,
+        description: "Connect Google, Outlook, or Apple Calendar so parents can book consultations on your real availability." },
+      stripe: { label: "Connect payouts", link: "/account/payouts", minutes: 5,
+        description: "Connect your bank account through Stripe so parent payments reach you." },
+      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", minutes: 10,
+        description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." },
+      agreement_templates: { label: "Upload your parent agreement templates", link: "/account/documents", minutes: 5,
+        description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
+      pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing", minutes: 2,
+        description: "Pick how your parent payments are structured so invoicing works the way you do." },
+      team: { label: "Add your team & assign roles", link: "/account/team", minutes: 5,
+        description: "Invite teammates and assign their roles and service lines so the right person sees each family." },
+      ai: { label: "Set up your AI Concierge", link: "/account/concierge", minutes: 5,
+        description: "Meet your AI assistant and choose how it represents your company to parents." },
+      parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", minutes: 5,
+        description: "Review the intake form parents complete before a match call, and tailor it if you like." },
+      playbooks: { label: "Configure playbooks", link: "/account/playbooks", minutes: 5,
+        description: "Set up playbooks that automate your follow-ups with families." },
+      automation: { label: "Review automations", link: "/account/automation", minutes: 3,
+        description: "Review your defaults for auto-replies and invoicing cadence - sensible defaults are already on." },
+      branding: { label: "Review your branding", link: "/account/branding", minutes: 3,
+        description: "Check your logo and brand colors - they appear on your parent-facing documents." },
+      sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", minutes: 2,
+        description: "See how sponsored placement can boost your visibility with matching families." },
     };
     const steps = summary.steps
       .filter((s) => VIEW[s.key])
@@ -640,6 +656,8 @@ export class ProviderOnboardingController {
         key: s.key,
         label: VIEW[s.key].label,
         link: VIEW[s.key].link,
+        description: VIEW[s.key].description,
+        minutes: VIEW[s.key].minutes,
         // "waiting on provider" IS their to-do; locked steps stay locked
         // (e.g. signing before the document is sent).
         status: s.status === "waiting_on_provider" ? "pending" : s.status,
@@ -647,8 +665,15 @@ export class ProviderOnboardingController {
       }));
     const required = steps.filter((s) => !s.isOptional);
     const doneCount = required.filter((s) => s.status === "done").length;
+    // The recommended next action: first unlocked required step, then first
+    // unlocked optional one. Free order stays - this is a suggestion.
+    const nextKey =
+      steps.find((s) => !s.isOptional && s.status === "pending")?.key ||
+      steps.find((s) => s.status === "pending" || s.status === "optional")?.key ||
+      null;
     return {
       steps,
+      nextKey,
       doneCount,
       requiredCount: required.length,
       percent: required.length ? Math.round((doneCount / required.length) * 100) : 0,

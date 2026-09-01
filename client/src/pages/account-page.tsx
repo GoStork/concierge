@@ -48,6 +48,7 @@ import { OptionPills } from "@/components/ui/option-pills";
 import { Slider } from "@/components/ui/slider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { OnboardingCoachBar } from "@/components/onboarding-coach-bar";
 
 const GENDER_OPTIONS = [
   { value: "I'm a woman", label: "Woman" },
@@ -1932,6 +1933,10 @@ export default function AccountPage() {
           })}
         </nav>
       </div>
+
+      {/* Sticky onboarding coach while the provider is still setting up -
+          guides the step this page belongs to, or offers "Continue setup". */}
+      {isProvider && !isAdmin && providerId && <OnboardingCoachBar />}
 
       <Routes>
         <Route index element={<AccountTab />} />

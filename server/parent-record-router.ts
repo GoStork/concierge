@@ -958,6 +958,9 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
           dueAt: t.dueAt,
           overdue: new Date(t.dueAt).getTime() < now,
           source: t.source,
+          // Exposed so the Home queue can hide onboarding-owned rows while
+          // the Getting Started panel is showing the same facts (derived).
+          systemKey: t.systemKey ?? null,
           deepLink: t.deepLink,
           // The thread the work came out of (an agreement task carries the
           // conversation it was sent from). Home makes THIS the primary
