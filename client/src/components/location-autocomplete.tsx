@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { MapPin, Loader2, Navigation } from "lucide-react";
 
@@ -66,6 +67,27 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Viewport rect for the portal'd dropdown (see render comment). Re-measured
+  // when it opens and on scroll/resize so the list tracks the input.
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const measure = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDropdownRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     setQuery(buildDisplayQuery(value, isOnboarding));
@@ -73,9 +95,11 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+      const inInput = containerRef.current?.contains(e.target as Node);
+      // The dropdown is portal'd to <body> (overflow-hidden wrappers), so it
+      // is NOT inside containerRef - do not treat clicks on it as outside.
+      const inDropdown = dropdownRef.current?.contains(e.target as Node);
+      if (!inInput && !inDropdown) setIsOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -294,9 +318,15 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
         </>
       )}
 
-      {isOpen && results.length > 0 && (
+      {/* Portal to <body>: the shared Card wrapper carries overflow-hidden,
+          which clipped the in-flow absolute dropdown to a sliver at the card
+          edge. Fixed positioning from the input's live rect survives ANY
+          wrapper context (cards, dialogs, scrollers). */}
+      {isOpen && results.length > 0 && dropdownRect && createPortal(
         <div
-          className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-[var(--radius)] shadow-lg max-h-60 overflow-y-auto"
+          ref={dropdownRef}
+          className="fixed z-50 bg-popover border border-border rounded-[var(--radius)] shadow-lg max-h-60 overflow-y-auto"
+          style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
           onMouseLeave={() => setHighlightIdx(-1)}
         >
           {results.map((r, idx) => (
@@ -329,7 +359,8 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
               </div>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
