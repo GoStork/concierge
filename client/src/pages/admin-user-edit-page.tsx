@@ -598,7 +598,7 @@ export default function AdminUserEditPage() {
 
           {!isParentAccountMode && (
             <div className="mt-8">
-              <ConnectedCalendarsSection connections={userData.calendarConnections} />
+              <ConnectedCalendarsSection connections={userData.calendarConnections} canManage={isSelf} />
             </div>
           )}
 

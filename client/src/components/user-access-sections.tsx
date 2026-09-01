@@ -36,14 +36,24 @@ export function VideoRoomSection({ url }: { url: string }) {
   );
 }
 
-export function ConnectedCalendarsSection({ connections }: { connections: CalendarConnection[] | undefined }) {
+export function ConnectedCalendarsSection({
+  connections,
+  canManage = true,
+}: {
+  connections: CalendarConnection[] | undefined;
+  /** False when an admin views ANOTHER member's record - calendars are
+   *  per-user OAuth, so only the member themselves can connect/disconnect
+   *  (on their own Settings -> Calendar page). */
+  canManage?: boolean;
+}) {
   const navigate = useNavigate();
+  const hasConnections = !!connections && connections.length > 0;
   return (
     <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
       <h2 className="t-micro-label font-heading">Connected Calendars</h2>
-      {connections && connections.length > 0 ? (
+      {hasConnections ? (
         <div className="space-y-2">
-          {connections.map((conn) => {
+          {connections!.map((conn) => {
             const isHealthy = conn.tokenValid !== false && conn.connected !== false;
             return (
               <div key={conn.id} className="flex items-center gap-2 text-sm" data-testid={`text-calendar-connection-${conn.id}`}>
@@ -62,13 +72,17 @@ export function ConnectedCalendarsSection({ connections }: { connections: Calend
           })}
         </div>
       ) : (
-        <div className="space-y-3">
-          <p className="t-helper">No calendar connected yet.</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => navigate("/account/calendar?connect=true")} data-testid="button-connect-calendar">
-            <Calendar className="w-4 h-4 mr-1.5" />
-            Connect Your Calendar
-          </Button>
-        </div>
+        <p className="t-helper">No calendar connected yet.</p>
+      )}
+      {canManage ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => navigate(hasConnections ? "/account/calendar" : "/account/calendar?connect=true")} data-testid="button-manage-calendars">
+          <Calendar className="w-4 h-4 mr-1.5" />
+          {hasConnections ? "Manage calendars" : "Connect Your Calendar"}
+        </Button>
+      ) : (
+        <p className="t-helper">
+          Calendars are connected and managed by each member on their own Settings -&gt; Calendar page.
+        </p>
       )}
     </div>
   );
