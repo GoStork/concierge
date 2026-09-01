@@ -57,7 +57,7 @@ export type OnboardingStep = {
  *  appears on anyone's open queue, and the reconciler never touches the
  *  onbmark prefix. */
 const MARKABLE_STEP_KEYS = new Set([
-  "parent_form", "parent_form_provider", "partner_clinics", "knowledge",
+  "parent_form", "parent_form_provider", "partner_clinics", "knowledge", "profile_review",
   "playbooks", "automation", "branding", "sponsorship",
   // Providers without a database to scrape (they send PDFs / upload manually)
   // close these by hand.
@@ -349,6 +349,23 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
         : "Unlocks once the agreement is signed and the W-9 is completed.",
     status: welcomeSent ? "done" : welcomeReady ? "pending" : "locked",
     deepLink: editLink("users"),
+  });
+  // First thing after they get their login: review the profile GoStork
+  // built for them (logo, about, locations, contact details - everything on
+  // the Profile tab). Closed by the provider checking off their Home task,
+  // or by the admin marking it done.
+  const profileReviewed = taskDone("onbprofile");
+  steps.push({
+    key: "profile_review", group: "provider_setup", label: "Provider reviewed their profile",
+    detail: profileReviewed
+      ? "The provider reviewed and confirmed their profile."
+      : welcomeSent
+        ? taskRaised("onbprofile")
+          ? "Waiting for the provider to review the profile GoStork created for them."
+          : "Waiting for the provider to review the profile GoStork created for them. (task not sent yet)"
+        : "Unlocks once the welcome email is sent - they need a login first.",
+    status: profileReviewed ? "done" : welcomeSent ? "waiting_on_provider" : "locked",
+    deepLink: editLink("profile"),
   });
   const partnerIds = Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : [];
   if (hasSurrogacy || hasEgg) {
