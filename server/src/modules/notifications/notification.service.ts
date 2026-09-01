@@ -3167,11 +3167,16 @@ export class NotificationService implements OnModuleInit {
   }) {
     const brandData = await this.getBrandData();
     const companyName = brandData.companyName;
-    const subject = `Welcome to ${companyName} - set your password`;
+    // Personal, not corporate: the recipient's own name in the subject and
+    // title ("there" fallback keeps them clean when no name is on record).
+    const hasName = params.firstName && params.firstName.toLowerCase() !== "there";
+    const subject = hasName
+      ? `${params.firstName}, welcome to ${companyName} - set your password`
+      : `Welcome to ${companyName} - set your password`;
     const html = buildBrandedEmail(brandData, {
-      title: `Welcome to ${companyName}`,
+      title: hasName ? `Welcome to ${companyName}, ${params.firstName}!` : `Welcome to ${companyName}`,
       greeting: `Hi ${this.escapeHtml(params.firstName)},`,
-      body: `Your ${this.escapeHtml(companyName)} account for <strong>${this.escapeHtml(params.providerName)}</strong> is ready. Your login email is <strong>${this.escapeHtml(params.email)}</strong> - set your password with the button below, then sign in at <a href="${params.appUrl}">${params.appUrl.replace(/^https?:\/\//, "")}</a> to manage your profile, calendar, and parent conversations.`,
+      body: `Your personal ${this.escapeHtml(companyName)} account for <strong>${this.escapeHtml(params.providerName)}</strong> is ready. Your login email is <strong>${this.escapeHtml(params.email)}</strong> - set your password with the button below, then sign in at <a href="${params.appUrl}">${params.appUrl.replace(/^https?:\/\//, "")}</a> to manage your profile, calendar, and parent conversations.`,
       alertBox: { text: "The set-password link is valid for 7 days. You can always request a new one with \"Forgot your password\" on the login page.", type: "info" },
       buttons: [{ label: "Set Your Password", url: params.resetUrl }],
       footer: "If you have any questions, just reply to this email.",
