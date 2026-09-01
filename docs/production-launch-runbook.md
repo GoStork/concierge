@@ -632,11 +632,20 @@ in this order:
 
 - [x] Google OAuth client: app.gostork.com + test-app redirect URIs present;
   publishing status = In production since 2026-08-19 (was Testing).
-- [~] **Google OAuth app verification** (sensitive calendar scopes) -
-  **SUBMITTED FOR REVIEW 2026-08-26** (Verification Center: "data access is
-  under review"); now waiting on Google (days-weeks; replies go to
-  eran.amir@gostork.com - answer promptly). Full prep trail:
-  - [ ] **BLOCKED ON US 2026-08-28: Google replied "[Action Needed] OAuth
+- [x] **Google OAuth app verification** (sensitive calendar scopes) -
+  **APPROVED 2026-09-01.** Google's Third Party Data Safety Team replied on
+  the same thread (Gmail thread id 1a0472ae1a47c28f, message 1a05d6421d1b6d73):
+  "We've approved your OAuth App Verification request for project
+  1053367727632 (Project ID: gen-lang-client-0051391254)" for
+  `.../auth/calendar.readonly` and `.../auth/calendar.events`. The 100-user
+  lifetime cap is lifted - the app can now onboard unlimited users on those
+  scopes. Their reminders: keep Project Owner/Editor accounts current, submit
+  a NEW verification request for any additional scope or any change to the
+  OAuth consent screen configuration, and note the approval is not inheritable
+  by other apps/projects. Submitted 2026-08-26, rejected 2026-08-28 over the
+  demo video, re-submitted 2026-08-31 with the new 5m58s video
+  (https://youtu.be/swIb_oEmfOg) - approved one day later. Full prep trail:
+  - [x] **RESOLVED 2026-09-01 (approved). 2026-08-28: Google replied "[Action Needed] OAuth
     Verification Request Acknowledgement" (from
     api-oauth-dev-verification-reply+28ihckz1z2dc91d@google.com) and the
     review is STALLED until we reply to that email.** They rejected the 52s
@@ -654,7 +663,8 @@ in this order:
     -> book a consultation -> cut to Google Calendar showing the created event
     -> reschedule and cancel in GoStork -> cut back to Google Calendar showing
     the event updated then removed (calendar.events). Then reply directly to
-    that email thread with the new unlisted YouTube link.
+    that email thread with the new unlisted YouTube link. Replied
+    2026-08-31; approved 2026-09-01.
   - [x] **New demo video RECORDED 2026-08-31** - 5m57s, 1512x926, at
     `~/Desktop/gostork-oauth-calendar-demo.mp4` on the MacBook (raw segments
     in the session scratchpad). Shot on dev-mbp.gostork.com (staging surface,
@@ -668,9 +678,10 @@ in this order:
     2026-08-31: https://youtu.be/swIb_oEmfOg** (same channel as the rejected
     first attempt - eran.amir@gostork.com / @eranamir2771 - so both demos sit
     together; description carries the scope justification and per-scope
-    timestamps). STILL TO DO: reply on the api-oauth-dev-verification thread
-    (Gmail thread id 1a0472ae1a47c28f) with that link. The review stays
-    stalled until that reply is sent.
+    timestamps). Replied on the api-oauth-dev-verification thread (Gmail
+    thread id 1a0472ae1a47c28f) with that link on 2026-08-31; **Google
+    approved on 2026-09-01** - this video is what cleared the review, so keep
+    it published and unlisted.
   - [x] **Blocker found and fixed while filming (commit a29c5e9e)**: the
     calendar syncs called createEvent unconditionally and overwrote the stored
     event id. Those syncs run more than once per booking (reschedule creates a
