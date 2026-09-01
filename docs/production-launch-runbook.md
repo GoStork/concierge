@@ -644,7 +644,10 @@ in this order:
   OAuth consent screen configuration, and note the approval is not inheritable
   by other apps/projects. Submitted 2026-08-26, rejected 2026-08-28 over the
   demo video, re-submitted 2026-08-31 with the new 5m58s video
-  (https://youtu.be/swIb_oEmfOg) - approved one day later. Full prep trail:
+  (https://youtu.be/swIb_oEmfOg) - approved one day later. **Confirmed in the
+  console the same day**: Verification Center shows both cards green -
+  "Your branding has been verified and is being shown to users" AND "Your
+  app's data access has been verified". Full prep trail:
   - [x] **RESOLVED 2026-09-01 (approved). 2026-08-28: Google replied "[Action Needed] OAuth
     Verification Request Acknowledgement" (from
     api-oauth-dev-verification-reply+28ihckz1z2dc91d@google.com) and the
