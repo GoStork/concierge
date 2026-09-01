@@ -127,7 +127,9 @@ export function MyAccessSections({ providerId, userId }: { providerId: string; u
   });
   if (!data) return null;
   return (
-    <div className="space-y-6">
+    // mt-6 matches the space-y-6 between the sections themselves, so the gap
+    // to the Personal Information card above is equal to every other gap.
+    <div className="mt-6 space-y-6">
       {data.dailyRoomUrl && <VideoRoomSection url={data.dailyRoomUrl} />}
       <ConnectedCalendarsSection connections={data.calendarConnections} />
       {data.scheduleConfig?.bookingPageSlug && <CalendarLinkSection slug={data.scheduleConfig.bookingPageSlug} />}
