@@ -104,10 +104,13 @@ export async function runDocumentReminderSweep(notifications: NotificationServic
       if (due < 1) continue;
       const provider = await db.provider.findUnique({ where: { id: m.providerId }, select: { welcomeRemindCount: true } });
       if (!provider || provider.welcomeRemindCount >= Math.min(due, THRESHOLD_DAYS.length)) continue;
-      const loggedIn = await db.user.count({
-        where: { providerId: m.providerId, isDisabled: false, roles: { has: "PROVIDER_ADMIN" }, lastLoginAt: { not: null } },
+      const activated = await db.user.count({
+        where: {
+          providerId: m.providerId, isDisabled: false, roles: { has: "PROVIDER_ADMIN" },
+          OR: [{ lastLoginAt: { not: null } }, { passwordResetTokens: { some: { usedAt: { not: null } } } }],
+        },
       });
-      if (loggedIn > 0) continue; // they made it in - no more nagging
+      if (activated > 0) continue; // they made it in - no more nagging
       const claimed = await db.provider.updateMany({
         where: { id: m.providerId, welcomeRemindCount: provider.welcomeRemindCount },
         data: { welcomeRemindCount: provider.welcomeRemindCount + 1 },

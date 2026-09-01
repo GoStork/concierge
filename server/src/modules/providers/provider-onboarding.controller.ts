@@ -139,7 +139,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     eggCount, surroCount, spermCount,
     costSheets, referralFees, w9, pagr,
     calendarCount, bank, knowledgeCount, playbookCount, autoReplyCount,
-    ipFormOverrideCount, agreementTemplates, onbTasks,
+    ipFormOverrideCount, agreementTemplates, adminActivatedCount, onbTasks,
   ] = await Promise.all([
     db.user.findMany({ where: { providerId }, select: { id: true, roles: true } }),
     hasEgg ? db.eggDonorSyncConfig.findUnique({ where: { providerId } }) : null,
@@ -159,6 +159,13 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     db.providerAutoReply.count({ where: { providerId } }),
     db.ipFormProviderOverride.count({ where: { providerId } }),
     db.providerAgreementTemplate.findMany({ where: { providerId }, select: { serviceType: true, agreementTemplateUrl: true } }),
+    // "Activated" = used their set-password link or logged in at least once.
+    db.user.count({
+      where: {
+        providerId, isDisabled: false, roles: { has: "PROVIDER_ADMIN" },
+        OR: [{ lastLoginAt: { not: null } }, { passwordResetTokens: { some: { usedAt: { not: null } } } }],
+      },
+    }),
     db.parentTask.findMany({
       where: { providerId, source: "SYSTEM", systemKey: { startsWith: "onb" } },
       select: { systemKey: true, status: true, createdAt: true },
@@ -340,14 +347,29 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   // and the provider can start their own setup.
   const welcomeSent = taskRaised("onbwelcome");
   const welcomeReady = pagrStatus === "COMPLETED" && w9Status === "COMPLETED";
+  // The send is the ADMIN's action - last step of their phase (it still
+  // unlocks only after the provider signed both documents).
   steps.push({
-    key: "welcome", group: "provider_setup", label: "Send welcome email",
+    key: "welcome", group: "admin_setup", label: "Send welcome email",
     detail: welcomeSent
       ? "Welcome email sent - the provider has their login and set-password link."
       : welcomeReady
         ? "Agreement signed and W-9 on file - send the provider their welcome email with a set-password link."
         : "Unlocks once the agreement is signed and the W-9 is completed.",
     status: welcomeSent ? "done" : welcomeReady ? "pending" : "locked",
+    deepLink: editLink("users"),
+  });
+  // The provider's side of the welcome email: actually set the password and
+  // get in. Done when any provider admin used their set-password link or
+  // has logged in.
+  steps.push({
+    key: "password_reset", group: "provider_setup", label: "Admin user set their password",
+    detail: adminActivatedCount > 0
+      ? "The provider admin set their password and can log in."
+      : welcomeSent
+        ? "Waiting for the provider to use their set-password link from the welcome email."
+        : "Unlocks once the welcome email is sent.",
+    status: adminActivatedCount > 0 ? "done" : welcomeSent ? "waiting_on_provider" : "locked",
     deepLink: editLink("users"),
   });
   // First thing after they get their login: review the profile GoStork
