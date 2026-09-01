@@ -43,6 +43,7 @@ import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { taskLinkTarget } from "@/components/parents/parent-crm-ui";
+import { ProviderOwnOnboarding } from "@/components/provider-own-onboarding";
 
 interface ProviderTask {
   id: string;
@@ -279,6 +280,10 @@ export default function ProviderHomePage() {
 
       {/* Someone tagged you - shown above the work queue, cleared on open. */}
       <MentionsCard />
+
+      {/* Onboarding checklist - the provider's own view of their setup steps.
+          Renders until everything required is done, then disappears. */}
+      <ProviderOwnOnboarding />
 
       {/* Work queue */}
       <Card className="p-5 space-y-3">

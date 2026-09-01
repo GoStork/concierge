@@ -605,6 +605,56 @@ export class ProviderOnboardingController {
     await db.provider.update({ where: { id }, data: { welcomeRemindCount: 0 } }).catch(() => {});
     return { sent };
   }
+  /** The provider's OWN onboarding view: their Phase 3 steps in second
+   *  person, derived from the same computeOnboarding - one truth, two
+   *  audiences. */
+  @Get("api/provider/onboarding")
+  @UseGuards(SessionOrJwtGuard)
+  async myOnboarding(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new ForbiddenException("Providers only");
+    const summary = await computeOnboarding(user.providerId);
+    if (!summary) throw new NotFoundException("Provider not found");
+
+    const VIEW: Record<string, { label: string; link: string }> = {
+      agreement: { label: "Sign the GoStork agreement", link: "/account/documents" },
+      w9: { label: "Complete your W-9", link: "/account/legal-identity" },
+      password_reset: { label: "Set your password", link: "/account" },
+      profile_review: { label: "Review your company profile", link: "/account/company" },
+      calendar: { label: "Connect your calendar", link: "/account/calendar" },
+      stripe: { label: "Connect payouts", link: "/account/payouts" },
+      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs" },
+      agreement_templates: { label: "Upload your parent agreement templates", link: "/account/documents" },
+      pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing" },
+      team: { label: "Add your team & assign roles", link: "/account/team" },
+      ai: { label: "Set up your AI Concierge", link: "/account/concierge" },
+      parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form" },
+      playbooks: { label: "Configure playbooks", link: "/account/playbooks" },
+      automation: { label: "Review automations", link: "/account/automation" },
+      branding: { label: "Review your branding", link: "/account/branding" },
+      sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship" },
+    };
+    const steps = summary.steps
+      .filter((s) => VIEW[s.key])
+      .map((s) => ({
+        key: s.key,
+        label: VIEW[s.key].label,
+        link: VIEW[s.key].link,
+        // "waiting on provider" IS their to-do; locked steps stay locked
+        // (e.g. signing before the document is sent).
+        status: s.status === "waiting_on_provider" ? "pending" : s.status,
+        isOptional: !!s.isOptional,
+      }));
+    const required = steps.filter((s) => !s.isOptional);
+    const doneCount = required.filter((s) => s.status === "done").length;
+    return {
+      steps,
+      doneCount,
+      requiredCount: required.length,
+      percent: required.length ? Math.round((doneCount / required.length) * 100) : 0,
+    };
+  }
+
   @Get("api/admin/providers/:id/onboarding")
   @UseGuards(SessionOrJwtGuard)
   async getOne(@Req() req: Request, @Param("id") id: string) {

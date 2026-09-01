@@ -119,9 +119,13 @@ function DashboardRoute() {
   const isParentOnly = isParent && !isAdmin && !isProvider;
 
   // Parents and providers land in chat regardless of concierge brand settings;
-  // GoStork admins land on the command center.
+  // GoStork admins land on the command center. A provider's FIRST-EVER login
+  // (fresh from the welcome email's set-password link - lastLoginAt is
+  // stamped after the response, so it is still null here) lands on My
+  // Account so they start from their own settings, not an empty chat.
   if (isParentOnly) return <Navigate to="/chat" replace />;
   if (isAdmin) return <Navigate to="/admin/home" replace />;
+  if (isProvider && !(user as any)?.lastLoginAt) return <Navigate to="/account" replace />;
   if (isProvider) return <Navigate to="/chat" replace />;
   return <Navigate to="/marketplace" replace />;
 }
