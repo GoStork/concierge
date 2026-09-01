@@ -33,8 +33,12 @@ export type OwnStep = {
   key: string;
   label: string;
   link: string;
+  /** Where it happens in the provider's own nav, e.g. "Settings -> Company". */
+  where: string;
   description: string;
   minutes: number;
+  /** Review-style step the provider confirms themselves ("all good here"). */
+  selfMarkable: boolean;
   status: "done" | "pending" | "optional" | "locked";
   isOptional: boolean;
 };
@@ -130,6 +134,7 @@ export function ProviderOwnOnboarding() {
             </span>
           </div>
           <div className="mt-1 text-sm font-medium">{next.label}</div>
+          <div className="text-xs text-muted-foreground">{next.where}</div>
           <div className="mt-0.5 text-sm text-muted-foreground">{next.description}</div>
           <div className="mt-2.5 flex items-center gap-2">
             <Button size="sm" onClick={() => navigate(next.link)} data-testid="provider-own-onboarding-next-cta">
@@ -164,6 +169,9 @@ export function ProviderOwnOnboarding() {
               <StatusIcon status={step.status} />
               <span className={`flex-1 min-w-0 text-sm truncate ${step.status === "done" ? "text-muted-foreground line-through decoration-[hsl(var(--brand-success)/0.5)]" : ""}`}>
                 {step.label}
+                {step.status !== "done" && (
+                  <span className="ml-2 text-xs text-muted-foreground no-underline hidden sm:inline">{step.where}</span>
+                )}
               </span>
               {step.key === data.nextKey && (
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))]">Next</span>

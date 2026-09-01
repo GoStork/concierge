@@ -616,38 +616,42 @@ export class ProviderOnboardingController {
     const summary = await computeOnboarding(user.providerId);
     if (!summary) throw new NotFoundException("Provider not found");
 
-    const VIEW: Record<string, { label: string; link: string; description: string; minutes: number }> = {
-      agreement: { label: "Sign the GoStork agreement", link: "/account/documents", minutes: 5,
+    // `where` names the exact page in the provider's own navigation.
+    // `selfMarkable` steps are review-style: the page may already be fine as
+    // built, so the provider confirms with "Mark as done" (closes the
+    // underlying onb* task - the same mechanism the queue used).
+    const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean }> = {
+      agreement: { label: "Sign the GoStork agreement", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
         description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." },
-      w9: { label: "Complete your W-9", link: "/account/legal-identity", minutes: 3,
+      w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
         description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." },
-      password_reset: { label: "Set your password", link: "/account", minutes: 1,
+      password_reset: { label: "Set your password", link: "/account", where: "Settings -> My Account", minutes: 1,
         description: "Create your password from the welcome email so you can sign in anytime." },
-      profile_review: { label: "Review your company profile", link: "/account/company", minutes: 10,
+      profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
         description: "Check the profile we built for you - description, photos, locations - and fix anything that is off. This is what parents see." },
-      calendar: { label: "Connect your calendar", link: "/account/calendar", minutes: 2,
+      calendar: { label: "Connect your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2,
         description: "Connect Google, Outlook, or Apple Calendar so parents can book consultations on your real availability." },
-      stripe: { label: "Connect payouts", link: "/account/payouts", minutes: 5,
+      stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
         description: "Connect your bank account through Stripe so parent payments reach you." },
-      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", minutes: 10,
+      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Costs", minutes: 10,
         description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." },
-      agreement_templates: { label: "Upload your parent agreement templates", link: "/account/documents", minutes: 5,
+      agreement_templates: { label: "Upload your parent agreement templates", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
         description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
-      pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing", minutes: 2,
+      pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 2,
         description: "Pick how your parent payments are structured so invoicing works the way you do." },
-      team: { label: "Add your team & assign roles", link: "/account/team", minutes: 5,
-        description: "Invite teammates and assign their roles and service lines so the right person sees each family." },
-      ai: { label: "Set up your AI Concierge", link: "/account/concierge", minutes: 5,
+      team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
+        description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." },
+      ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
         description: "Meet your AI assistant and choose how it represents your company to parents." },
-      parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", minutes: 5,
+      parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", where: "Settings -> Parent Form", minutes: 5, selfMarkable: true,
         description: "Review the intake form parents complete before a match call, and tailor it if you like." },
-      playbooks: { label: "Configure playbooks", link: "/account/playbooks", minutes: 5,
+      playbooks: { label: "Configure playbooks", link: "/account/playbooks", where: "Settings -> Playbooks", minutes: 5, selfMarkable: true,
         description: "Set up playbooks that automate your follow-ups with families." },
-      automation: { label: "Review automations", link: "/account/automation", minutes: 3,
+      automation: { label: "Review automations", link: "/account/automation", where: "Settings -> Automation", minutes: 3, selfMarkable: true,
         description: "Review your defaults for auto-replies and invoicing cadence - sensible defaults are already on." },
-      branding: { label: "Review your branding", link: "/account/branding", minutes: 3,
+      branding: { label: "Review your branding", link: "/account/branding", where: "Settings -> Branding", minutes: 3, selfMarkable: true,
         description: "Check your logo and brand colors - they appear on your parent-facing documents." },
-      sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", minutes: 2,
+      sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
         description: "See how sponsored placement can boost your visibility with matching families." },
     };
     const steps = summary.steps
@@ -656,8 +660,10 @@ export class ProviderOnboardingController {
         key: s.key,
         label: VIEW[s.key].label,
         link: VIEW[s.key].link,
+        where: VIEW[s.key].where,
         description: VIEW[s.key].description,
         minutes: VIEW[s.key].minutes,
+        selfMarkable: !!VIEW[s.key].selfMarkable,
         // "waiting on provider" IS their to-do; locked steps stay locked
         // (e.g. signing before the document is sent).
         status: s.status === "waiting_on_provider" ? "pending" : s.status,
@@ -678,6 +684,56 @@ export class ProviderOnboardingController {
       requiredCount: required.length,
       percent: required.length ? Math.round((doneCount / required.length) * 100) : 0,
     };
+  }
+
+  /** The provider confirms a review-style step themselves ("all good here").
+   *  Closes the underlying onb* task - the exact mechanism the Home queue
+   *  used - so the admin checklist flips too. Only steps whose completion is
+   *  the provider's word (reviews/confirmations) accept this; artifact steps
+   *  (calendar, payouts, costs...) only complete when the artifact exists. */
+  @Post("api/provider/onboarding/steps/:key/done")
+  @UseGuards(SessionOrJwtGuard)
+  async selfMarkStepDone(@Req() req: Request, @Param("key") key: string) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new ForbiddenException("Providers only");
+    const SELF_MARKABLE: Record<string, string> = {
+      profile_review: "onbprofile",
+      team: "onbteam",
+      ai: "onbai",
+      parent_form_provider: "onbform",
+      playbooks: "onbplaybooks",
+      automation: "onbauto",
+      branding: "onbbrand",
+      sponsorship: "onbsponsor",
+    };
+    const prefix = SELF_MARKABLE[key];
+    if (!prefix) throw new BadRequestException("This step completes on its own when the work is done");
+    const def = HANDOFF_TASKS.find((t) => t.prefix === prefix);
+    const db = prisma as any;
+    const now = new Date();
+    const systemKey = `${prefix}:${user.providerId}`;
+    await db.parentTask.upsert({
+      where: { systemKey },
+      create: {
+        parentAccountId: user.providerId,
+        scope: "PROVIDER",
+        providerId: user.providerId,
+        title: def?.title || `Onboarding step "${key}"`,
+        notes: def?.notes,
+        deepLink: def?.deepLink,
+        type: "TODO",
+        priority: "LOW",
+        source: "SYSTEM",
+        systemKey,
+        status: "DONE",
+        dueAt: now,
+        completedAt: now,
+        completedByUserId: user.id,
+        createdByUserId: user.id,
+      },
+      update: { status: "DONE", completedAt: now, completedByUserId: user.id },
+    });
+    return { marked: key };
   }
 
   @Get("api/admin/providers/:id/onboarding")

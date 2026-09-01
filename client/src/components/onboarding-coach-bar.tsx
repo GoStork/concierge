@@ -14,14 +14,31 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ListChecks, ArrowRight, Clock } from "lucide-react";
+import { CheckCircle2, ListChecks, ArrowRight, Clock, Check } from "lucide-react";
 import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-onboarding";
 
 export function OnboardingCoachBar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data } = useProviderOnboarding({ poll: true });
+
+  // Review-style steps have no artifact to detect - the provider's own
+  // confirmation IS the completion. Closes the underlying onb* task, which
+  // flips the admin checklist too.
+  const markDone = useMutation({
+    mutationFn: async (key: string) => {
+      const res = await fetch(`/api/provider/onboarding/steps/${key}/done`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to mark step done");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/provider/onboarding"] }),
+  });
 
   // Which step key completed while THIS visitor was on its page - drives the
   // celebrate face. Tracked as a transition (pending -> done seen live), so a
@@ -95,6 +112,19 @@ export function OnboardingCoachBar() {
           </div>
           <div className="text-sm text-muted-foreground truncate">{current.description}</div>
         </div>
+        {current.selfMarkable && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-[hsl(var(--brand-success)/0.5)] text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success)/0.08)] hover:text-[hsl(var(--brand-success))]"
+            disabled={markDone.isPending}
+            onClick={() => markDone.mutate(current.key)}
+            data-testid="onboarding-coach-mark-done"
+          >
+            <Check className="w-3.5 h-3.5 mr-1.5" />
+            {markDone.isPending ? "Saving..." : "All good - mark as done"}
+          </Button>
+        )}
       </div>
     );
   }
