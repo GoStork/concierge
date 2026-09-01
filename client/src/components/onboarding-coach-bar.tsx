@@ -114,14 +114,12 @@ export function OnboardingCoachBar() {
         </div>
         {current.selfMarkable && (
           <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 border-[hsl(var(--brand-success)/0.5)] text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success)/0.08)] hover:text-[hsl(var(--brand-success))]"
+            className="shrink-0 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-primary-foreground shadow-md font-medium"
             disabled={markDone.isPending}
             onClick={() => markDone.mutate(current.key)}
             data-testid="onboarding-coach-mark-done"
           >
-            <Check className="w-3.5 h-3.5 mr-1.5" />
+            <Check className="w-4 h-4 mr-1.5" />
             {markDone.isPending ? "Saving..." : "All good - mark as done"}
           </Button>
         )}
