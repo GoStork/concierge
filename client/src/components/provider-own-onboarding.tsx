@@ -169,9 +169,8 @@ export function ProviderOwnOnboarding() {
               <StatusIcon status={step.status} />
               <span className={`flex-1 min-w-0 text-sm truncate ${step.status === "done" ? "text-muted-foreground line-through decoration-[hsl(var(--brand-success)/0.5)]" : ""}`}>
                 {step.label}
-                {step.status !== "done" && (
-                  <span className="ml-2 text-xs text-muted-foreground no-underline hidden sm:inline">{step.where}</span>
-                )}
+                {/* inline-block so a done row's line-through doesn't strike the location */}
+                <span className="ml-2 text-xs text-muted-foreground hidden sm:inline-block">{step.where}</span>
               </span>
               {step.key === data.nextKey && (
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))]">Next</span>
