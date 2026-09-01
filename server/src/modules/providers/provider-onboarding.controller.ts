@@ -802,12 +802,10 @@ export class ProviderOnboardingController {
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
     // Steps that live on the same Settings tab always sit together (the way
-    // Stripe's setup guide groups its sections), and the groups are ordered
-    // so the recommended next task is the FIRST incomplete row of the list:
-    //   1. groups with required work remaining (journey order)
-    //   2. groups where only optional work remains
-    //   3. fully completed groups
-    // Journey order inside each group.
+    // Stripe's setup guide groups its sections). The order is STATIC - groups
+    // in journey order (by their first step), journey order inside each
+    // group - it never reshuffles as steps complete. The Next badge simply
+    // marks the current task wherever it sits in the list.
     type ProviderStep = (typeof steps)[number];
     const groupsByWhere = new Map<string, ProviderStep[]>();
     for (const s of steps) {
@@ -815,21 +813,16 @@ export class ProviderOnboardingController {
       if (list) list.push(s);
       else groupsByWhere.set(s.where, [s]);
     }
-    const groupCategory = (list: ProviderStep[]) => {
-      if (list.some((s) => !s.isOptional && (s.status === "pending" || s.status === "locked"))) return 0;
-      if (list.some((s) => s.status !== "done")) return 1;
-      return 2;
-    };
     const orderedSteps = [...groupsByWhere.values()]
       .map((list) => list.sort((a, b) => orderOf(a.key) - orderOf(b.key)))
-      .sort((a, b) => (groupCategory(a) - groupCategory(b)) || (orderOf(a[0].key) - orderOf(b[0].key)))
+      .sort((a, b) => orderOf(a[0].key) - orderOf(b[0].key))
       .flat();
     const required = orderedSteps.filter((s) => !s.isOptional);
     const doneCount = required.filter((s) => s.status === "done").length;
     // The recommended next action: first unlocked required step in display
     // order, then first unlocked optional one. Free order stays - this is a
-    // suggestion. Computed AFTER the grouped sort so the Next badge always
-    // lands on the topmost incomplete row.
+    // suggestion. The same key wears the Next badge in the list, so the
+    // "Next up" card and the list always agree.
     const nextKey =
       orderedSteps.find((s) => !s.isOptional && s.status === "pending")?.key ||
       orderedSteps.find((s) => s.status === "pending" || s.status === "optional")?.key ||
