@@ -286,8 +286,11 @@ export class ProviderAgreementController {
   async myAgreement(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    // AWAITING_GOSTORK is included so the provider's card can say "GoStork is
+    // countersigning" instead of the confusing "not sent yet" placeholder in
+    // the minutes between the admin's send and their PandaDoc signature.
     const live = await (prisma as any).providerAgreement.findFirst({
-      where: { providerId: user.providerId, supersededAt: null, status: { in: ["SENT", "COMPLETED"] } },
+      where: { providerId: user.providerId, supersededAt: null, status: { in: ["AWAITING_GOSTORK", "SENT", "COMPLETED"] } },
       orderBy: { createdAt: "desc" },
     });
     const row = live || await (prisma as any).providerAgreement.findFirst({

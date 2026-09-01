@@ -255,16 +255,17 @@ export default function ProviderOnboardingChecklist({
                             Mark done
                           </button>
                         )}
-                        {step.key === "welcome" && step.status === "pending" && (
+                        {step.key === "welcome" && (step.status === "pending" || step.status === "done") && (
                           <Button
                             size="sm"
+                            variant={step.status === "done" ? "outline" : "default"}
                             className="h-7 shrink-0 text-xs"
                             disabled={sendWelcomeMutation.isPending}
                             onClick={(e) => { e.stopPropagation(); sendWelcomeMutation.mutate(); }}
                             data-testid="onboarding-send-welcome"
                           >
                             {sendWelcomeMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
-                            Send welcome email
+                            {step.status === "done" ? "Re-send" : "Send welcome email"}
                           </Button>
                         )}
                         {step.progress && (

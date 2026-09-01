@@ -16,7 +16,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { FileSignature, PenLine, Download, ExternalLink, Share2, Loader2, CheckCircle2, Clock } from "lucide-react";
 
-type MyAgreement = { id: string; status: "SENT" | "COMPLETED"; requestedAt: string | null; completedAt: string | null } | null;
+type MyAgreement = { id: string; status: "AWAITING_GOSTORK" | "SENT" | "COMPLETED"; requestedAt: string | null; completedAt: string | null } | null;
 
 export function GostorkAgreementCard() {
   const navigate = useNavigate();
@@ -72,6 +72,9 @@ export function GostorkAgreementCard() {
     );
   }
   const signed = agreement.status === "COMPLETED";
+  // GoStork countersigns FIRST (referral-fee fields). Until that signature
+  // lands, the provider cannot sign yet - say so instead of hiding the card.
+  const preparing = agreement.status === "AWAITING_GOSTORK";
 
   return (
     <section className="space-y-3" data-testid="gostork-agreement-section">
@@ -80,22 +83,26 @@ export function GostorkAgreementCard() {
           <FileSignature className="w-5 h-5 text-primary" /> GoStork Agreement
         </h2>
         <p className="t-helper mt-0.5">
-          Your service agreement with GoStork - {signed ? "signed and on file." : "awaiting your signature."}
+          Your service agreement with GoStork - {signed ? "signed and on file." : preparing ? "being prepared by GoStork." : "awaiting your signature."}
         </p>
       </div>
       <Card className="p-5 space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${signed
             ? "bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))]"
-            : "bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]"}`}
+            : preparing
+              ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
+              : "bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]"}`}
           >
             {signed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
             {signed
               ? `Signed${agreement.completedAt ? ` ${new Date(agreement.completedAt).toLocaleDateString()}` : ""}`
-              : "Awaiting your signature"}
+              : preparing
+                ? "GoStork is countersigning - you can review and sign shortly"
+                : "Awaiting your signature"}
           </span>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
-            {!signed ? (
+            {preparing ? null : !signed ? (
               <Button size="sm" onClick={() => navigate(`/provider-agreement/${agreement.id}`)} data-testid="gostork-agreement-sign">
                 <PenLine className="w-3.5 h-3.5 mr-1.5" /> Review & Sign
               </Button>
@@ -111,9 +118,11 @@ export function GostorkAgreementCard() {
                 </a>
               </>
             )}
-            <Button size="sm" variant="outline" onClick={() => setShareOpen(o => !o)} data-testid="gostork-agreement-share-toggle">
-              <Share2 className="w-3.5 h-3.5 mr-1.5" /> Share
-            </Button>
+            {!preparing && (
+              <Button size="sm" variant="outline" onClick={() => setShareOpen(o => !o)} data-testid="gostork-agreement-share-toggle">
+                <Share2 className="w-3.5 h-3.5 mr-1.5" /> Share
+              </Button>
+            )}
           </div>
         </div>
 

@@ -87,6 +87,43 @@ export async function runDocumentReminderSweep(notifications: NotificationServic
   } catch (e: any) {
     console.error(`[doc-reminders] W-9 sweep failed: ${e?.message}`);
   }
+
+  // ── Welcome emails nobody acted on ──
+  // Same day 3/7/10 ladder, anchored to the welcome send (the onbwelcome:
+  // marker task's completedAt), stopping the moment ANY provider admin has
+  // logged in (lastLoginAt set). Each reminder mints fresh set-password
+  // links, since the previous ones may have expired.
+  try {
+    const markers = await db.parentTask.findMany({
+      where: { systemKey: { startsWith: "onbwelcome:" }, status: "DONE", completedAt: { not: null } },
+      select: { providerId: true, completedAt: true },
+    });
+    for (const m of markers) {
+      if (!m.providerId) continue;
+      const due = remindersDue(m.completedAt);
+      if (due < 1) continue;
+      const provider = await db.provider.findUnique({ where: { id: m.providerId }, select: { welcomeRemindCount: true } });
+      if (!provider || provider.welcomeRemindCount >= Math.min(due, THRESHOLD_DAYS.length)) continue;
+      const loggedIn = await db.user.count({
+        where: { providerId: m.providerId, isDisabled: false, roles: { has: "PROVIDER_ADMIN" }, lastLoginAt: { not: null } },
+      });
+      if (loggedIn > 0) continue; // they made it in - no more nagging
+      const claimed = await db.provider.updateMany({
+        where: { id: m.providerId, welcomeRemindCount: provider.welcomeRemindCount },
+        data: { welcomeRemindCount: provider.welcomeRemindCount + 1 },
+      });
+      if (!claimed.count) continue;
+      try {
+        const { sendProviderWelcomeEmails } = await import("../providers/provider-onboarding.controller");
+        const sent = await sendProviderWelcomeEmails(notifications, m.providerId);
+        console.log(`[doc-reminders] Welcome reminder ${provider.welcomeRemindCount + 1}/${THRESHOLD_DAYS.length} for provider ${m.providerId} (${sent} email(s))`);
+      } catch (e: any) {
+        console.error(`[doc-reminders] Welcome reminder failed for ${m.providerId}: ${e?.message}`);
+      }
+    }
+  } catch (e: any) {
+    console.error(`[doc-reminders] Welcome sweep failed: ${e?.message}`);
+  }
 }
 
 let scheduled: cron.ScheduledTask | null = null;

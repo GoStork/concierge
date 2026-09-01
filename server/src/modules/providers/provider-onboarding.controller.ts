@@ -500,6 +500,42 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   };
 }
 
+/** Email every provider admin their login + a fresh 7-day set-password link.
+ *  Shared by the checklist's Send/Re-send button and the automatic
+ *  no-login-yet reminder ladder (document-reminder.scheduler).
+ *  Returns the number of emails sent; -1 = no admin user exists at all. */
+export async function sendProviderWelcomeEmails(notificationService: NotificationService, providerId: string): Promise<number> {
+  const db = prisma as any;
+  const provider = await db.provider.findUnique({ where: { id: providerId }, select: { id: true, name: true } });
+  if (!provider) return -1;
+  const admins = await db.user.findMany({
+    where: { providerId, isDisabled: false, roles: { has: "PROVIDER_ADMIN" } },
+    select: { id: true, email: true, name: true, firstName: true },
+  });
+  if (!admins.length) return -1;
+
+  const { randomBytes } = await import("crypto");
+  const appUrl = getBaseUrl();
+  let sent = 0;
+  for (const u of admins) {
+    if (!u.email) continue;
+    const token = randomBytes(32).toString("hex");
+    await db.passwordResetToken.create({
+      data: { token, userId: u.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    });
+    await notificationService.sendProviderWelcomeEmail({
+      userId: u.id,
+      email: u.email,
+      firstName: (u.firstName || u.name || "there").split(" ")[0],
+      providerName: provider.name,
+      resetUrl: `${appUrl}/reset-password/${token}`,
+      appUrl,
+    });
+    sent++;
+  }
+  return sent;
+}
+
 @Controller()
 export class ProviderOnboardingController {
   // Explicit @Inject: the esbuild bundle emits no design:type metadata, so
@@ -518,31 +554,8 @@ export class ProviderOnboardingController {
     const db = prisma as any;
     const provider = await db.provider.findUnique({ where: { id }, select: { id: true, name: true } });
     if (!provider) throw new NotFoundException("Provider not found");
-    const admins = await db.user.findMany({
-      where: { providerId: id, isDisabled: false, roles: { has: "PROVIDER_ADMIN" } },
-      select: { id: true, email: true, name: true, firstName: true },
-    });
-    if (!admins.length) throw new BadRequestException("This provider has no admin user yet - create one on the Team tab first.");
-
-    const { randomBytes } = await import("crypto");
-    const appUrl = getBaseUrl();
-    let sent = 0;
-    for (const u of admins) {
-      if (!u.email) continue;
-      const token = randomBytes(32).toString("hex");
-      await db.passwordResetToken.create({
-        data: { token, userId: u.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-      });
-      await this.notificationService.sendProviderWelcomeEmail({
-        userId: u.id,
-        email: u.email,
-        firstName: (u.firstName || u.name || "there").split(" ")[0],
-        providerName: provider.name,
-        resetUrl: `${appUrl}/reset-password/${token}`,
-        appUrl,
-      });
-      sent++;
-    }
+    const sent = await sendProviderWelcomeEmails(this.notificationService, id);
+    if (sent === -1) throw new BadRequestException("This provider has no admin user yet - create one on the Team tab first.");
     if (!sent) throw new BadRequestException("No admin user with an email address found.");
 
     const userId = (req.user as any)?.id;
@@ -566,6 +579,8 @@ export class ProviderOnboardingController {
       },
       update: { status: "DONE", completedAt: now, completedByUserId: userId },
     });
+    // A manual (re-)send restarts the no-login reminder ladder from today.
+    await db.provider.update({ where: { id }, data: { welcomeRemindCount: 0 } }).catch(() => {});
     return { sent };
   }
   @Get("api/admin/providers/:id/onboarding")

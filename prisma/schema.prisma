@@ -82,6 +82,9 @@ model Provider {
   // e.g. ["CA","NY"]). Drives Stage 3a state-match check for LAWYER
   // providers and Eva's lawyer-introduction filter.
   statesLicensedIn                      String[]                    @default([])
+  /// Automatic welcome-email reminders sent (day 3/7/10 ladder, max 3) while
+  /// no provider admin has logged in yet. Doubles as the cross-machine claim.
+  welcomeRemindCount                    Int                         @default(0)
   // Phase 2 automation flags. JSON shape:
   //   { autoCostSheetDraft?: boolean, autoInvoiceDraft?: boolean, autoAgreementDraft?: boolean }
   // null = all off. Flipped by GoStork admins only via the admin
