@@ -8,13 +8,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { FileSignature, PenLine, Download, ExternalLink, Share2, Loader2, CheckCircle2, Clock } from "lucide-react";
+import { PenLine, Download, ExternalLink, Share2, Loader2, CheckCircle2, Clock } from "lucide-react";
 
 type MyAgreement = { id: string; status: "AWAITING_GOSTORK" | "SENT" | "COMPLETED"; requestedAt: string | null; completedAt: string | null } | null;
 
@@ -56,18 +55,14 @@ export function GostorkAgreementCard() {
   const agreement = data.agreement;
   if (!agreement) {
     return (
-      <section className="space-y-3" data-testid="gostork-agreement-section">
+      <section className="space-y-3 rounded-xl border bg-card p-5" data-testid="gostork-agreement-section">
         <div>
-          <h2 className="text-lg font-heading flex items-center gap-2">
-            <FileSignature className="w-5 h-5 text-primary" /> GoStork Agreement
-          </h2>
+          <h3 className="font-semibold">GoStork Agreement</h3>
           <p className="t-helper mt-0.5">Your service agreement with GoStork.</p>
         </div>
-        <Card className="p-6 text-center">
-          <p className="t-helper">
-            GoStork has not sent your service agreement yet. Once it arrives you will review and sign it here, and your signed copy will stay available to open, download, and share.
-          </p>
-        </Card>
+        <p className="t-helper">
+          GoStork has not sent your service agreement yet. Once it arrives you will review and sign it here, and your signed copy will stay available to open, download, and share.
+        </p>
       </section>
     );
   }
@@ -77,16 +72,17 @@ export function GostorkAgreementCard() {
   const preparing = agreement.status === "AWAITING_GOSTORK";
 
   return (
-    <section className="space-y-3" data-testid="gostork-agreement-section">
+    // Styled like the Legal page's other sections (W-9, Business identity):
+    // one bordered card with the title inside, not a floating heading over a
+    // separate pill-shaped card.
+    <section className="space-y-3 rounded-xl border bg-card p-5" data-testid="gostork-agreement-section">
       <div>
-        <h2 className="text-lg font-heading flex items-center gap-2">
-          <FileSignature className="w-5 h-5 text-primary" /> GoStork Agreement
-        </h2>
+        <h3 className="font-semibold">GoStork Agreement</h3>
         <p className="t-helper mt-0.5">
           Your service agreement with GoStork - {signed ? "signed and on file." : preparing ? "being prepared by GoStork." : "awaiting your signature."}
         </p>
       </div>
-      <Card className="p-5 space-y-4">
+      <div className="rounded-[var(--radius)] border bg-background p-4 space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${signed
             ? "bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))]"
@@ -151,7 +147,7 @@ export function GostorkAgreementCard() {
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </section>
   );
 }
