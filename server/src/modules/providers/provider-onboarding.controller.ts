@@ -377,16 +377,20 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   // the Profile tab). Closed by the provider checking off their Home task,
   // or by the admin marking it done.
   const profileReviewed = taskDone("onbprofile");
+  // The lock's real meaning is "they need a login first" - so an admin who
+  // is ALREADY activated (came in via an agreement set-password link before
+  // any welcome send) unlocks it just as well as the welcome email does.
+  const providerCanLogIn = welcomeSent || adminActivatedCount > 0;
   steps.push({
     key: "profile_review", group: "provider_setup", label: "Provider reviewed their profile",
     detail: profileReviewed
       ? "The provider reviewed and confirmed their profile."
-      : welcomeSent
+      : providerCanLogIn
         ? taskRaised("onbprofile")
           ? "Waiting for the provider to review the profile GoStork created for them."
           : "Waiting for the provider to review the profile GoStork created for them. (task not sent yet)"
         : "Unlocks once the welcome email is sent - they need a login first.",
-    status: profileReviewed ? "done" : welcomeSent ? "waiting_on_provider" : "locked",
+    status: profileReviewed ? "done" : providerCanLogIn ? "waiting_on_provider" : "locked",
     deepLink: editLink("profile"),
   });
   const partnerIds = Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : [];
