@@ -1251,14 +1251,16 @@ function AccountTab() {
       </div>
     </Card>
 
-    {/* Provider users AND GoStork team: the rest of "everything about me" -
-        video room, connected calendars, booking link (shared with the Team
-        user editor, user-access-sections.tsx). The onboarding step "Review
-        your video room" lands here. GoStork team members have no providerId;
-        the component then reads /api/users/:id (GoStork-team endpoint). */}
-    {(isProviderUser || isGostorkTeamUser) && (
-      <MyAccessSections providerId={(user as any)?.providerId} userId={(user as any).id} />
-    )}
+    {/* Everyone gets the rest of "everything about me" (shared with the Team
+        user editor, user-access-sections.tsx): providers and GoStork team see
+        video room + connected calendars + booking link; parents connect
+        calendars too, so they get the Connected Calendars section alone.
+        The onboarding step "Review your video room" lands here. */}
+    <MyAccessSections
+      providerId={(user as any)?.providerId}
+      userId={(user as any).id}
+      calendarsOnly={!isProviderUser && !isGostorkTeamUser}
+    />
 
     {isParent && (() => {
       const services: string[] = editing ? editServices : (parentProfileQuery.data?.interestedServices || []);

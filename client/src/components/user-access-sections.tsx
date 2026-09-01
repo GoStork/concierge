@@ -125,20 +125,37 @@ export function CalendarLinkSection({ slug }: { slug: string }) {
  * renders video room + connected calendars + booking link. Renders nothing
  * for non-provider users or while loading.
  */
-export function MyAccessSections({ providerId, userId }: { providerId?: string | null; userId: string }) {
+export function MyAccessSections({
+  providerId,
+  userId,
+  calendarsOnly = false,
+}: {
+  providerId?: string | null;
+  userId: string;
+  /** Parents: they connect calendars too, but have no video room or public
+   *  booking page - render just the Connected Calendars section, fed by the
+   *  any-authenticated-user /api/calendar/connections endpoint. */
+  calendarsOnly?: boolean;
+}) {
   // Provider members read through the provider-scoped endpoint; GoStork team
   // users (no providerId) read their own record directly.
-  const url = providerId ? `/api/providers/${providerId}/users/${userId}` : `/api/users/${userId}`;
+  const url = calendarsOnly
+    ? "/api/calendar/connections"
+    : providerId
+      ? `/api/providers/${providerId}/users/${userId}`
+      : `/api/users/${userId}`;
   const { data } = useQuery<{
     dailyRoomUrl?: string | null;
     calendarConnections?: CalendarConnection[];
     scheduleConfig?: { bookingPageSlug: string | null } | null;
   }>({
-    queryKey: ["/api/user-access-sections", providerId || "self", userId],
+    queryKey: ["/api/user-access-sections", calendarsOnly ? "calendars-only" : providerId || "self", userId],
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load user access details");
-      return res.json();
+      const body = await res.json();
+      // /api/calendar/connections returns the bare connections array.
+      return Array.isArray(body) ? { calendarConnections: body } : body;
     },
     staleTime: 30_000,
   });
