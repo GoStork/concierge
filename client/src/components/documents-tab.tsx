@@ -21,7 +21,6 @@ import { FileText, RefreshCw, Zap } from "lucide-react";
 import { PandaDocTemplateEditor } from "./pandadoc-template-editor";
 import { AgreementRows } from "./agreements-list";
 import { AdminProviderAgreements } from "./admin-provider-agreements";
-import { GostorkAgreementCard } from "./gostork-agreement-card";
 
 interface Agreement {
   id: string;
@@ -200,14 +199,12 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
           agreement sections below are provider self-service concerns. */}
       {isGoStorkAdmin && <AdminProviderAgreements />}
 
-      {/* Admin viewing a specific provider: same send/track UI, locked to
-          this provider (the onboarding checklist's "Send provider agreement"
-          step deep-links here). */}
-      {adminForProvider && <AdminProviderAgreements fixedProviderId={providerId} />}
-
-      {/* Provider self-view: their GoStork agreement - sign, reopen,
-          download, and share by email. */}
-      {!isGoStorkAdmin && !adminForProvider && <GostorkAgreementCard />}
+      {/* GoStork-agreement surfaces for everyone else live on the LEGAL tab,
+          which aggregates what GoStork needs legally (W-9 + service
+          agreement): the provider self-view card and the admin's
+          per-provider send/track table both render there
+          (provider-legal-identity-tab.tsx). Only GoStork's own global
+          send/track table above stays on this tab. */}
 
       {/* Agreement automation moved to the consolidated Automation tab. */}
       {!isGoStorkAdmin && (
@@ -230,7 +227,7 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-heading">Sent Parents Agreements</h2>
+            <h2 className="text-lg font-heading">Sent Agency Agreements</h2>
           </div>
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
             <RefreshCw className="w-4 h-4" />

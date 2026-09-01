@@ -1120,27 +1120,36 @@ export function getPublishableKey(): string {
 
 // ─── Stripe Connect (provider payouts) ────────────────────────────────────────
 //
-// Two flavours of connected account, both v1 accounts with the controller
-// property set:
+// Accounts are CREATED via Accounts v2 (POST /v2/core/accounts) - Stripe
+// blocks v1 accounts.create for new Connect integrations. Everything after
+// creation (account links, login links, retrieve/update, persons, external
+// accounts, transfers, webhooks) still runs on the v1 endpoints, which
+// operate on v2-created accounts - the account object is shared between
+// both API surfaces.
 //
-//   EXPRESS - controller.stripe_dashboard.type = "express"
-//             controller.requirement_collection = "stripe"
+// Two flavours of connected account:
+//
+//   EXPRESS - dashboard = "express"
 //             Provider is redirected to Stripe-hosted onboarding via
 //             accountLinks.create. Stripe collects KYC.
 //
-//   CUSTOM  - controller.stripe_dashboard.type = "none"
-//             controller.requirement_collection = "application"
+//   CUSTOM  - dashboard = "none"
 //             GoStork collects KYC fields in its own form and POSTs them
-//             via accounts.update + accounts.createPerson. Provider never
-//             sees Stripe.
+//             via v1 accounts.update + accounts.createPerson. Provider
+//             never sees Stripe.
 //
-// In both cases:
-//   fees.payer        = "application" -> Stripe deducts processing fees from
-//                       GoStork's platform balance (not the provider's
-//                       transfer amount).
-//   losses.payments   = "application" -> chargebacks debit GoStork's
-//                       platform balance, not the provider's.
-//   capabilities.transfers.requested = true so we can use transfers.create.
+// In both cases (v2 equivalents of the old v1 controller properties):
+//   defaults.responsibilities.fees_collector   = "application" -> Stripe
+//                       deducts processing fees from GoStork's platform
+//                       balance (not the provider's transfer amount).
+//   defaults.responsibilities.losses_collector = "application" ->
+//                       chargebacks debit GoStork's platform balance,
+//                       not the provider's.
+//   configuration.recipient.capabilities.stripe_balance.stripe_transfers
+//                       .requested = true so we can use v1 transfers.create.
+//   Recipient-only configuration also puts non-US accounts under the
+//   recipient service agreement automatically (v1 needed an explicit
+//   tos_acceptance.service_agreement = "recipient").
 
 export interface CreateConnectAccountParams {
   type: "EXPRESS" | "CUSTOM";
@@ -1170,15 +1179,21 @@ export interface CreateConnectAccountParams {
 
 export async function createConnectAccount(params: CreateConnectAccountParams): Promise<{ accountId: string }> {
   const stripe = getStripeConnectAdmin();
-  const dashboardType = params.type === "EXPRESS" ? "express" : "none";
-  const requirementCollection = params.type === "EXPRESS" ? "stripe" : "application";
+  const dashboard = params.type === "EXPRESS" ? ("express" as const) : ("none" as const);
 
   const businessType = params.businessType || "company";
   const isCompany = businessType === "company";
+  const country = (params.country || "US").toLowerCase();
+  // v2 id_numbers are strictly validated: us_ein must be exactly 9 digits
+  // (v1 tax_id tolerated the hyphenated "12-3456789" form). Strip
+  // formatting; if what remains isn't 9 digits, skip the pre-fill and let
+  // Stripe-hosted onboarding collect it.
+  const einDigits = (params.taxId || "").replace(/\D/g, "");
+  const usEin = einDigits.length === 9 ? einDigits : null;
 
-  // Stripe address object shape. Stripe-hosted onboarding accepts these
-  // pre-fills on company.address; the form shows them already populated
-  // so the provider just confirms instead of retyping.
+  // v2 address shape. Stripe-hosted onboarding accepts these pre-fills;
+  // the form shows them already populated so the provider just confirms
+  // instead of retyping.
   const stripeAddress = params.address
     ? {
         line1: params.address.line1,
@@ -1190,52 +1205,57 @@ export async function createConnectAccount(params: CreateConnectAccountParams): 
       }
     : null;
 
-  const account = await stripe.accounts.create({
-    controller: {
-      fees: { payer: "application" },
-      losses: { payments: "application" },
-      requirement_collection: requirementCollection,
-      stripe_dashboard: { type: dashboardType },
+  const account = await stripe.v2.core.accounts.create({
+    contact_email: params.email,
+    ...(params.phone ? { contact_phone: params.phone } : {}),
+    dashboard,
+    ...(params.businessName ? { display_name: params.businessName } : {}),
+    configuration: {
+      recipient: {
+        capabilities: {
+          stripe_balance: { stripe_transfers: { requested: true } },
+        },
+      },
     },
-    country: params.country || "US",
-    email: params.email,
-    business_type: businessType,
-    capabilities: {
-      transfers: { requested: true },
+    defaults: {
+      responsibilities: {
+        fees_collector: "application",
+        losses_collector: "application",
+      },
+      locales: ["en-US"],
+      profile: {
+        // doing_business_as = DBA / display name shown to customers
+        ...(params.businessName ? { doing_business_as: params.businessName } : {}),
+        ...(params.businessUrl ? { business_url: params.businessUrl } : {}),
+      },
     },
-    // Non-US connected accounts that only receive transfers (no charges)
-    // must sit under Stripe's RECIPIENT service agreement - Stripe rejects
-    // `transfers` alone for e.g. CY otherwise ("specify the recipient
-    // service agreement or request card_payments"). Providers never charge
-    // through their own account, so recipient is the right agreement.
-    ...((params.country || "US") !== "US" ? { tos_acceptance: { service_agreement: "recipient" } } : {}),
-    business_profile: {
-      // name = DBA / display name shown to customers
-      ...(params.businessName ? { name: params.businessName } : {}),
-      ...(params.businessUrl ? { url: params.businessUrl } : {}),
-      // 8099 = Health Services - Not Elsewhere Classified, which is the
-      // standard MCC for fertility / IVF / surrogacy / donor agencies.
-      mcc: "8099",
-      ...(params.phone ? { support_phone: params.phone } : {}),
+    identity: {
+      country,
+      entity_type: businessType,
+      ...(isCompany
+        ? {
+            business_details: {
+              // registered_name = legal business name as on IRS documents
+              ...(params.legalName ? { registered_name: params.legalName } : {}),
+              // v2 id numbers are typed per country - only the US EIN
+              // pre-fill maps cleanly; other countries enter theirs in
+              // Stripe-hosted onboarding.
+              ...(usEin && country === "us"
+                ? { id_numbers: [{ type: "us_ein" as const, value: usEin }] }
+                : {}),
+              ...(params.phone ? { phone: params.phone } : {}),
+              ...(stripeAddress ? { address: stripeAddress } : {}),
+            },
+          }
+        : {
+            // Individual / sole-prop path: same address + phone go on
+            // identity.individual instead of business_details.
+            individual: {
+              ...(params.phone ? { phone: params.phone } : {}),
+              ...(stripeAddress ? { address: stripeAddress } : {}),
+            },
+          }),
     },
-    ...(isCompany
-      ? {
-          company: {
-            // name = legal business name as it appears on IRS documents
-            ...(params.legalName ? { name: params.legalName } : {}),
-            ...(params.taxId ? { tax_id: params.taxId } : {}),
-            ...(params.phone ? { phone: params.phone } : {}),
-            ...(stripeAddress ? { address: stripeAddress } : {}),
-          },
-        }
-      : {
-          // Individual / sole-prop path: same address + phone go on
-          // individual instead of company.
-          individual: {
-            ...(params.phone ? { phone: params.phone } : {}),
-            ...(stripeAddress ? { address: stripeAddress } : {}),
-          },
-        }),
     metadata: {
       gostorkProvider: "true",
     },

@@ -156,30 +156,45 @@ export function ProviderOwnOnboarding() {
       )}
 
       {listOpen && (
-        <div className="mt-3 space-y-0.5">
-          {data.steps.map((step) => (
-            <button
-              key={step.key}
-              type="button"
-              disabled={step.status === "locked"}
-              onClick={() => navigate(step.link)}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[var(--radius)] text-left hover:bg-[hsl(var(--primary)/0.06)] transition-colors disabled:opacity-60 disabled:hover:bg-transparent"
-              data-testid={`provider-own-step-${step.key}`}
-            >
-              <StatusIcon status={step.status} />
-              <span className={`flex-1 min-w-0 text-sm truncate ${step.status === "done" ? "text-muted-foreground line-through decoration-[hsl(var(--brand-success)/0.5)]" : ""}`}>
-                {step.label}
-                {/* inline-block so a done row's line-through doesn't strike the location */}
-                <span className="ml-2 text-xs text-muted-foreground hidden sm:inline-block">{step.where}</span>
-              </span>
-              {step.key === data.nextKey && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))]">Next</span>
-              )}
-              {step.isOptional && step.status !== "done" && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-secondary text-secondary-foreground">Optional</span>
-              )}
-            </button>
-          ))}
+        <div className="mt-3 space-y-3">
+          {/* Steps arrive grouped by Settings tab (server orders them - the
+              group holding the next task is first). Render one titled
+              section per tab, Stripe-setup-guide style. */}
+          {data.steps
+            .reduce<{ where: string; steps: OwnStep[] }[]>((groups, step) => {
+              const last = groups[groups.length - 1];
+              if (last && last.where === step.where) last.steps.push(step);
+              else groups.push({ where: step.where, steps: [step] });
+              return groups;
+            }, [])
+            .map((group) => (
+              <div key={group.where}>
+                <div className="t-helper font-medium uppercase tracking-wide mb-1 px-2.5">{group.where}</div>
+                <div className="space-y-0.5">
+                  {group.steps.map((step) => (
+                    <button
+                      key={step.key}
+                      type="button"
+                      disabled={step.status === "locked"}
+                      onClick={() => navigate(step.link)}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[var(--radius)] text-left hover:bg-[hsl(var(--primary)/0.06)] transition-colors disabled:opacity-60 disabled:hover:bg-transparent"
+                      data-testid={`provider-own-step-${step.key}`}
+                    >
+                      <StatusIcon status={step.status} />
+                      <span className={`flex-1 min-w-0 text-sm truncate ${step.status === "done" ? "text-muted-foreground line-through decoration-[hsl(var(--brand-success)/0.5)]" : ""}`}>
+                        {step.label}
+                      </span>
+                      {step.key === data.nextKey && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))]">Next</span>
+                      )}
+                      {step.isOptional && step.status !== "done" && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 bg-secondary text-secondary-foreground">Optional</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
         </div>
       )}
     </Card>

@@ -134,20 +134,6 @@ export default function ProviderOnboardingChecklist({
     },
   });
 
-  const sendTasksMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/admin/providers/${providerId}/onboarding/send-tasks`);
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Onboarding tasks sent", description: "The provider now sees their setup tasks on their Home page.", variant: "success" });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/providers", providerId, "onboarding"] });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Could not send tasks", description: err.message, variant: "destructive" });
-    },
-  });
-
   if (isLoading || !data) return null;
   if (data.percent >= 100) return null;
 
@@ -284,20 +270,10 @@ export default function ProviderOnboardingChecklist({
             );
           })}
 
-          <div className="flex items-center gap-3 pt-1">
-            <Button
-              size="sm"
-              disabled={sendTasksMutation.isPending}
-              onClick={() => sendTasksMutation.mutate()}
-              data-testid="button-send-onboarding-tasks"
-            >
-              {sendTasksMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-              {data.tasksSentAt ? "Re-send onboarding tasks" : "Send onboarding tasks to provider"}
-            </Button>
-            {data.tasksSentAt && (
-              <span className="t-helper">Sent {new Date(data.tasksSentAt).toLocaleDateString()}</span>
-            )}
-          </div>
+          {/* No "send tasks" action: the provider's own Getting Started panel
+              derives from the same facts, so their to-dos exist without any
+              handoff - the admin just does their part and watches statuses
+              flip here as the provider progresses. */}
         </div>
       )}
     </Card>

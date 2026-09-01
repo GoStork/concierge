@@ -17,7 +17,8 @@ import { useConfirm } from "@/components/ui/confirm-bar";
 import { ProviderW9Section } from "./provider-w9-section";
 import { W9TemplateConfig } from "./w9-template-config";
 import { AdminW9Table } from "./admin-w9-table";
-import { GoStorkAgreementSection } from "./gostork-agreement-section";
+import { GostorkAgreementCard } from "./gostork-agreement-card";
+import { AdminProviderAgreements } from "./admin-provider-agreements";
 import { useAuth } from "@/hooks/use-auth";
 import { ALL_COUNTRIES, POPULAR_COUNTRIES } from "@/lib/phone-countries";
 import { isUsEntity, taxIdLabelFor, taxFormFor, TAX_FORM_LABELS, payoutRailFor } from "@shared/payout-countries";
@@ -327,6 +328,16 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(syncMutation.error as Error).message}</p>
       )}
 
+      {/* The GoStork Provider Service Agreement - FIRST on Legal: signing it
+          is the journey's first task, ahead of the W-9. Provider self-view:
+          sign while it waits on them, open/download/share once executed.
+          Admin viewing a provider: the send + track table locked to this
+          provider (the onboarding checklist's "Send provider agreement" step
+          deep-links here). GoStork's own global send/track table stays on
+          the admin Agreements tab. */}
+      {!isAdmin && <GostorkAgreementCard />}
+      {isAdmin && providerId && <AdminProviderAgreements fixedProviderId={providerId} />}
+
       {/* W-9 section - moved out of Billing tab. Self-contained component
           owns its own status query + send/fill/resubmit mutations. */}
       {effectiveProviderId && (
@@ -342,12 +353,6 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           <ProviderW9Section providerId={effectiveProviderId} mode={isAdmin ? "admin" : "provider"} formType={usPayoutEntity ? "W9" : taxFormFor(country)} />
         </section>
       )}
-
-      {/* The provider's GoStork Provider Service Agreement - sign while it
-          waits on them, permanent download once executed. Self-service only:
-          the endpoint reads the viewer's own providerId, and admins already
-          have the Sent contracts table on their Agreements tab. */}
-      {!isAdmin && <GoStorkAgreementSection />}
 
       {/* Identity form */}
       <section className="space-y-4 rounded-xl border bg-card p-5">

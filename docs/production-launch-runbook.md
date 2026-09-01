@@ -940,6 +940,23 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   twice (section 12). Note: the two $5 refunds left the live balance
   slightly negative ("Add funds to cover your negative balance" banner) -
   Stripe recoups from the next payment; no action needed.
+- [x] **Accounts v2 migration + key permission (DONE both envs 2026-09-01)**:
+  Stripe blocks v1 `accounts.create` for new Connect integrations, so
+  `createConnectAccount()` in server/stripe-service.ts now creates
+  connected accounts via `stripe.v2.core.accounts.create`
+  (POST /v2/core/accounts); everything downstream (account links, login
+  links, retrieve/update, persons, external accounts, transfers,
+  webhooks, security sentry) stays on v1 endpoints, which operate on
+  v2-created accounts. The restricted key used by getStripeConnectAdmin
+  (STRIPE_CONNECT_ONBOARDING_KEY) needs **Accounts v2 -> Write**
+  (`v2_account_storer_write`) or account creation 403s with a raw
+  Stripe error in the Payouts UI. Set 2026-09-01 in Eran's Chrome on
+  BOTH keys: dev sandbox key "GoStork" (acct_1TYZ1kC5oC6HdQow) and live
+  key "gostork-connect-admin" (acct_1TYZ1aCGqwxDjN6V). Editing a key
+  requires Stripe 2FA (authenticator/passkey) - budget for that when
+  rotating: a ROTATED or NEW key must re-grant Accounts v2 Write or
+  provider payout onboarding breaks silently until someone clicks
+  Start Stripe onboarding.
 - [ ] Phase B: repoint both destinations to app.gostork.com (or add a
   second pair) - the description on each says so.
 - [ ] Stripe Connect (provider payouts) redirect/return URLs on production

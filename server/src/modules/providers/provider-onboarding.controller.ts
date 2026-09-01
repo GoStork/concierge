@@ -115,7 +115,7 @@ const HANDOFF_TASKS: Array<{
   { prefix: "onbknow", title: "Review what Eva knows about you", notes: "Eva answers parents using your website and documents - check what she knows and add FAQs or program guides.", deepLink: "/account/knowledge", priority: "LOW" },
   { prefix: "onbstripe", title: "Connect payouts", notes: "Set up your payout account so GoStork can send you money.", deepLink: "/account/payouts", priority: "HIGH" },
   { prefix: "onbcosts", title: "Upload your cost sheet(s)", notes: "Upload a cost sheet for each service you offer. GoStork reviews and approves them before they go live.", deepLink: "/account/company", priority: "HIGH" },
-  { prefix: "onbtemplates", title: "Upload your parent agreement templates", notes: "Upload the agreement(s) parents sign for each of your services and assign the signature fields.", deepLink: "/account/documents", priority: "HIGH" },
+  { prefix: "onbtemplates", title: "Upload your agency agreement templates", notes: "Upload the agreement(s) parents sign for each of your services and assign the signature fields.", deepLink: "/account/documents", priority: "HIGH" },
   { prefix: "onbpaybasis", title: "Choose how parents are invoiced", notes: "On the Billing page, pick your Parent Pays Basis for each service: the full quoted total, or a default first payment amount.", deepLink: "/account/billing", priority: "HIGH" },
   { prefix: "onbprofile", title: "Review your company profile", notes: "Check your logo, about text, locations, and contact details - parents see these on your marketplace profile.", deepLink: "/account/company", priority: "MEDIUM" },
   { prefix: "onbteam", title: "Add your team members and assign roles", notes: "Invite your staff and assign their roles and locations so the right people get the right work.", deepLink: "/account/team", priority: "MEDIUM" },
@@ -245,11 +245,11 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     detail: pagrSent
       ? "Agreement sent to the provider."
       : pagrStatus === "AWAITING_GOSTORK"
-        ? "GoStork signs first - fill referral fees and sign (Agreements tab)."
+        ? "GoStork signs first - fill referral fees and sign (Legal tab)."
         : hasProviderAdmin
-          ? "Send the GoStork agreement from the Agreements tab."
-          : "Create the provider admin user first, then send the GoStork agreement from the Agreements tab.",
-    status: pagrSent ? "done" : "pending", deepLink: editLink("agreements"),
+          ? "Send the GoStork agreement from the Legal tab."
+          : "Create the provider admin user first, then send the GoStork agreement from the Legal tab.",
+    status: pagrSent ? "done" : "pending", deepLink: editLink("legal-identity"),
   });
   const w9Status = w9?.status || "NOT_SENT";
   const w9Sent = ["SENT", "COMPLETED"].includes(w9Status);
@@ -343,7 +343,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
           : "Sent - the provider has not opened the signing link yet."
         : "Locked until the agreement is sent (admin step above).",
     status: pagrStatus === "COMPLETED" ? "done" : pagrStatus === "SENT" ? "waiting_on_provider" : "locked",
-    deepLink: editLink("agreements"),
+    deepLink: editLink("legal-identity"),
     progress: pagrStatus === "SENT"
       ? pagr?.guestOpenedAt ? `Opened ${new Date(pagr.guestOpenedAt).toLocaleDateString()}` : "Sent"
       : undefined,
@@ -408,9 +408,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     detail: profileReviewed
       ? "The provider reviewed and confirmed their profile."
       : providerCanLogIn
-        ? taskRaised("onbprofile")
-          ? "Waiting for the provider to review the profile GoStork created for them."
-          : "Waiting for the provider to review the profile GoStork created for them. (task not sent yet)"
+        ? "Waiting for the provider to review the profile GoStork created for them."
         : "Unlocks once the welcome email is sent - they need a login first.",
     status: profileReviewed ? "done" : providerCanLogIn ? "waiting_on_provider" : "locked",
     deepLink: editLink("profile"),
@@ -428,13 +426,14 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     const done = doneWhen || taskDone(prefix);
     steps.push({
       key, group: "provider_setup", label,
-      detail: done ? doneDetail : taskRaised(prefix) ? waitDetail : `${waitDetail} (task not sent yet)`,
+      // The provider's Getting Started panel derives from the same facts, so
+      // their to-do exists without any handoff send - no "task sent" state.
+      detail: done ? doneDetail : waitDetail,
       status: done ? "done" : optional ? "optional" : "waiting_on_provider",
       deepLink: editLink(tab), isOptional: optional,
-      // Progress signal: "Started" when we can see partial work, else "Task
-      // sent" once the handoff task went out. Done rows carry their own
-      // green check - no chip needed.
-      progress: done ? undefined : startedWhen ? startedWhen : taskRaised(prefix) ? "Task sent" : undefined,
+      // Progress signal: "Started" when we can see partial work. Done rows
+      // carry their own green check - no chip needed.
+      progress: done ? undefined : startedWhen,
     });
   };
   providerStep("calendar", "onbcal", "Calendar connected", calendarCount > 0, `${calendarCount} calendar connection(s).`, "Waiting for the provider to connect a calendar.", "calendar");
@@ -684,7 +683,9 @@ export class ProviderOnboardingController {
     // view (inventory: some agencies genuinely have no available roster and
     // match on their agency profile instead).
     const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean }> = {
-      agreement: { label: "Sign the GoStork agreement", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
+      // The GoStork agreement lives on the provider's Legal tab (with the
+      // W-9) - Legal aggregates everything GoStork needs legally.
+      agreement: { label: "Sign the GoStork agreement", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 5,
         description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." },
       w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
         description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." },
@@ -710,7 +711,7 @@ export class ProviderOnboardingController {
         description: "Connect your bank account through Stripe so parent payments reach you." },
       costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Costs", minutes: 10,
         description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." },
-      agreement_templates: { label: "Upload your parent agreement templates", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
+      agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
         description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
       pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 2,
         description: "Pick how your parent payments are structured so invoicing works the way you do." },
@@ -799,18 +800,42 @@ export class ProviderOnboardingController {
           isOptional,
         };
       })
-      .filter((s): s is NonNullable<typeof s> => s !== null)
-      .sort((a, b) => orderOf(a.key) - orderOf(b.key));
-    const required = steps.filter((s) => !s.isOptional);
+      .filter((s): s is NonNullable<typeof s> => s !== null);
+    // Steps that live on the same Settings tab always sit together (the way
+    // Stripe's setup guide groups its sections), and the groups are ordered
+    // so the recommended next task is the FIRST incomplete row of the list:
+    //   1. groups with required work remaining (journey order)
+    //   2. groups where only optional work remains
+    //   3. fully completed groups
+    // Journey order inside each group.
+    type ProviderStep = (typeof steps)[number];
+    const groupsByWhere = new Map<string, ProviderStep[]>();
+    for (const s of steps) {
+      const list = groupsByWhere.get(s.where);
+      if (list) list.push(s);
+      else groupsByWhere.set(s.where, [s]);
+    }
+    const groupCategory = (list: ProviderStep[]) => {
+      if (list.some((s) => !s.isOptional && (s.status === "pending" || s.status === "locked"))) return 0;
+      if (list.some((s) => s.status !== "done")) return 1;
+      return 2;
+    };
+    const orderedSteps = [...groupsByWhere.values()]
+      .map((list) => list.sort((a, b) => orderOf(a.key) - orderOf(b.key)))
+      .sort((a, b) => (groupCategory(a) - groupCategory(b)) || (orderOf(a[0].key) - orderOf(b[0].key)))
+      .flat();
+    const required = orderedSteps.filter((s) => !s.isOptional);
     const doneCount = required.filter((s) => s.status === "done").length;
-    // The recommended next action: first unlocked required step, then first
-    // unlocked optional one. Free order stays - this is a suggestion.
+    // The recommended next action: first unlocked required step in display
+    // order, then first unlocked optional one. Free order stays - this is a
+    // suggestion. Computed AFTER the grouped sort so the Next badge always
+    // lands on the topmost incomplete row.
     const nextKey =
-      steps.find((s) => !s.isOptional && s.status === "pending")?.key ||
-      steps.find((s) => s.status === "pending" || s.status === "optional")?.key ||
+      orderedSteps.find((s) => !s.isOptional && s.status === "pending")?.key ||
+      orderedSteps.find((s) => s.status === "pending" || s.status === "optional")?.key ||
       null;
     return {
-      steps,
+      steps: orderedSteps,
       nextKey,
       doneCount,
       requiredCount: required.length,
