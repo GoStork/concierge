@@ -739,6 +739,14 @@ async function reconcileOnboardingTasks<T extends { id: string; source?: string;
 ): Promise<T[]> {
   const CHECKS: Record<string, (providerId: string) => Promise<boolean>> = {
     onbcal: async (pid) => (await db.calendarConnection.count({ where: { connected: true, tokenValid: true, user: { providerId: pid } } })) > 0,
+    onbavail: async (pid) => (await db.availabilitySlot.count({ where: { scheduleConfig: { user: { providerId: pid } } } })) > 0,
+    onblegal: async (pid) => {
+      const li = await db.providerLegalIdentity.findUnique({
+        where: { providerId: pid },
+        select: { legalName: true, taxId: true, businessAddressLine1: true, businessAddressCity: true },
+      });
+      return Boolean(li?.legalName && li?.taxId && li?.businessAddressLine1 && li?.businessAddressCity);
+    },
     onbstripe: async (pid) => Boolean((await db.providerBankAccount.findUnique({ where: { providerId: pid }, select: { payoutsEnabled: true } }))?.payoutsEnabled),
     onbcosts: async (pid) => (await db.providerCostSheet.count({ where: { providerId: pid } })) > 0,
     // Decided = TOTAL_COST, or DEFAULT_FIRST_PAYMENT with an actual amount

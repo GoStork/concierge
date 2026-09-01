@@ -58,6 +58,7 @@ export type OnboardingStep = {
  *  onbmark prefix. */
 const MARKABLE_STEP_KEYS = new Set([
   "parent_form", "parent_form_provider", "partner_clinics", "knowledge", "profile_review",
+  "asrm_minimums", "calendar_link", "video_room", "fees_review", "knowledge_review",
   "playbooks", "automation", "branding", "sponsorship",
   // Providers without a database to scrape (they send PDFs / upload manually)
   // close these by hand.
@@ -103,6 +104,12 @@ const HANDOFF_TASKS: Array<{
   priority: "HIGH" | "MEDIUM" | "LOW";
 }> = [
   { prefix: "onbcal", title: "Connect your calendar", notes: "Connect Google, Outlook, or Apple Calendar so parents can book consultations with your team.", deepLink: "/account/calendar", priority: "HIGH" },
+  { prefix: "onbavail", title: "Set your availability hours", notes: "Choose the days and hours parents can book you - the calendar connection blocks conflicts, your availability opens the slots.", deepLink: "/account/calendar", priority: "HIGH" },
+  { prefix: "onblegal", title: "Complete your legal details", notes: "Confirm your legal entity name, tax ID, and business address - they auto-fill from your signed W-9 and are needed for payouts.", deepLink: "/account/legal-identity", priority: "HIGH" },
+  { prefix: "onbcallink", title: "Review your booking link", notes: "Open your public booking page and check the times and meeting details parents will see.", deepLink: "/account/calendar", priority: "LOW" },
+  { prefix: "onbvideo", title: "Review your video room", notes: "Consultations happen in your personal video room - open it once so you know where calls take place.", deepLink: "/account", priority: "LOW" },
+  { prefix: "onbfees", title: "Review your GoStork fees", notes: "See the referral fee agreed with GoStork for each of your services.", deepLink: "/account/billing", priority: "LOW" },
+  { prefix: "onbknow", title: "Review what Eva knows about you", notes: "Eva answers parents using your website and documents - check what she knows and add FAQs or program guides.", deepLink: "/account/knowledge", priority: "LOW" },
   { prefix: "onbstripe", title: "Connect payouts", notes: "Set up your payout account so GoStork can send you money.", deepLink: "/account/payouts", priority: "HIGH" },
   { prefix: "onbcosts", title: "Upload your cost sheet(s)", notes: "Upload a cost sheet for each service you offer. GoStork reviews and approves them before they go live.", deepLink: "/account/company", priority: "HIGH" },
   { prefix: "onbtemplates", title: "Upload your parent agreement templates", notes: "Upload the agreement(s) parents sign for each of your services and assign the signature fields.", deepLink: "/account/documents", priority: "HIGH" },
@@ -140,6 +147,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     costSheets, referralFees, w9, pagr,
     calendarCount, bank, knowledgeCount, playbookCount, autoReplyCount,
     ipFormOverrideCount, agreementTemplates, adminActivatedCount, onbTasks,
+    availCount, legalIdentity,
   ] = await Promise.all([
     db.user.findMany({ where: { providerId }, select: { id: true, roles: true } }),
     hasEgg ? db.eggDonorSyncConfig.findUnique({ where: { providerId } }) : null,
@@ -169,6 +177,13 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     db.parentTask.findMany({
       where: { providerId, source: "SYSTEM", systemKey: { startsWith: "onb" } },
       select: { systemKey: true, status: true, createdAt: true },
+    }),
+    // Booking availability: connected calendars block conflicts, but the
+    // OPEN slots come from availability hours - a separate required step.
+    db.availabilitySlot.count({ where: { scheduleConfig: { user: { providerId } } } }),
+    db.providerLegalIdentity.findUnique({
+      where: { providerId },
+      select: { legalName: true, taxId: true, businessAddressLine1: true, businessAddressCity: true },
     }),
   ]);
 
@@ -416,6 +431,15 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     });
   };
   providerStep("calendar", "onbcal", "Calendar connected", calendarCount > 0, `${calendarCount} calendar connection(s).`, "Waiting for the provider to connect a calendar.", "calendar");
+  // A connected calendar without availability hours means an empty booking
+  // page - the hours are what actually opens slots to parents.
+  providerStep("availability", "onbavail", "Availability hours set", (availCount as number) > 0, `${availCount} availability slot(s) defined.`, "Waiting for the provider to set the days and hours parents can book.", "calendar");
+  providerStep("calendar_link", "onbcallink", "Booking link reviewed", false, "The provider reviewed their public booking page.", "Waiting for the provider to review their booking link.", "calendar", true);
+  providerStep("video_room", "onbvideo", "Video room reviewed", false, "The provider checked their video room.", "Waiting for the provider to review their video room.", "users", true);
+  // Legal identity (entity name, tax ID, business address) - auto-fills
+  // from the signed W-9, and Stripe KYC needs it, so it sits before payouts.
+  const legalOk = Boolean((legalIdentity as any)?.legalName && (legalIdentity as any)?.taxId && (legalIdentity as any)?.businessAddressLine1 && (legalIdentity as any)?.businessAddressCity);
+  providerStep("legal_details", "onblegal", "Legal details completed", legalOk, "Legal entity, tax ID, and business address on file.", "Waiting for the provider to complete their legal details (auto-fills from the signed W-9).", "legal-identity");
   providerStep("stripe", "onbstripe", "Payouts connected", Boolean(bank?.payoutsEnabled), "Stripe payouts enabled.", bank?.stripeConnectAccountId ? "Stripe onboarding started but payouts not enabled yet." : "Waiting for the provider to set up payouts.", "payouts", false, bank?.stripeConnectAccountId && !bank?.payoutsEnabled ? "Started" : undefined);
   providerStep("costs_uploaded", "onbcosts", "Cost sheets uploaded", costSheets.length > 0, `${costSheets.length} cost sheet(s) uploaded.`, "Waiting for the provider to upload cost sheets.", "costs");
   // Parent agreement templates: one per service line (the contracts parents
@@ -452,8 +476,10 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     undecidedBasisLines.length ? `Waiting for the provider to choose the invoicing basis for: ${undecidedBasisLines.join(", ")}.` : "Waiting for the provider to choose how parents are invoiced.",
     "billing",
   );
+  providerStep("fees_review", "onbfees", "GoStork fees reviewed", false, "The provider reviewed their GoStork referral fees.", "Waiting for the provider to review their GoStork fees.", "billing", true);
   providerStep("team", "onbteam", "Team added & roles assigned", (users as any[]).length >= 2, `${(users as any[]).length} team account(s).`, "Waiting for the provider to invite their team.", "users");
   providerStep("ai", "onbai", "AI Concierge set up", false, "Marked done by the provider.", "Waiting for the provider to review AI Concierge settings.", "ai-concierge");
+  providerStep("knowledge_review", "onbknow", "Eva's knowledge reviewed by provider", false, "The provider reviewed what Eva knows about them.", "Waiting for the provider to review Eva's knowledge about their organization.", "knowledge", true);
   providerStep("parent_form_provider", "onbform", "Parent Form reviewed by provider", false, "The provider reviewed their Parent Form.", "Waiting for the provider to review their Parent Form.", "parent-form", true);
   providerStep("playbooks", "onbplaybooks", "Playbooks configured", playbookCount > 0, `${playbookCount} playbook(s).`, "Waiting for the provider to configure playbooks.", "playbooks", true);
   providerStep("automation", "onbauto", "Automations reviewed", autoReplyCount > 0, "Automation customized.", "Waiting for the provider to review automations.", "automation", true);
@@ -461,6 +487,17 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("sponsorship", "onbsponsor", "Sponsorship", false, "Marked done by the provider.", "Optional - sponsored placement.", "sponsorship", true);
 
   // ── Phase D - Go-live review ──
+  // ASRM minimums check (surrogacy agencies): the GoStork house provider's
+  // requirements are the platform minimums; surrogates below them are
+  // asrmHidden from parents. Optional admin review before publish, closed by
+  // marking it done.
+  if (hasSurrogacy) {
+    steps.push({
+      key: "asrm_minimums", group: "go_live", label: "ASRM minimums reviewed",
+      detail: "Spot-check this agency's surrogates against the platform ASRM minimums (age, BMI, pregnancy history) - out-of-range profiles are hidden from parents automatically.",
+      status: "optional", deepLink: editLink("surrogates"), isOptional: true,
+    });
+  }
   const pendingSheets = (costSheets as any[]).filter((s) => s.status === "PENDING").length;
   const approvedSheets = (costSheets as any[]).filter((s) => s.status === "APPROVED").length;
   const costApprovalStatus: StepStatus = costSheets.length === 0
@@ -624,7 +661,10 @@ export class ProviderOnboardingController {
     // `selfMarkable` steps are review-style: the page may already be fine as
     // built, so the provider confirms with "Mark as done" (closes the
     // underlying onb* task - the same mechanism the queue used).
-    const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean }> = {
+    // `optionalOverride` relaxes an admin-required step for the provider's
+    // view (inventory: some agencies genuinely have no available roster and
+    // match on their agency profile instead).
+    const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean }> = {
       agreement: { label: "Sign the GoStork agreement", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
         description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." },
       w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
@@ -633,8 +673,24 @@ export class ProviderOnboardingController {
         description: "Create your password from the welcome email so you can sign in anytime." },
       profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
         description: "Check the profile we built for you - description, photos, locations - and fix anything that is off. This is what parents see." },
+      scraper_egg: { label: "Add your egg donors", link: "/account/egg-donors", where: "Settings -> Egg Donors", minutes: 15, selfMarkable: true, optionalOverride: true,
+        description: "Upload your available egg donors so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile." },
+      scraper_surrogate: { label: "Add your surrogates", link: "/account/surrogates", where: "Settings -> Surrogates", minutes: 15, selfMarkable: true, optionalOverride: true,
+        description: "Upload your available surrogates so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile." },
+      scraper_sperm: { label: "Add your sperm donors", link: "/account/sperm-donors", where: "Settings -> Sperm Donors", minutes: 15, selfMarkable: true, optionalOverride: true,
+        description: "Upload your available sperm donors so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile." },
+      knowledge_review: { label: "Review what Eva knows about you", link: "/account/knowledge", where: "Settings -> Knowledge", minutes: 5, selfMarkable: true,
+        description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." },
       calendar: { label: "Connect your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2,
         description: "Connect Google, Outlook, or Apple Calendar so parents can book consultations on your real availability." },
+      availability: { label: "Set your availability hours", link: "/account/calendar", where: "Settings -> Calendar", minutes: 3,
+        description: "Choose the days and hours parents can book you - the calendar connection blocks conflicts, your availability opens the slots." },
+      calendar_link: { label: "Review your booking link", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2, selfMarkable: true,
+        description: "Open your public booking page and check the times and meeting details parents will see." },
+      video_room: { label: "Review your video room", link: "/account", where: "Settings -> My Account", minutes: 1, selfMarkable: true,
+        description: "Consultations happen in your personal video room - open it once so you know where calls take place." },
+      legal_details: { label: "Complete your legal details", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
+        description: "Confirm your legal entity name, tax ID, and business address - they auto-fill from your signed W-9 and are needed for payouts." },
       stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
         description: "Connect your bank account through Stripe so parent payments reach you." },
       costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Costs", minutes: 10,
@@ -643,6 +699,8 @@ export class ProviderOnboardingController {
         description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
       pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 2,
         description: "Pick how your parent payments are structured so invoicing works the way you do." },
+      fees_review: { label: "Review your GoStork fees", link: "/account/billing", where: "Settings -> Billing", minutes: 2, selfMarkable: true,
+        description: "See the referral fee agreed with GoStork for each of your services - no surprises on your first invoice." },
       team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
         description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." },
       ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
@@ -658,21 +716,44 @@ export class ProviderOnboardingController {
       sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
         description: "See how sponsored placement can boost your visibility with matching families." },
     };
+    // The provider's journey order - decoupled from the admin checklist's
+    // phase order (the same fact can sit elsewhere in each audience's story):
+    // get in -> your presence -> get bookable -> get paid -> team & tools.
+    const PROVIDER_ORDER = [
+      "agreement", "w9", "password_reset",
+      "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "knowledge_review",
+      "calendar", "availability", "calendar_link", "video_room",
+      "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis", "fees_review",
+      "team", "ai",
+      "parent_form_provider", "playbooks", "automation", "branding", "sponsorship",
+    ];
+    const orderOf = (key: string) => {
+      const i = PROVIDER_ORDER.indexOf(key);
+      return i === -1 ? 999 : i;
+    };
     const steps = summary.steps
       .filter((s) => VIEW[s.key])
-      .map((s) => ({
-        key: s.key,
-        label: VIEW[s.key].label,
-        link: VIEW[s.key].link,
-        where: VIEW[s.key].where,
-        description: VIEW[s.key].description,
-        minutes: VIEW[s.key].minutes,
-        selfMarkable: !!VIEW[s.key].selfMarkable,
-        // "waiting on provider" IS their to-do; locked steps stay locked
-        // (e.g. signing before the document is sent).
-        status: s.status === "waiting_on_provider" ? "pending" : s.status,
-        isOptional: !!s.isOptional,
-      }));
+      .map((s) => {
+        const v = VIEW[s.key];
+        const isOptional = v.optionalOverride ?? !!s.isOptional;
+        return {
+          key: s.key,
+          label: v.label,
+          link: v.link,
+          where: v.where,
+          description: v.description,
+          minutes: v.minutes,
+          selfMarkable: !!v.selfMarkable,
+          // "waiting on provider" IS their to-do; locked steps stay locked
+          // (e.g. signing before the document is sent). A step relaxed to
+          // optional for the provider also wears the optional status.
+          status: s.status === "done" || s.status === "locked"
+            ? s.status
+            : isOptional ? "optional" : "pending",
+          isOptional,
+        };
+      })
+      .sort((a, b) => orderOf(a.key) - orderOf(b.key));
     const required = steps.filter((s) => !s.isOptional);
     const doneCount = required.filter((s) => s.status === "done").length;
     // The recommended next action: first unlocked required step, then first
@@ -709,7 +790,40 @@ export class ProviderOnboardingController {
       automation: "onbauto",
       branding: "onbbrand",
       sponsorship: "onbsponsor",
+      calendar_link: "onbcallink",
+      video_room: "onbvideo",
+      fees_review: "onbfees",
+      knowledge_review: "onbknow",
     };
+    // Inventory steps close via the same onbmark marker the admin's manual
+    // check-off writes (the step itself derives from profile counts) - "no
+    // available roster right now" is a valid state for an agency.
+    const MARKER_SELF_MARKABLE = new Set(["scraper_egg", "scraper_surrogate", "scraper_sperm"]);
+    if (MARKER_SELF_MARKABLE.has(key)) {
+      const db = prisma as any;
+      const now = new Date();
+      const systemKey = `onbmark:${key}:${user.providerId}`;
+      await db.parentTask.upsert({
+        where: { systemKey },
+        create: {
+          parentAccountId: user.providerId,
+          scope: "PROVIDER",
+          providerId: user.providerId,
+          title: `Onboarding step "${key}" marked done by the provider`,
+          type: "TODO",
+          priority: "LOW",
+          source: "SYSTEM",
+          systemKey,
+          status: "DONE",
+          dueAt: now,
+          completedAt: now,
+          completedByUserId: user.id,
+          createdByUserId: user.id,
+        },
+        update: { status: "DONE", completedAt: now, completedByUserId: user.id },
+      });
+      return { marked: key };
+    }
     const prefix = SELF_MARKABLE[key];
     if (!prefix) throw new BadRequestException("This step completes on its own when the work is done");
     const def = HANDOFF_TASKS.find((t) => t.prefix === prefix);
