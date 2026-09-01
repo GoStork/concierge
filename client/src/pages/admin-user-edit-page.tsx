@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -89,36 +89,7 @@ type UserData = {
 
 import { getPhotoSrc } from "@/lib/profile-utils";
 
-function CalendarLinkSection({ slug }: { slug: string }) {
-  const [copied, setCopied] = useState(false);
-  const bookingUrl = `${window.location.origin}/book/${slug}`;
-  const handleCopy = () => {
-    navigator.clipboard.writeText(bookingUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-      <div className="flex items-center gap-2">
-        <Link2 className="w-5 h-5 text-primary" />
-        <h2 className="t-micro-label font-heading">Your Calendar Link</h2>
-      </div>
-      <p className="t-helper">
-        Share this link with anyone to let them book time with you. It can be embedded on websites or shared via email.
-      </p>
-      <div className="flex items-center gap-2">
-        <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-[var(--radius)] px-3 py-2">
-          <span className="t-helper mr-1 shrink-0">/book/</span>
-          <span className="text-sm font-ui font-heading" data-testid="text-calendar-slug">{slug}</span>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={handleCopy} data-testid="button-copy-calendar-link">
-          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-        </Button>
-      </div>
-      <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline break-all" data-testid="link-calendar-booking-url">{bookingUrl}</a>
-    </div>
-  );
-}
+import { VideoRoomSection, ConnectedCalendarsSection, CalendarLinkSection } from "@/components/user-access-sections";
 
 export default function AdminUserEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -133,6 +104,9 @@ export default function AdminUserEditPage() {
   const currentUserProviderId = (currentUser as any)?.providerId;
   const providerIdFromUrl = searchParams.get("provider");
   const isParentAccountMode = searchParams.get("parentAccount") === "true";
+  // Editing your own record: personal fields defer to My Account (single
+  // self-service page); roles/access/locations stay editable here.
+  const isSelf = !!id && (currentUser as any)?.id === id;
 
   const [isDirty, setIsDirty] = useState(false);
   const isInitializingRef = useRef(false);
@@ -389,6 +363,19 @@ export default function AdminUserEditPage() {
           <h2 className="text-lg font-heading">Personal Information</h2>
         </div>
 
+        {/* Editing yourself: personal details live on My Account (the single
+            self-service page) - point there instead of duplicating the form.
+            Roles, access, and locations below stay editable here. */}
+        {isSelf && (
+          <div className="mb-6 flex items-center gap-3 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)] p-3.5" data-testid="self-edit-pointer">
+            <UserCircle className="w-5 h-5 text-primary shrink-0" />
+            <p className="text-sm flex-1">
+              This is you. Your name, mobile number, and password are edited on{" "}
+              <Link to="/account" className="text-primary underline">My Account</Link>.
+            </p>
+          </div>
+        )}
+
         <form ref={editFormRef} onSubmit={handleSubmit}>
           <div className="flex flex-col md:flex-row gap-8">
             <div className="shrink-0">
@@ -412,6 +399,7 @@ export default function AdminUserEditPage() {
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="Full name"
+                  disabled={isSelf}
                   data-testid="input-edit-name"
                 />
               </div>
@@ -435,6 +423,7 @@ export default function AdminUserEditPage() {
                     setMobileDisplay(display);
                     setMobileIsoCode(isoCode);
                   }}
+                  disabled={isSelf}
                   data-testid="input-edit-mobile"
                 />
               </div>
@@ -476,6 +465,7 @@ export default function AdminUserEditPage() {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Leave blank to keep current"
+                    disabled={isSelf}
                     data-testid="input-edit-password"
                     className="pr-10"
                   />
@@ -601,54 +591,21 @@ export default function AdminUserEditPage() {
           )}
 
           {userData.dailyRoomUrl && (
-            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="t-micro-label font-heading">Video Room</h2>
-              <div className="flex items-center gap-2">
-                <Video className="w-4 h-4 text-primary shrink-0" />
-                <a href={userData.dailyRoomUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate" data-testid="link-video-room-url">
-                  {userData.dailyRoomUrl}
-                </a>
-              </div>
+            <div className="mt-8">
+              <VideoRoomSection url={userData.dailyRoomUrl} />
             </div>
           )}
 
           {!isParentAccountMode && (
-            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="t-micro-label font-heading">Connected Calendars</h2>
-              {userData.calendarConnections && userData.calendarConnections.length > 0 ? (
-                <div className="space-y-2">
-                  {userData.calendarConnections.map((conn) => {
-                    const isHealthy = conn.tokenValid !== false && conn.connected !== false;
-                    return (
-                      <div key={conn.id} className="flex items-center gap-2 text-sm" data-testid={`text-calendar-connection-${conn.id}`}>
-                        <Calendar className="w-4 h-4 text-primary shrink-0" />
-                        <span className="font-ui">{conn.label || conn.provider}</span>
-                        {conn.email && <span className="text-muted-foreground">({conn.email})</span>}
-                        {isHealthy ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-ui bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]" data-testid={`badge-calendar-status-${conn.id}`}>Connected</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-ui bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))]" data-testid={`badge-calendar-status-${conn.id}`}>
-                            <AlertTriangle className="w-3 h-3" />Needs Renewal
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="t-helper">No calendar connected yet.</p>
-                  <Button type="button" variant="outline" size="sm" onClick={() => navigate("/account/calendar?connect=true")} data-testid="button-connect-calendar">
-                    <Calendar className="w-4 h-4 mr-1.5" />
-                    Connect Your Calendar
-                  </Button>
-                </div>
-              )}
+            <div className="mt-8">
+              <ConnectedCalendarsSection connections={userData.calendarConnections} />
             </div>
           )}
 
           {!isParentAccountMode && userData.scheduleConfig?.bookingPageSlug && (
-            <CalendarLinkSection slug={userData.scheduleConfig.bookingPageSlug} />
+            <div className="mt-8">
+              <CalendarLinkSection slug={userData.scheduleConfig.bookingPageSlug} />
+            </div>
           )}
 
           <SaveBar

@@ -49,6 +49,7 @@ import { Slider } from "@/components/ui/slider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { OnboardingCoachBar } from "@/components/onboarding-coach-bar";
+import { MyAccessSections } from "@/components/user-access-sections";
 
 const GENDER_OPTIONS = [
   { value: "I'm a woman", label: "Woman" },
@@ -1248,6 +1249,14 @@ function AccountTab() {
         </div>
       </div>
     </Card>
+
+    {/* Provider users: the rest of "everything about me" - video room,
+        connected calendars, booking link (shared with the Team user editor,
+        user-access-sections.tsx). The onboarding step "Review your video
+        room" lands here. */}
+    {isProviderUser && (user as any)?.providerId && (
+      <MyAccessSections providerId={(user as any).providerId} userId={(user as any).id} />
+    )}
 
     {isParent && (() => {
       const services: string[] = editing ? editServices : (parentProfileQuery.data?.interestedServices || []);
