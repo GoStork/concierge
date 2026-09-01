@@ -192,6 +192,14 @@ export default function OnboardingPage() {
   const turnstileTokenRef = useRef<string | null>(null);
   const turnstileEnabledRef = useRef(false);
   const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
+  // Tokens are single-use, but resetting eagerly after a send starts a brand-new
+  // challenge the user may never need (most never tap Resend) - and a challenged
+  // visitor then sees the checkbox twice. So track consumption and reset lazily,
+  // right before the next send that actually needs a token.
+  const turnstileConsumedRef = useRef(false);
+  // On the code step the widget stays mounted (so a lazy reset can mint a fresh
+  // token) but hidden until a resend actually triggers a new challenge.
+  const [turnstileVisibleOnCodeStep, setTurnstileVisibleOnCodeStep] = useState(false);
 
   /**
    * Resolve the Turnstile token for a send-otp call. A missing token is a hard 400
@@ -207,6 +215,22 @@ export default function OnboardingPage() {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return turnstileTokenRef.current;
+  };
+
+  /**
+   * Token for a send-otp call, minting a fresh one first if the last was consumed.
+   * A lazy reset may pop an interactive challenge, so give the user time to click
+   * it (30s) instead of the tight first-load window.
+   */
+  const getTurnstileTokenForSend = async (): Promise<string | null> => {
+    if (!turnstileEnabledRef.current) return null;
+    const needsReset = turnstileConsumedRef.current;
+    if (needsReset) {
+      turnstileTokenRef.current = null;
+      turnstileConsumedRef.current = false;
+      setTurnstileResetSignal((s) => s + 1);
+    }
+    return awaitTurnstileToken(needsReset ? 30000 : 8000);
   };
 
   const [data, setData] = useState<OnboardingData>({
@@ -391,7 +415,7 @@ export default function OnboardingPage() {
       setOtpError(null);
       try {
         const fullPhone = data.phoneE164;
-        const turnstileToken = await awaitTurnstileToken();
+        const turnstileToken = await getTurnstileTokenForSend();
         const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone, turnstileToken });
         const result = await res.json();
         if (result.devCode) {
@@ -411,8 +435,9 @@ export default function OnboardingPage() {
         setOtpError(mapOtpSendError(code));
       } finally {
         setOtpSending(false);
-        // Turnstile tokens are single-use - mint a fresh one for any retry/resend.
-        setTurnstileResetSignal((s) => s + 1);
+        // Token spent (server verified it, pass or fail). The NEXT send - a retry
+        // here or a resend on the code step - mints a fresh one lazily.
+        turnstileConsumedRef.current = true;
       }
     } else if (step === 5) {
       const entered = data.otp.join("");
@@ -677,9 +702,10 @@ export default function OnboardingPage() {
           {/* Mounted across BOTH the phone step and the code step: Turnstile tokens are
               single-use, so "Resend code" on step 5 needs the widget still alive to mint
               a fresh one. Unmounting it at step 4 left resend posting a consumed token.
-              Costs nothing visually - interaction-only draws nothing unless challenged. */}
+              On the code step it stays hidden until a resend actually needs a fresh
+              challenge - otherwise a challenged visitor sees the checkbox twice. */}
           {(step === 4 || step === 5) && (
-            <div className={step === 4 ? "mt-4" : ""}>
+            <div className={step === 4 ? "mt-4" : turnstileVisibleOnCodeStep ? "" : "hidden"}>
               <TurnstileWidget
                 onToken={token => { turnstileTokenRef.current = token; }}
                 onEnabledChange={enabled => { turnstileEnabledRef.current = enabled; }}
@@ -695,13 +721,20 @@ export default function OnboardingPage() {
               channel={otpChannel}
               onResend={async () => {
                 setOtpError(null);
-                const turnstileToken = await awaitTurnstileToken();
-                const res = await apiRequest("POST", "/api/auth/send-otp", { phone: data.phoneE164, turnstileToken });
-                const result = await res.json();
-                if (result.channel === "whatsapp" || result.channel === "sms") {
-                  setOtpChannel(result.channel);
+                // Unhide the widget first: the lazy reset below may pop an
+                // interactive challenge the user has to be able to click.
+                setTurnstileVisibleOnCodeStep(true);
+                try {
+                  const turnstileToken = await getTurnstileTokenForSend();
+                  const res = await apiRequest("POST", "/api/auth/send-otp", { phone: data.phoneE164, turnstileToken });
+                  const result = await res.json();
+                  if (result.channel === "whatsapp" || result.channel === "sms") {
+                    setOtpChannel(result.channel);
+                  }
+                  setTurnstileVisibleOnCodeStep(false);
+                } finally {
+                  turnstileConsumedRef.current = true;
                 }
-                setTurnstileResetSignal((s) => s + 1);
               }}
               error={otpError}
             />
