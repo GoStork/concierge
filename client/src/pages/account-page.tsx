@@ -1781,6 +1781,15 @@ export default function AccountPage() {
   const { user, logoutMutation } = useAuth();
   const location = useLocation();
 
+  // The tab strip scrolls horizontally - a deep link (e.g. an onboarding
+  // task landing on Payouts) must bring the active tab INTO VIEW, or the
+  // user cannot see which tab they are on.
+  const tabsNavRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = tabsNavRef.current?.querySelector('[data-active="true"]');
+    if (el) el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [location.pathname]);
+
   const providerId = (user as any)?.providerId;
 
   const roles = (user as any)?.roles || [];
@@ -1893,7 +1902,7 @@ export default function AccountPage() {
       </div>
 
       <div className="border-b border-border/40 mb-6">
-        <nav className="flex -mb-px overflow-x-auto scrollbar-hide" data-testid="account-tabs">
+        <nav ref={tabsNavRef} className="flex -mb-px overflow-x-auto scrollbar-hide" data-testid="account-tabs">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = isTabActive(tab);
@@ -1901,6 +1910,7 @@ export default function AccountPage() {
               <Link
                 key={tab.to}
                 to={tab.to}
+                data-active={active ? "true" : undefined}
                 data-testid={`tab-${tab.label.toLowerCase().replace(/\s+/g, '-')}`}
                 className="flex items-center justify-center gap-2 shrink-0 sm:shrink sm:flex-1 whitespace-nowrap py-3 px-3 text-sm font-ui border-b-2 transition-colors duration-200"
                 style={active

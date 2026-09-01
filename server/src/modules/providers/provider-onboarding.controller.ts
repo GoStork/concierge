@@ -49,6 +49,9 @@ export type OnboardingStep = {
   /** Short progress signal for provider-side steps ("Sent", "Opened 8/31",
    *  "Started") - shows the admin how far the provider actually got. */
   progress?: string;
+  /** Inventory (scraper_*) steps only: how many profiles exist - the
+   *  provider view uses it to phrase the step as Add vs Review. */
+  recordCount?: number;
 };
 
 /** Optional steps the admin can check off by hand when there is nothing to
@@ -58,7 +61,7 @@ export type OnboardingStep = {
  *  onbmark prefix. */
 const MARKABLE_STEP_KEYS = new Set([
   "parent_form", "parent_form_provider", "partner_clinics", "knowledge", "profile_review",
-  "asrm_minimums", "calendar_link", "video_room", "fees_review", "knowledge_review",
+  "asrm_minimums", "calendar_link", "video_room", "fees_review", "knowledge_review", "doctors_review",
   "playbooks", "automation", "branding", "sponsorship",
   // Providers without a database to scrape (they send PDFs / upload manually)
   // close these by hand.
@@ -140,6 +143,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   const hasEgg = hasType("egg");
   const hasSurrogacy = hasType("surrogacy");
   const hasSperm = hasType("sperm");
+  const hasIvf = hasType("ivf") || hasType("in vitro");
 
   const [
     users, eggSync, surroSync, spermSync,
@@ -147,7 +151,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     costSheets, referralFees, w9, pagr,
     calendarCount, bank, knowledgeCount, playbookCount, autoReplyCount,
     ipFormOverrideCount, agreementTemplates, adminActivatedCount, onbTasks,
-    availCount, legalIdentity,
+    availCount, doctorCount, legalIdentity,
   ] = await Promise.all([
     db.user.findMany({ where: { providerId }, select: { id: true, roles: true } }),
     hasEgg ? db.eggDonorSyncConfig.findUnique({ where: { providerId } }) : null,
@@ -181,6 +185,8 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     // Booking availability: connected calendars block conflicts, but the
     // OPEN slots come from availability hours - a separate required step.
     db.availabilitySlot.count({ where: { scheduleConfig: { user: { providerId } } } }),
+    // Scraped/enriched doctor profiles (IVF clinics) - the clinic reviews them.
+    hasIvf ? db.providerMember.count({ where: { providerId, isPublicProfile: true } }) : 0,
     db.providerLegalIdentity.findUnique({
       where: { providerId },
       select: { legalName: true, taxId: true, businessAddressLine1: true, businessAddressCity: true },
@@ -280,6 +286,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
             : `Sync configured (${count} record(s)) - last run status: ${cfg.syncStatus}.`
           : "Set up a sync (source URL + credentials, then Sync 10 Profiles), upload profiles manually - or mark done if this provider has no database and sends PDFs instead.",
       status: ok ? "done" : "pending", deepLink: editLink(tab),
+      recordCount: count,
     });
   };
   if (hasEgg) scraperStep("scraper_egg", "Egg donor scraper", "egg-donors", eggSync, eggCount);
@@ -480,6 +487,18 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("team", "onbteam", "Team added & roles assigned", (users as any[]).length >= 2, `${(users as any[]).length} team account(s).`, "Waiting for the provider to invite their team.", "users");
   providerStep("ai", "onbai", "AI Concierge set up", false, "Marked done by the provider.", "Waiting for the provider to review AI Concierge settings.", "ai-concierge");
   providerStep("knowledge_review", "onbknow", "Eva's knowledge reviewed by provider", false, "The provider reviewed what Eva knows about them.", "Waiting for the provider to review Eva's knowledge about their organization.", "knowledge", true);
+  // IVF clinics: scraped/enriched doctor profiles exist - the clinic should
+  // look them over. Only shown once there ARE doctors to review.
+  if (hasIvf && (doctorCount as number) > 0) {
+    steps.push({
+      key: "doctors_review", group: "provider_setup", label: "Doctors reviewed by clinic",
+      detail: taskDone("onbdoc")
+        ? "The clinic reviewed their doctor profiles."
+        : `${doctorCount} doctor profile(s) on file - waiting for the clinic to review what parents will see.`,
+      status: taskDone("onbdoc") ? "done" : "optional", deepLink: editLink("doctors"),
+      isOptional: true, recordCount: doctorCount as number,
+    });
+  }
   providerStep("parent_form_provider", "onbform", "Parent Form reviewed by provider", false, "The provider reviewed their Parent Form.", "Waiting for the provider to review their Parent Form.", "parent-form", true);
   providerStep("playbooks", "onbplaybooks", "Playbooks configured", playbookCount > 0, `${playbookCount} playbook(s).`, "Waiting for the provider to configure playbooks.", "playbooks", true);
   providerStep("automation", "onbauto", "Automations reviewed", autoReplyCount > 0, "Automation customized.", "Waiting for the provider to review automations.", "automation", true);
@@ -673,14 +692,10 @@ export class ProviderOnboardingController {
         description: "Create your password from the welcome email so you can sign in anytime." },
       profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
         description: "Check the profile we built for you - description, photos, locations - and fix anything that is off. This is what parents see." },
-      scraper_egg: { label: "Add your egg donors", link: "/account/egg-donors", where: "Settings -> Egg Donors", minutes: 15, selfMarkable: true, optionalOverride: true,
-        description: "Upload your available egg donors so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile." },
-      scraper_surrogate: { label: "Add your surrogates", link: "/account/surrogates", where: "Settings -> Surrogates", minutes: 15, selfMarkable: true, optionalOverride: true,
-        description: "Upload your available surrogates so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile." },
-      scraper_sperm: { label: "Add your sperm donors", link: "/account/sperm-donors", where: "Settings -> Sperm Donors", minutes: 15, selfMarkable: true, optionalOverride: true,
-        description: "Upload your available sperm donors so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile." },
       knowledge_review: { label: "Review what Eva knows about you", link: "/account/knowledge", where: "Settings -> Knowledge", minutes: 5, selfMarkable: true,
         description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." },
+      doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
+        description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." },
       calendar: { label: "Connect your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2,
         description: "Connect Google, Outlook, or Apple Calendar so parents can book consultations on your real availability." },
       availability: { label: "Set your availability hours", link: "/account/calendar", where: "Settings -> Calendar", minutes: 3,
@@ -721,7 +736,7 @@ export class ProviderOnboardingController {
     // get in -> your presence -> get bookable -> get paid -> team & tools.
     const PROVIDER_ORDER = [
       "agreement", "w9", "password_reset",
-      "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "knowledge_review",
+      "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review", "knowledge_review",
       "calendar", "availability", "calendar_link", "video_room",
       "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis", "fees_review",
       "team", "ai",
@@ -731,9 +746,40 @@ export class ProviderOnboardingController {
       const i = PROVIDER_ORDER.indexOf(key);
       return i === -1 ? 999 : i;
     };
+    // Inventory steps are phrased by what the provider can actually do:
+    // egg/sperm donors are only scraped in by GoStork, so with profiles the
+    // step is "Review your X" (closed by marking) and with none it is hidden
+    // (nothing they can do). Surrogates can be uploaded manually, so an
+    // empty roster shows "Add your surrogates" instead.
+    const INVENTORY: Record<string, { noun: string; link: string; where: string; canUpload: boolean }> = {
+      scraper_egg: { noun: "egg donors", link: "/account/egg-donors", where: "Settings -> Egg Donors", canUpload: false },
+      scraper_surrogate: { noun: "surrogates", link: "/account/surrogates", where: "Settings -> Surrogates", canUpload: true },
+      scraper_sperm: { noun: "sperm donors", link: "/account/sperm-donors", where: "Settings -> Sperm Donors", canUpload: false },
+    };
     const steps = summary.steps
-      .filter((s) => VIEW[s.key])
+      .filter((s) => VIEW[s.key] || INVENTORY[s.key])
       .map((s) => {
+        const inv = INVENTORY[s.key];
+        if (inv) {
+          const count = s.recordCount || 0;
+          if (count === 0 && !inv.canUpload) return null; // nothing synced, nothing to do
+          const review = count > 0;
+          return {
+            key: s.key,
+            label: review ? `Review your ${inv.noun}` : `Add your ${inv.noun}`,
+            link: inv.link,
+            where: inv.where,
+            description: review
+              ? `GoStork synced ${count} ${inv.noun} from your database - look through the profiles parents will see and flag anything that is off.`
+              : `Upload your available ${inv.noun} so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile.`,
+            minutes: review ? 10 : 15,
+            selfMarkable: true,
+            // Review completes on the provider's word (the mark), never on
+            // the profile count the sync produced.
+            status: s.manuallyDone ? ("done" as const) : ("optional" as const),
+            isOptional: true,
+          };
+        }
         const v = VIEW[s.key];
         const isOptional = v.optionalOverride ?? !!s.isOptional;
         return {
@@ -753,6 +799,7 @@ export class ProviderOnboardingController {
           isOptional,
         };
       })
+      .filter((s): s is NonNullable<typeof s> => s !== null)
       .sort((a, b) => orderOf(a.key) - orderOf(b.key));
     const required = steps.filter((s) => !s.isOptional);
     const doneCount = required.filter((s) => s.status === "done").length;
@@ -794,6 +841,7 @@ export class ProviderOnboardingController {
       video_room: "onbvideo",
       fees_review: "onbfees",
       knowledge_review: "onbknow",
+      doctors_review: "onbdoc",
     };
     // Inventory steps close via the same onbmark marker the admin's manual
     // check-off writes (the step itself derives from profile counts) - "no
