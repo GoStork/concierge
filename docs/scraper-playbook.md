@@ -131,6 +131,43 @@ re-discovering the same problems on every new agency.
     you get roughly ONE live login attempt - make it count, then stop and let the next
     nightly be the test.** The durable fix is asking the agency to allowlist our sync IP or
     exempt our account, not more scraper cleverness.
+  - **The site may have no Cloudflare account of its own - check who HOSTS it**
+    (Eggspecting, Sep 2 2026). Their developer confirmed Eggspecting has no Cloudflare
+    account at all: the `server: cloudflare` + `cf-ray` headers come from **WP Engine's
+    Global Edge Security**, which is Cloudflare-backed. So the allowlist request goes to
+    the *host's* control panel (WP Engine -> access rules -> Allow `<IP>`), not to a
+    Cloudflare dashboard nobody has. Asking the agency to "check your Cloudflare" gets you
+    "we don't have Cloudflare" and stalls the thread. That WP Engine rule DOES reach the
+    edge and does lift the block - see the next bullet for how far it gets you.
+  - **An IP allowlist fixes the GET but NOT the login POST** (Eggspecting, Sep 2 2026).
+    After WP Engine allowlisted `34.85.132.142`:
+
+    | Request | Result | cf-ray |
+    |---|---|---|
+    | `GET /wp-login.php` | **200**, real login form (`name="log"`) | `a34ed093ebb6b4a5-IAD` |
+    | login `POST /wp-login.php` (15s later) | **403** from the edge | `a34ed797acc9822d-IAD` |
+    | `GET /wp-login.php` (re-confirm, right after the 403) | **200**, form again | `a34edb313c2d884e-IAD` |
+
+    Same IP, same UA, seconds apart. That **GET-passes / POST-blocked** signature is the
+    host's **brute-force protection on `wp-login.php`** - a layer separate from the WAF and
+    from IP access rules, which an allowlist does not lift. It needs the host's
+    login-protection toggle or a support exemption, quoting a passing-GET and blocked-POST
+    ray ID pair so support can see which rule fires.
+  - **Diagnose with a bare GET before spending a sync run.** One unauthenticated
+    `curl -sS -o /dev/null -D - -A "<our UA>" https://<site>/wp-login.php` from the sync
+    host costs no captcha solve, writes nothing, and splits the three cases cleanly:
+    403 = still IP/WAF-blocked (allowlist not applied, or applied to the wrong
+    environment - host access rules are usually per-environment); 200-with-form then a
+    403 on the real run = login protection, ask about that specifically, not about IP
+    allowlisting; 200 then a clean run = fixed. Note also that a Cloudflare IP allowlist
+    does **not** override Bot Fight Mode, so "we allowlisted you and it still fails" does
+    not mean the allowlist was wrong.
+  - **When you are two layers deep in a login form neither side controls, escalate to an
+    API.** We ingest provider APIs generically (`syncMethod = "API"`): Bearer /
+    `X-API-Key` / `Api-Key` (with or without a secret) / Basic, list + optional detail
+    endpoints, GET or POST, offset pagination, and flexible field-name mapping - so the
+    agency builds to *their* convenience, not our spec. That is a cheaper ask than a
+    third round of WAF archaeology.
 - **HTTP 405 on `/Account/Login` is NOT the real error** - it means the *correct* login
   URL (e.g. `/user/login` on JMS/o-jms, `/login` on Symfony) failed transiently and the
   engine fell through to the EDC fallback path, which those non-EDC platforms reject with

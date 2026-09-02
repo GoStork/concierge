@@ -1045,6 +1045,22 @@ had allowlisted that address - i.e. 1.0's egress - which is why 2.0's nightly
 (running from the dev Macs on residential IPs) failed 8 consecutive nights to
 Aug 22 2026. `34.85.132.142` was sent to Eggspecting on 2026-08-23.
 
+**Eggspecting allowlist status (2026-09-02):** their developer added
+`34.85.132.142` to **WP Engine's** access rules (Eggspecting has no Cloudflare
+account of its own; WP Engine's Global Edge Security is the Cloudflare layer we
+were seeing). That lifted the block on ordinary requests - `GET /wp-login.php`
+now returns 200 with the form - but the login **POST** is still 403'd by WP
+Engine's separate brute-force protection on `wp-login.php`, so the sync still
+fails. Open ask with them: exempt our IP from login protection, or (preferred,
+and they are already planning it) expose a proper API with a per-third-party
+auth profile. Full diagnosis in `docs/scraper-playbook.md`.
+
+- [ ] **This allowlist is pinned to `34.85.132.142`.** If `gostork-2-prod` ever
+  changes address - rebuild, region move, or the app.gostork.com flip landing on
+  different egress - the Eggspecting entry silently stops matching and the sync
+  goes back to 403. Re-send the new IP to their developer as part of any such
+  change, and re-check every other agency in the table above.
+
 - [ ] Before the app.gostork.com flip, ask any agency known to allowlist us to
   ADD `34.85.132.142` (keep the old entry until 1.0 is retired).
   Do NOT mass-mail all 7 configs: five currently sync fine from unallowlisted
