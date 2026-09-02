@@ -5150,6 +5150,7 @@ async function fetchApiPage(
   timeoutMs = 30000,
   method: "GET" | "POST" = "GET",
   bodyParams?: Record<string, string>,
+  cookies?: string | null,
 ): Promise<{ status: number; body: any | null; rawSnippet: string }> {
   const target = new URL(url);
   // Auth query params always travel in the URL; on POST the auth also rides in
@@ -5165,6 +5166,7 @@ async function fetchApiPage(
       "User-Agent": DEFAULT_HEADERS["User-Agent"],
       ...strategy.headers,
     };
+    if (cookies) headers["Cookie"] = cookies;
     let fetchBody: string | undefined;
     if (method === "POST") {
       const form = new URLSearchParams();
@@ -5399,6 +5401,49 @@ function buildDetailRequest(detailUrl: string, record: Record<string, any>): { u
   return { url, params };
 }
 
+/**
+ * Some platform APIs gate richer endpoints behind a normal member login rather
+ * than the partner API key (Lucina: /api/donors is public, but
+ * /api/donors/{id}/full wants a gallery session). When the config carries a
+ * username+password, log in as that member via the common JSON login routes and
+ * reuse the session cookies on subsequent API calls.
+ */
+async function tryApiSessionLogin(apiUrl: string, username: string, password: string): Promise<string | null> {
+  const origin = new URL(apiUrl).origin;
+  // One body that satisfies every common field convention at once.
+  const body = JSON.stringify({ identifier: username, email: username, username, password });
+  for (const path of ["/api/auth/login", "/api/login", "/api/auth/signin"]) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const res = await fetch(origin + path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": DEFAULT_HEADERS["User-Agent"],
+        },
+        body,
+        signal: controller.signal,
+      });
+      await res.text().catch(() => "");
+      if (res.status >= 200 && res.status < 300) {
+        const cookies = extractSetCookies(res);
+        if (cookies.length > 0) {
+          console.log(`[donor-sync] API session login succeeded at ${path} for ${username}`);
+          return cookies.join("; ");
+        }
+      }
+    } catch {
+      /* try the next login path */
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  console.warn(`[donor-sync] API session login failed for ${username} (no JSON login route accepted the credentials)`);
+  return null;
+}
+
 async function runApiSyncJob(
   prisma: PrismaService,
   job: SyncJob,
@@ -5513,6 +5558,14 @@ async function runApiSyncJob(
     let fullRecords = limited.filter((r) => r && typeof r === "object");
     if (detailApiUrl && detailApiUrl.trim()) {
       job.currentStep = `Fetching full profiles... (0/${fullRecords.length})`;
+      // Member-session login for detail endpoints gated behind a normal login
+      // (not the API key). Done once up front; cookies ride on every detail call.
+      let sessionCookies: string | null = null;
+      if (creds.username && creds.password) {
+        job.currentStep = "Signing in for full profile access...";
+        sessionCookies = await tryApiSessionLogin(apiUrl, creds.username, creds.password);
+        job.currentStep = `Fetching full profiles... (0/${fullRecords.length})`;
+      }
       const unwrapDetail = (b: any): Record<string, any> | null => {
         if (!b || typeof b !== "object" || Array.isArray(b)) return Array.isArray(b) && b[0] && typeof b[0] === "object" ? b[0] : null;
         for (const key of ["data", "result", "profile", "donor", "surrogate", "record"]) {
@@ -5537,10 +5590,10 @@ async function runApiSyncJob(
           const { url, params } = buildDetailRequest(detailApiUrl.trim(), record);
           try {
             // Same auth as the list; try the list's request shape first, then the other.
-            let resp = await fetchApiPage(url, workingStrategy!, 30000, workingMethod, workingMethod === "POST" ? params : undefined);
+            let resp = await fetchApiPage(url, workingStrategy!, 30000, workingMethod, workingMethod === "POST" ? params : undefined, sessionCookies);
             if (resp.status < 200 || resp.status >= 300 || resp.body === null) {
               const altMethod = workingMethod === "POST" ? "GET" : "POST";
-              resp = await fetchApiPage(url, workingStrategy!, 30000, altMethod, altMethod === "POST" ? params : undefined);
+              resp = await fetchApiPage(url, workingStrategy!, 30000, altMethod, altMethod === "POST" ? params : undefined, sessionCookies);
             }
             const detail = resp.status >= 200 && resp.status < 300 ? unwrapDetail(resp.body) : null;
             if (detail) {

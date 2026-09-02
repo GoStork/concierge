@@ -497,11 +497,27 @@ path - API payloads are already structured JSON.
   `id`, `donor_id`, ... as POST params, or substituted into `{placeholders}` in
   the URL) and the response is merged over the list record - list identifiers
   stay authoritative. A failed detail fetch keeps the list record and logs the
-  error. Worked example - Lucina Egg Bank (egg-donor):
-  - API Endpoint URL: `https://donors.lucinaeggbank.com/donor-api/get_donors`
-    (POST, `limit`/`offset`)
-  - Profile Detail Endpoint: `https://donors.lucinaeggbank.com/donor-api/get_donor_full_profile_customized`
-    (POST, `case_id` + `display_id` - both present on each list record)
+  error.
+- **Member-session login for gated detail endpoints**: some platforms gate the
+  full-profile endpoint behind a normal member login, NOT the API key. When the
+  config has username+password and a detail URL, the engine logs in once via the
+  common JSON login routes (`/api/auth/login`, `/api/login`, `/api/auth/signin`,
+  body `{identifier, email, username, password}`), and rides the session cookies
+  on every detail call.
+- **Worked example - Lucina Egg Bank (egg-donor), Sep 2 2026**: the 2023-era
+  documented endpoints (`/donor-api/get_donors` + `get_donor_full_profile_customized`
+  with `Api-Key`/`Api-Secret` headers) were REMOVED in their platform rebuild -
+  they 404 with any credentials, and the rotated key/secret Palash sent unlock
+  nothing discoverable. The rebuilt platform's real API:
+  - API Endpoint URL: `https://donors.lucinaeggbank.com/api/donors` - public
+    GET, all 940 donors in one JSON response (`donors` wrapper), rich list data
+    incl. photos on `static.lucinaeggbank.com`.
+  - Profile Detail Endpoint: `https://donors.lucinaeggbank.com/api/donors/{id}/full` -
+    gallery-session gated (`ERR_AUTH_REQUIRED`). The db@gostork.com gallery
+    login works, but the account hit `403 "Your 30-day access has ended"`
+    (`ERR_ACCESS_EXPIRED`) - Lucina must renew/exempt that account before the
+    detail URL is configured; until then leave the detail field EMPTY so runs
+    stay clean.
 - **Field mapping is deterministic** (`mapApiRecordToItem`): well-known key names
   (case/underscore-insensitive) map onto the DB columns; the FULL record is
   preserved in `profileData` with titleized keys; photo URLs are collected from
