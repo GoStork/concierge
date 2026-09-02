@@ -5120,9 +5120,13 @@ type ApiAuthStrategy = { name: string; headers: Record<string, string>; query?: 
 function buildApiAuthStrategies(creds: ApiSyncCredentials): ApiAuthStrategy[] {
   const strategies: ApiAuthStrategy[] = [];
   if (creds.apiKey) {
-    const secretHeader: Record<string, string> = creds.apiSecret ? { "X-API-Secret": creds.apiSecret, "X-Api-Secret": creds.apiSecret } : {};
+    // "Api-Secret"/"Api-Key" (no X- prefix) is Lucina's documented spelling -
+    // include it alongside the X- variants; servers ignore headers they don't read.
+    const secretHeader: Record<string, string> = creds.apiSecret
+      ? { "X-API-Secret": creds.apiSecret, "X-Api-Secret": creds.apiSecret, "Api-Secret": creds.apiSecret }
+      : {};
     strategies.push({ name: "bearer", headers: { Authorization: `Bearer ${creds.apiKey}`, ...secretHeader } });
-    strategies.push({ name: "x-api-key", headers: { "X-API-Key": creds.apiKey, "X-Api-Key": creds.apiKey, ...secretHeader } });
+    strategies.push({ name: "x-api-key", headers: { "X-API-Key": creds.apiKey, "X-Api-Key": creds.apiKey, "Api-Key": creds.apiKey, ...secretHeader } });
     if (creds.apiSecret) {
       strategies.push({
         name: "basic key:secret",
