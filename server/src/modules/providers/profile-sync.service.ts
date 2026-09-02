@@ -2829,6 +2829,7 @@ export async function saveSyncConfig(
     syncMethod?: string;
     apiKey?: string;
     apiSecret?: string;
+    apiDetailUrl?: string;
   },
 ) {
   const hasNewPassword =
@@ -2843,6 +2844,8 @@ export async function saveSyncConfig(
     databaseUrl: data.databaseUrl,
     username: data.username || null,
     ...(validMethod ? { syncMethod: validMethod } : {}),
+    // Not a secret - saved (and clearable) on every save like the URL itself.
+    ...(data.apiDetailUrl !== undefined ? { apiDetailUrl: data.apiDetailUrl.trim() || null } : {}),
   };
   const encryptedPassword = hasNewPassword ? encryptNullable(data.password!) : null;
   const encryptedApiKey = hasNewApiKey ? encryptNullable(data.apiKey!) : null;
@@ -3104,6 +3107,7 @@ export async function startSync(
           username: config.username || undefined,
           password: (config.encryptedPassword as string) || undefined,
         },
+        (config as any).apiDetailUrl || null,
         profileLimit,
         storageService || null,
       )
@@ -5140,16 +5144,34 @@ async function fetchApiPage(
   url: string,
   strategy: ApiAuthStrategy,
   timeoutMs = 30000,
+  method: "GET" | "POST" = "GET",
+  bodyParams?: Record<string, string>,
 ): Promise<{ status: number; body: any | null; rawSnippet: string }> {
   const target = new URL(url);
+  // Auth query params always travel in the URL; on POST the auth also rides in
+  // the form body since PHP-style endpoints frequently read $_POST only.
   if (strategy.query) {
     for (const [k, v] of Object.entries(strategy.query)) target.searchParams.set(k, v);
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "User-Agent": DEFAULT_HEADERS["User-Agent"],
+      ...strategy.headers,
+    };
+    let fetchBody: string | undefined;
+    if (method === "POST") {
+      const form = new URLSearchParams();
+      for (const [k, v] of Object.entries({ ...(strategy.query || {}), ...(bodyParams || {}) })) form.set(k, v);
+      fetchBody = form.toString();
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+    }
     const res = await fetch(target.href, {
-      headers: { Accept: "application/json", "User-Agent": DEFAULT_HEADERS["User-Agent"], ...strategy.headers },
+      method,
+      headers,
+      body: fetchBody,
       signal: controller.signal,
     });
     const text = await res.text();
@@ -5273,7 +5295,7 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
     return undefined;
   };
 
-  const externalIdRaw = pick("externalid", "donorid", "surrogateid", "id", "uuid", "slug", "donornumber", "profileid");
+  const externalIdRaw = pick("externalid", "donorid", "surrogateid", "caseid", "id", "uuid", "slug", "donornumber", "profileid", "displayid");
   const item: Record<string, any> = {
     externalId: externalIdRaw !== undefined ? String(externalIdRaw) : undefined,
     firstName: pick("firstname", "first", "givenname"),
@@ -5349,46 +5371,83 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
   return item;
 }
 
+// Fields that identify a record on a per-profile detail endpoint. Sent as POST
+// params (or substituted into {placeholders} in the detail URL) using the
+// record's own values - e.g. Lucina's get_donor_full_profile_customized wants
+// case_id + display_id, both present on each get_donors list record.
+const DETAIL_ID_FIELDS = ["case_id", "caseId", "display_id", "displayId", "id", "donor_id", "donorId", "external_id", "externalId", "uuid", "slug"];
+
+function buildDetailRequest(detailUrl: string, record: Record<string, any>): { url: string; params: Record<string, string> } {
+  let url = detailUrl;
+  const params: Record<string, string> = {};
+  // {field} placeholders in the URL are substituted from the record.
+  url = url.replace(/\{([A-Za-z0-9_]+)\}/g, (match, field) => {
+    const v = record[field] ?? record[normalizeApiKeyName(field)];
+    return v !== undefined && v !== null ? encodeURIComponent(String(v)) : match;
+  });
+  for (const field of DETAIL_ID_FIELDS) {
+    const v = record[field];
+    if (v !== undefined && v !== null && v !== "" && typeof v !== "object") {
+      // POST param names use the record's own key spelling (snake_case in = snake_case out)
+      if (!(field in params)) params[field] = String(v);
+    }
+  }
+  return { url, params };
+}
+
 async function runApiSyncJob(
   prisma: PrismaService,
   job: SyncJob,
   apiUrl: string,
   creds: ApiSyncCredentials,
+  detailApiUrl?: string | null,
   profileLimit?: number,
   storageService?: StorageService | null,
 ): Promise<void> {
   try {
-    console.log(`[donor-sync] Starting ${job.type} API sync for provider ${job.providerId} from ${apiUrl}`);
+    console.log(`[donor-sync] Starting ${job.type} API sync for provider ${job.providerId} from ${apiUrl}${detailApiUrl ? ` (detail: ${detailApiUrl})` : ""}`);
     job.currentStep = "Connecting to the provider API...";
 
     const strategies = buildApiAuthStrategies(creds);
     if (strategies.length === 0) {
-      throw new Error("API sync method is selected but no API key was saved. Add the provider's API key (and secret, if any) in the sync configuration.");
+      // Endpoints like Lucina's are unauthenticated (no key handed over) - run
+      // with a bare-request strategy rather than refusing. If the endpoint does
+      // require auth, the HTTP 401/403 surfaces loudly below.
+      strategies.push({ name: "no auth", headers: {} });
     }
 
-    // Find the auth convention this API accepts, then keep using it for every page.
+    // Find the auth convention AND request shape this API accepts, then reuse
+    // both for every subsequent call. GET is tried first; POST with form-encoded
+    // limit/offset covers PHP-style endpoints (e.g. Lucina's get_donors).
+    const PAGE_SIZE = 100;
     let workingStrategy: ApiAuthStrategy | null = null;
+    let workingMethod: "GET" | "POST" = "GET";
     let firstBody: any | null = null;
     const attemptErrors: string[] = [];
-    for (const strategy of strategies) {
-      try {
-        const { status, body, rawSnippet } = await fetchApiPage(apiUrl, strategy);
-        if (status >= 200 && status < 300 && body !== null) {
-          workingStrategy = strategy;
-          firstBody = body;
-          console.log(`[donor-sync] API auth accepted via "${strategy.name}"`);
-          break;
+    outer: for (const method of ["GET", "POST"] as const) {
+      for (const strategy of strategies) {
+        try {
+          const bodyParams = method === "POST" ? { limit: String(PAGE_SIZE), offset: "0" } : undefined;
+          const { status, body, rawSnippet } = await fetchApiPage(apiUrl, strategy, 30000, method, bodyParams);
+          if (status >= 200 && status < 300 && body !== null && extractApiRecords(body) !== null) {
+            workingStrategy = strategy;
+            workingMethod = method;
+            firstBody = body;
+            console.log(`[donor-sync] API accepted ${method} via "${strategy.name}"`);
+            break outer;
+          }
+          const shapeNote = status >= 200 && status < 300 && body !== null ? " (2xx but no profile array in the JSON)" : "";
+          attemptErrors.push(`[${method} ${strategy.name}] HTTP ${status}${body === null ? ` (non-JSON response: ${rawSnippet.replace(/\s+/g, " ")})` : shapeNote}`);
+        } catch (err: any) {
+          attemptErrors.push(`[${method} ${strategy.name}] ${err.message}`);
         }
-        attemptErrors.push(`[${strategy.name}] HTTP ${status}${body === null ? ` (non-JSON response: ${rawSnippet.replace(/\s+/g, " ")})` : ""}`);
-      } catch (err: any) {
-        attemptErrors.push(`[${strategy.name}] ${err.message}`);
       }
     }
     if (!workingStrategy || firstBody === null) {
-      throw new Error(`Could not authenticate against the provider API. Attempts: ${attemptErrors.join(" | ")}`);
+      throw new Error(`Could not fetch a profile list from the provider API. Attempts: ${attemptErrors.join(" | ")}`);
     }
 
-    // Collect records across pages (standard next-link or nothing).
+    // Collect records across pages: standard next-links, else POST offset paging.
     job.currentStep = "Fetching profiles from the API...";
     const records: any[] = [];
     let body: any = firstBody;
@@ -5396,28 +5455,45 @@ async function runApiSyncJob(
     const MAX_PAGES = 100;
     for (let page = 0; page < MAX_PAGES; page++) {
       const pageRecords = extractApiRecords(body);
-      if (pageRecords === null) {
-        if (page === 0) {
-          throw new Error(
-            `The API responded but no profile array was found in the JSON. Top-level keys: ${Object.keys(body || {}).slice(0, 10).join(", ") || "(none)"}. The endpoint must return an array of profiles (directly or under data/results/items/records/profiles).`,
-          );
-        }
-        break;
-      }
+      if (pageRecords === null) break;
       records.push(...pageRecords);
       if (profileLimit && records.length >= profileLimit) break;
       if (pageRecords.length === 0) break;
-      const nextUrl = extractApiNextPage(body, pageUrl);
-      if (!nextUrl || nextUrl === pageUrl) break;
       if (isJobCancelled(job.id)) break;
-      const { status, body: nextBody } = await fetchApiPage(nextUrl, workingStrategy);
-      if (status < 200 || status >= 300 || nextBody === null) {
-        job.errors.push(`Pagination stopped at page ${page + 2}: HTTP ${status}`);
-        break;
-      }
-      body = nextBody;
-      pageUrl = nextUrl;
       job.currentStep = `Fetching profiles from the API... (${records.length} so far)`;
+
+      const nextUrl = extractApiNextPage(body, pageUrl);
+      if (nextUrl && nextUrl !== pageUrl) {
+        const { status, body: nextBody } = await fetchApiPage(nextUrl, workingStrategy, 30000, workingMethod, workingMethod === "POST" ? {} : undefined);
+        if (status < 200 || status >= 300 || nextBody === null) {
+          job.errors.push(`Pagination stopped at page ${page + 2}: HTTP ${status}`);
+          break;
+        }
+        body = nextBody;
+        pageUrl = nextUrl;
+        continue;
+      }
+
+      // No next-link: offset-based paging on POST endpoints. Do NOT stop on a
+      // "short" page - endpoints may cap `limit` below what we asked for (e.g.
+      // Lucina defaults to 6). Instead keep advancing the offset until a page
+      // comes back empty or repeats (offset ignored by the server).
+      if (workingMethod === "POST") {
+        const { status, body: nextBody } = await fetchApiPage(apiUrl, workingStrategy, 30000, "POST", {
+          limit: String(PAGE_SIZE),
+          offset: String(records.length),
+        });
+        if (status < 200 || status >= 300 || nextBody === null) {
+          job.errors.push(`Offset pagination stopped at offset ${records.length}: HTTP ${status}`);
+          break;
+        }
+        const nextRecords = extractApiRecords(nextBody);
+        if (!nextRecords || nextRecords.length === 0) break;
+        if (JSON.stringify(nextRecords[0]) === JSON.stringify(pageRecords[0])) break; // server ignored offset
+        body = nextBody;
+        continue;
+      }
+      break;
     }
 
     const limited = profileLimit ? records.slice(0, profileLimit) : records;
@@ -5426,9 +5502,76 @@ async function runApiSyncJob(
       throw new Error("The provider API returned zero profiles. Check that the endpoint URL points at the profile list and the credentials have access.");
     }
 
-    const items = limited
-      .filter((r) => r && typeof r === "object")
-      .map((r) => mapApiRecordToItem(r, job.type));
+    // Optional per-profile detail endpoint (list gives IDs/summaries, detail
+    // gives the full profile - e.g. Lucina's get_donor_full_profile_customized).
+    // The detail response is merged over the list record; a failed detail fetch
+    // keeps the list record and logs the error instead of dropping the profile.
+    let fullRecords = limited.filter((r) => r && typeof r === "object");
+    if (detailApiUrl && detailApiUrl.trim()) {
+      job.currentStep = `Fetching full profiles... (0/${fullRecords.length})`;
+      const unwrapDetail = (b: any): Record<string, any> | null => {
+        if (!b || typeof b !== "object" || Array.isArray(b)) return Array.isArray(b) && b[0] && typeof b[0] === "object" ? b[0] : null;
+        for (const key of ["data", "result", "profile", "donor", "surrogate", "record"]) {
+          const v = b[key];
+          if (v && typeof v === "object" && !Array.isArray(v)) return v;
+          if (Array.isArray(v) && v[0] && typeof v[0] === "object") return v[0];
+        }
+        return b;
+      };
+      let detailDone = 0;
+      let detailFailed = 0;
+      const merged: any[] = new Array(fullRecords.length);
+      const DETAIL_CONCURRENCY = 4;
+      await runWithConcurrency(
+        fullRecords.map((record, idx) => ({ record, idx })),
+        DETAIL_CONCURRENCY,
+        async ({ record, idx }) => {
+          if (isJobCancelled(job.id)) {
+            merged[idx] = record;
+            return;
+          }
+          const { url, params } = buildDetailRequest(detailApiUrl.trim(), record);
+          try {
+            // Same auth as the list; try the list's request shape first, then the other.
+            let resp = await fetchApiPage(url, workingStrategy!, 30000, workingMethod, workingMethod === "POST" ? params : undefined);
+            if (resp.status < 200 || resp.status >= 300 || resp.body === null) {
+              const altMethod = workingMethod === "POST" ? "GET" : "POST";
+              resp = await fetchApiPage(url, workingStrategy!, 30000, altMethod, altMethod === "POST" ? params : undefined);
+            }
+            const detail = resp.status >= 200 && resp.status < 300 ? unwrapDetail(resp.body) : null;
+            if (detail) {
+              const combined: Record<string, any> = { ...record, ...detail };
+              // The list record's identifiers are authoritative - a detail
+              // payload must never blank them out (externalId dedupe/stale
+              // marking depend on them).
+              for (const f of DETAIL_ID_FIELDS) {
+                if (record[f] !== undefined && (combined[f] === undefined || combined[f] === null || combined[f] === "")) {
+                  combined[f] = record[f];
+                }
+              }
+              merged[idx] = combined;
+            } else {
+              merged[idx] = record;
+              detailFailed++;
+              if (detailFailed <= 10) job.errors.push(`Detail fetch failed for ${params.case_id || params.id || "record " + idx}: HTTP ${resp.status}`);
+            }
+          } catch (err: any) {
+            merged[idx] = record;
+            detailFailed++;
+            if (detailFailed <= 10) job.errors.push(`Detail fetch failed for ${params.case_id || params.id || "record " + idx}: ${err.message}`);
+          }
+          detailDone++;
+          if (detailDone % 5 === 0 || detailDone === fullRecords.length) {
+            job.currentStep = `Fetching full profiles... (${detailDone}/${fullRecords.length})`;
+          }
+        },
+      );
+      if (detailFailed > 10) job.errors.push(`Detail fetch failed for ${detailFailed} profiles total (first 10 listed)`);
+      console.log(`[donor-sync] Detail endpoint: ${fullRecords.length - detailFailed}/${fullRecords.length} full profiles fetched`);
+      fullRecords = merged;
+    }
+
+    const items = fullRecords.map((r) => mapApiRecordToItem(r, job.type));
 
     // De-dupe by externalId (an API page overlap must not double-import)
     const seen = new Set<string>();

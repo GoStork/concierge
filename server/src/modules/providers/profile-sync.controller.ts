@@ -110,6 +110,7 @@ export class ProfileSyncController {
       databaseUrl: config.databaseUrl,
       username: config.username,
       syncMethod: (config as any).syncMethod || "SOURCE_URL",
+      apiDetailUrl: (config as any).apiDetailUrl || null,
       // Presence flags only - the key/secret themselves never leave the server.
       hasApiKey: !!(config as any).encryptedApiKey,
       hasApiSecret: !!(config as any).encryptedApiSecret,
@@ -131,6 +132,7 @@ export class ProfileSyncController {
       syncMethod?: string;
       apiKey?: string;
       apiSecret?: string;
+      apiDetailUrl?: string;
     },
   ) {
     const validType = validateType(type);
@@ -152,6 +154,7 @@ export class ProfileSyncController {
       databaseUrl: config.databaseUrl,
       username: config.username,
       syncMethod: (config as any).syncMethod || "SOURCE_URL",
+      apiDetailUrl: (config as any).apiDetailUrl || null,
       hasApiKey: !!(config as any).encryptedApiKey,
       hasApiSecret: !!(config as any).encryptedApiSecret,
       lastSyncAt: config.lastSyncAt,

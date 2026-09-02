@@ -176,6 +176,7 @@ export default function ProfileDatabasePanel({
   const [configSyncMethod, setConfigSyncMethod] = useState<"SOURCE_URL" | "API">("SOURCE_URL");
   const [configApiKey, setConfigApiKey] = useState("");
   const [configApiSecret, setConfigApiSecret] = useState("");
+  const [configApiDetailUrl, setConfigApiDetailUrl] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
   // First-time setup gate: require the admin to acknowledge the scraper playbook
@@ -241,6 +242,7 @@ export default function ProfileDatabasePanel({
       setConfigUrl(configQuery.data.databaseUrl || "");
       setConfigUsername(configQuery.data.username || "");
       setConfigSyncMethod(configQuery.data.syncMethod === "API" ? "API" : "SOURCE_URL");
+      setConfigApiDetailUrl(configQuery.data.apiDetailUrl || "");
     }
   }, [configQuery.data]);
 
@@ -312,6 +314,7 @@ export default function ProfileDatabasePanel({
     syncMethod: configSyncMethod,
     apiKey: configApiKey || undefined,
     apiSecret: configApiSecret || undefined,
+    apiDetailUrl: configApiDetailUrl,
   });
 
   const saveConfigMutation = useMutation({
@@ -626,7 +629,9 @@ export default function ProfileDatabasePanel({
   // has no login page, captcha, or list-page pitfalls, so it skips the gate but
   // instead requires an API key (typed now or already saved) before starting.
   const setupGateBlocks = configSyncMethod === "SOURCE_URL" && !configQuery.data?.lastSyncAt && !setupAck;
-  const apiKeyMissing = configSyncMethod === "API" && !configApiKey && !configQuery.data?.hasApiKey;
+  // API key is optional: some provider APIs (e.g. Lucina) are open endpoints.
+  // An auth-required endpoint without a key fails loudly with the HTTP codes.
+  const apiKeyMissing = false;
 
   return (
     <div className="space-y-6" data-testid={`donor-panel-${type}`}>
@@ -750,8 +755,21 @@ export default function ProfileDatabasePanel({
           {configSyncMethod === "API" && (
             <>
               <div>
+                <Label htmlFor={`api-detail-url-${type}`} className="t-form-label-sm">
+                  Profile Detail Endpoint URL (optional)
+                </Label>
+                <Input
+                  id={`api-detail-url-${type}`}
+                  data-testid={`input-sync-api-detail-url-${type}`}
+                  placeholder="https://api.provider.com/v1/donors/full_profile"
+                  value={configApiDetailUrl}
+                  onChange={(e) => setConfigApiDetailUrl(e.target.value)}
+                  disabled={!isAdmin || isRunning}
+                />
+              </div>
+              <div>
                 <Label htmlFor={`api-key-${type}`} className="t-form-label-sm">
-                  API Key
+                  API Key (optional)
                 </Label>
                 <div className="relative">
                   <KeyRound className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -864,9 +882,10 @@ export default function ProfileDatabasePanel({
         </div>
         {isAdmin && configSyncMethod === "API" && (
           <p className="t-helper" data-testid={`api-method-note-${type}`}>
-            GoStork calls the provider's API directly with the key/secret above (standard auth conventions are auto-detected).
-            The endpoint must return the {label.toLowerCase()} profiles as JSON. Username/password are only needed if the API also
-            requires a login.
+            GoStork calls the provider's API directly (standard auth and pagination conventions are auto-detected; GET and
+            POST both work). The endpoint must return the {label.toLowerCase()} list as JSON. If the list only carries
+            IDs/summaries, add the Profile Detail Endpoint - it is called once per profile (with the record's IDs, e.g.
+            case_id/display_id) and merged in. Key/secret and username/password are only needed if the API requires them.
           </p>
         )}
         {isAdmin && configSyncMethod === "SOURCE_URL" && !configQuery.data?.lastSyncAt && (

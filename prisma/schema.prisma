@@ -1199,6 +1199,9 @@ model EggDonorSyncConfig {
   syncMethod         String    @default("SOURCE_URL")
   encryptedApiKey    String?
   encryptedApiSecret String?
+  // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
+  // this endpoint gives the full profile; called per record and merged).
+  apiDetailUrl       String?
   lastSyncAt         DateTime?
   syncStatus         String    @default("PENDING")
   syncFrequency      String    @default("manual")
@@ -1296,6 +1299,9 @@ model SurrogateSyncConfig {
   syncMethod         String    @default("SOURCE_URL")
   encryptedApiKey    String?
   encryptedApiSecret String?
+  // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
+  // this endpoint gives the full profile; called per record and merged).
+  apiDetailUrl       String?
   lastSyncAt         DateTime?
   syncStatus         String    @default("PENDING")
   syncFrequency      String    @default("manual")
@@ -1374,6 +1380,9 @@ model SpermDonorSyncConfig {
   syncMethod         String    @default("SOURCE_URL")
   encryptedApiKey    String?
   encryptedApiSecret String?
+  // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
+  // this endpoint gives the full profile; called per record and merged).
+  apiDetailUrl       String?
   lastSyncAt         DateTime?
   syncStatus         String    @default("PENDING")
   syncFrequency      String    @default("manual")

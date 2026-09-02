@@ -474,15 +474,34 @@ Implementation: `runApiSyncJob` in `profile-sync.service.ts`. No AI in this
 path - API payloads are already structured JSON.
 
 - **Auth conventions are auto-detected**, tried in order until one returns 2xx
-  JSON: `Authorization: Bearer <key>` (+ `X-API-Secret`), `X-API-Key`/`X-API-Secret`
-  headers, `Basic key:secret`, `?api_key=&api_secret=` query params, then
-  `Basic username:password`. The first accepted strategy is reused for every page.
+  JSON *with a profile array*: `Authorization: Bearer <key>` (+ `X-API-Secret`),
+  `X-API-Key`/`X-API-Secret` headers, `Basic key:secret`, `?api_key=&api_secret=`
+  query params, then `Basic username:password`. **Key/secret are optional** -
+  with none saved, a bare unauthenticated request is made (open endpoints like
+  Lucina's); an auth-required endpoint then fails loudly with the HTTP codes.
+  The first accepted strategy is reused for every call.
+- **GET and POST both work** - GET is tried first, then form-encoded POST with
+  `limit`/`offset` params (PHP-style endpoints, e.g. Lucina's `get_donors`).
+  The winning method is reused everywhere.
 - **The endpoint must return the profile list as JSON**: a top-level array, or
   under `data` / `results` / `items` / `records` / `profiles` / `donors` /
   `surrogates` / `list` / `rows` (one level of nesting tolerated).
 - **Pagination** follows standard next-link conventions (`next`,
-  `next_page_url`, `links.next`, `meta.next`, `pagination.next`, `paging.next`),
-  capped at 100 pages.
+  `next_page_url`, `links.next`, `meta.next`, `pagination.next`, `paging.next`);
+  POST endpoints without next-links get `limit`/`offset` paging that advances
+  until an empty or repeated page (do NOT stop on a "short" page - servers may
+  cap `limit` below what we ask, e.g. Lucina defaults to 6). Capped at 100 pages.
+- **List + detail APIs**: when the list only carries IDs/summaries, set the
+  optional **Profile Detail Endpoint URL**. It is called once per record
+  (concurrency 4) with the record's identifier fields (`case_id`, `display_id`,
+  `id`, `donor_id`, ... as POST params, or substituted into `{placeholders}` in
+  the URL) and the response is merged over the list record - list identifiers
+  stay authoritative. A failed detail fetch keeps the list record and logs the
+  error. Worked example - Lucina Egg Bank (egg-donor):
+  - API Endpoint URL: `https://donors.lucinaeggbank.com/donor-api/get_donors`
+    (POST, `limit`/`offset`)
+  - Profile Detail Endpoint: `https://donors.lucinaeggbank.com/donor-api/get_donor_full_profile_customized`
+    (POST, `case_id` + `display_id` - both present on each list record)
 - **Field mapping is deterministic** (`mapApiRecordToItem`): well-known key names
   (case/underscore-insensitive) map onto the DB columns; the FULL record is
   preserved in `profileData` with titleized keys; photo URLs are collected from
