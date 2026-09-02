@@ -163,6 +163,9 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [teamMembers, setTeamMembers] = useState<MemberData[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
+  // Snapshot of the member as it was when editing began - restored on
+  // Cancel. "NEW" marks a freshly-added member, which Cancel removes.
+  const [editingMemberOriginal, setEditingMemberOriginal] = useState<MemberData | "NEW" | null>(null);
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -994,6 +997,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                 const newMember: MemberData = { name: "", title: null, bio: null, photoUrl: null, _sortId: nextSortId() };
                 setTeamMembers([newMember, ...teamMembers]);
                 setEditingMemberIdx(0);
+                setEditingMemberOriginal("NEW");
               }}
               data-testid="btn-add-member"
             >
@@ -1153,8 +1157,30 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                       <p className="t-helper">Leave all unchecked = all locations</p>
                     </div>
                   )}
-                  <div className="flex justify-end">
-                    <Button type="button" size="sm" variant="outline" onClick={() => setEditingMemberIdx(null)} data-testid={`btn-done-member-${idx}`}>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      onClick={() => {
+                        // Cancel: a just-added member disappears, an edited
+                        // one snaps back to how it looked before editing.
+                        if (editingMemberOriginal === "NEW") {
+                          setTeamMembers(teamMembers.filter((_, i) => i !== idx));
+                        } else if (editingMemberOriginal) {
+                          const restored = [...teamMembers];
+                          restored[idx] = editingMemberOriginal;
+                          setTeamMembers(restored);
+                        }
+                        setEditingMemberIdx(null);
+                        setEditingMemberOriginal(null);
+                      }}
+                      data-testid={`btn-cancel-member-${idx}`}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => { setEditingMemberIdx(null); setEditingMemberOriginal(null); }} data-testid={`btn-done-member-${idx}`}>
                       <Check className="w-3 h-3 mr-1" /> Done
                     </Button>
                   </div>
@@ -1199,7 +1225,10 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0"
-                        onClick={() => setEditingMemberIdx(idx)}
+                        onClick={() => {
+                          setEditingMemberIdx(idx);
+                          setEditingMemberOriginal({ ...member, locationIds: member.locationIds ? [...member.locationIds] : member.locationIds });
+                        }}
                         data-testid={`btn-edit-member-${idx}`}
                       >
                         <Pencil className="w-3 h-3" />
