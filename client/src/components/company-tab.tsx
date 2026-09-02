@@ -1194,7 +1194,47 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                     >
                       Cancel
                     </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => { setEditingMemberIdx(null); setEditingMemberOriginal(null); }} data-testid={`btn-done-member-${idx}`}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        // Done SAVES the member immediately - that is what the
+                        // button reads as. Waiting for the page-level Save was
+                        // silently losing freshly added members to a refresh.
+                        const m = teamMembers[idx];
+                        if (!m.name?.trim()) {
+                          toast({ title: "Name is required", variant: "destructive" });
+                          return;
+                        }
+                        try {
+                          const payload = {
+                            name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null,
+                            isMedicalDirector: m.isMedicalDirector || false, sortOrder: idx,
+                            locationIds: m.locationIds || [], specialties: m.specialties || [],
+                            languagesSpoken: m.languagesSpoken || [],
+                            acceptingNewPatients: m.acceptingNewPatients ?? true,
+                            offersVideoVisits: m.offersVideoVisits ?? false,
+                          };
+                          if (m.id) {
+                            await apiRequest("PUT", `/api/providers/${providerId}/members/${m.id}`, payload);
+                          } else {
+                            const created = await (await apiRequest("POST", `/api/providers/${providerId}/members`, payload)).json();
+                            const updated = [...teamMembers];
+                            updated[idx] = { ...updated[idx], id: created.id };
+                            setTeamMembers(updated);
+                          }
+                          queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/members`] });
+                          toast({ title: "Team member saved" });
+                          setEditingMemberIdx(null);
+                          setEditingMemberOriginal(null);
+                        } catch (e: any) {
+                          // Keep the editor open so nothing is lost.
+                          toast({ title: "Couldn't save team member", description: e?.message, variant: "destructive" });
+                        }
+                      }}
+                      data-testid={`btn-done-member-${idx}`}
+                    >
                       <Check className="w-3 h-3 mr-1" /> Done
                     </Button>
                   </div>
@@ -1252,7 +1292,24 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => setTeamMembers(teamMembers.filter((_, i) => i !== idx))}
+                        onClick={async () => {
+                          // Mirror Done's immediate persistence: a saved
+                          // member is deleted right away (else it would
+                          // reappear on refresh); an unsaved one just leaves
+                          // the list.
+                          const m = teamMembers[idx];
+                          if (m.id) {
+                            if (!window.confirm(`Remove ${m.name || "this member"} from your team?`)) return;
+                            try {
+                              await apiRequest("DELETE", `/api/providers/${providerId}/members/${m.id}`);
+                              queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/members`] });
+                            } catch (e: any) {
+                              toast({ title: "Couldn't remove team member", description: e?.message, variant: "destructive" });
+                              return;
+                            }
+                          }
+                          setTeamMembers(teamMembers.filter((_, i) => i !== idx));
+                        }}
                         data-testid={`btn-remove-member-${idx}`}
                       >
                         <X className="w-3 h-3" />
