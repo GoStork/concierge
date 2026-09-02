@@ -11,7 +11,7 @@ import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-sec
 import { InsuranceSection } from "@/components/insurance-section";
 import {
   ArrowLeft, MapPin, Building2, Loader2, GraduationCap, Award, Globe,
-  Stethoscope, Heart, Video, BadgeCheck, Star,
+  Stethoscope, Heart, Video, BadgeCheck, Star, Pencil,
 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
@@ -131,6 +131,22 @@ export default function DoctorProfilePage() {
         <Button variant="ghost" onClick={() => navigate(-1)} data-testid="link-back">
           <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </Button>
+        {/* The owning clinic (or a GoStork admin) edits the doctor via their
+            Team Member card - same pattern as the surrogate profile's Edit. */}
+        {(() => {
+          const roles: string[] = (user as any)?.roles || [];
+          const isGostorkAdmin = roles.includes("GOSTORK_ADMIN");
+          const ownsDoctor = !!(user as any)?.providerId && (user as any).providerId === doctor.providerId;
+          if (!isGostorkAdmin && !ownsDoctor) return null;
+          const target = ownsDoctor
+            ? `/account/company?editMember=${doctor.id}`
+            : `/admin/providers/${doctor.providerId}?tab=profile`;
+          return (
+            <Button variant="outline" onClick={() => navigate(target)} data-testid="btn-edit-doctor-profile">
+              <Pencil className="w-4 h-4 mr-2" /> Edit Profile
+            </Button>
+          );
+        })()}
       </div>
 
       {/* Header */}

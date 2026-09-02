@@ -15,7 +15,7 @@ import { TagListInput, LANGUAGE_SUGGESTIONS } from "@/components/ui/tag-list-inp
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Building2, Loader2, Globe, Phone, Calendar, Plus, MapPin,
   Check, X, Upload, Pencil, Save, ImageIcon, User, GripVertical, Eye, Settings, ScanFace,
@@ -170,6 +170,27 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Deep link from the Doctors tab: ?editMember=<memberId> auto-opens that
+  // member's editor and scrolls to it, then consumes the param.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editMemberParam = searchParams.get("editMember");
+  const openedMemberRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editMemberParam || !initialized || openedMemberRef.current === editMemberParam) return;
+    const idx = teamMembers.findIndex((m) => m.id === editMemberParam);
+    if (idx === -1) return;
+    openedMemberRef.current = editMemberParam;
+    setEditingMemberIdx(idx);
+    setEditingMemberOriginal({ ...teamMembers[idx], locationIds: teamMembers[idx].locationIds ? [...teamMembers[idx].locationIds!] : undefined });
+    const next = new URLSearchParams(searchParams);
+    next.delete("editMember");
+    setSearchParams(next, { replace: true });
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-testid="company-member-${idx}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMemberParam, initialized, teamMembers]);
 
   // A refresh/close with unsaved changes silently threw away work (a freshly
   // added team member most painfully) - make the browser ask first.

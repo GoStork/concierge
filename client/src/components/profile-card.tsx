@@ -10,7 +10,8 @@ import { resolveEggDonorHeadlineStatus, normalizeProfileStatus } from "@/compone
 
 interface AdminControls {
   onToggleVisibility: (profileId: string, hidden: boolean) => void;
-  onTogglePremium: (profileId: string, premium: boolean) => void;
+  /** Optional: profile types without a premium concept (doctors) omit it. */
+  onTogglePremium?: (profileId: string, premium: boolean) => void;
   onEdit?: (profileId: string) => void;
   onDelete?: (profileId: string) => void;
   // One-click "Sponsor this" shortcut (adds to a free slot, or routes to the Sponsorship tab).
@@ -27,7 +28,8 @@ interface AdminControls {
 
 interface ProfileCardProps {
   profile: any;
-  type: ProfileType;
+  /** "doctor" renders a ProviderMember through the same admin card shell. */
+  type: ProfileType | "doctor";
   onNavigate?: () => void;
   variant: "marketplace" | "admin";
   showNewBadge?: boolean;
@@ -166,9 +168,11 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
   // (Frozen Eggs donors surface their frozen-lot state); surrogates and
   // sperm donors use the raw status column. AVAILABLE renders nothing -
   // presence in the list is the signal, matching the parent card.
-  const headlineStatus = type === "egg-donor"
-    ? resolveEggDonorHeadlineStatus(profile)
-    : normalizeProfileStatus(profile.status);
+  const headlineStatus = type === "doctor"
+    ? "AVAILABLE" // doctors have no marketplace status column
+    : type === "egg-donor"
+      ? resolveEggDonorHeadlineStatus(profile)
+      : normalizeProfileStatus(profile.status);
   const statusStyle = headlineStatus !== "AVAILABLE" ? getDonorStatusStyle(headlineStatus) : null;
   const statusPillBg =
     headlineStatus === "PENDING" || headlineStatus === "ON_HOLD"
@@ -281,7 +285,10 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
         </div>
       ) : (
         <div className="p-3 space-y-1 flex-1">
-          <h4 className="font-heading text-sm text-foreground mb-1.5">{typeLabel} #{displayId}</h4>
+          <h4 className="font-heading text-sm text-foreground mb-1.5">
+            {/* Doctors go by NAME - "Doctor #a262ff17" helps nobody. */}
+            {type === "doctor" ? profile.name : `${typeLabel} #${displayId}`}
+          </h4>
           {getProfileDetails(profile, type).map(({ label, value }) => (
             <p key={label} className="text-xs leading-snug truncate">
               <span className="font-heading text-foreground">{label}:</span>{" "}
@@ -305,7 +312,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
         {adminControls?.onSetStatus && !isMarketplace ? (
           <StatusSelector
             profileId={profile.id}
-            type={type}
+            type={type as ProfileType}
             status={adminControls.status ?? profile.status}
             onSetStatus={adminControls.onSetStatus}
             updating={adminControls.statusUpdating}
@@ -330,6 +337,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
                 <Pencil className="w-3.5 h-3.5" />
               </button>
             )}
+            {adminControls.onTogglePremium && (
             <button
               className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${
                 adminControls.isPremium
@@ -338,13 +346,14 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               }`}
               onClick={(e) => {
                 e.stopPropagation();
-                adminControls.onTogglePremium(profile.id, !adminControls.isPremium);
+                adminControls.onTogglePremium!(profile.id, !adminControls.isPremium);
               }}
               title={adminControls.isPremium ? "Premium - click to remove" : "Not premium - click to mark as Premium"}
               data-testid={`btn-toggle-premium-${type}-${profile.id}`}
             >
               <Crown className="w-3.5 h-3.5" />
             </button>
+            )}
             {adminControls.onSponsor && (
               <button
                 className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${

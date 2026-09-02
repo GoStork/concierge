@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { ProfileCard } from "@/components/profile-card";
 import { BoostProfilesCard } from "@/components/sponsorship/sponsorship-wizard";
 import {
   Loader2, Sparkles, RefreshCw, User, Search, Award, Stethoscope, BadgeCheck, ChevronDown,
@@ -32,6 +33,12 @@ const SORT_LABELS: Record<SortKey, string> = {
 export default function DoctorsDatabasePanel({ providerId }: { providerId: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  // Editing a doctor = editing their Team Member card. Providers get the
+  // Company tab editor auto-opened on that member; admins land on the edit
+  // page's Profile tab.
+  const isAdminSurface = window.location.pathname.startsWith("/admin");
+  const editHref = (memberId: string) =>
+    isAdminSurface ? `/admin/providers/${providerId}?tab=profile` : `/account/company?editMember=${memberId}`;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = !!(user as any)?.roles?.includes("GOSTORK_ADMIN");
@@ -46,8 +53,11 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
   // Only public doctor profiles are marketplace-visible and sponsorable, and
   // this is a DOCTORS panel: the server annotates each member with isClinician
   // (see clinician.ts) so practice/lab directors and other staff never render here.
+  // This is the provider's ADMIN view: hidden doctors stay listed (with the
+  // HIDDEN badge + eye toggle to bring them back) - filtering them out made
+  // hiding a one-way door. Only non-clinicians are excluded.
   const doctors = useMemo(
-    () => (membersQ.data || []).filter((m) => m.isPublicProfile !== false && m.isClinician !== false),
+    () => (membersQ.data || []).filter((m) => m.isClinician !== false),
     [membersQ.data],
   );
 
@@ -241,15 +251,36 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
           {doctors.length === 0 ? "No doctor profiles yet. Add them as Team Members on the Company tab - anyone with a physician credential (M.D., D.O.) in their name or a clinical title appears here automatically." : "No doctors match your filters."}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        // Same admin card shell as the Egg Donors / Surrogates tabs: photo,
+        // detail rows, edit/sponsor/hide actions - click opens the profile.
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filtered.map((d) => (
-            <DoctorRecordCard
+            <ProfileCard
               key={d.id}
-              doctor={d}
-              sponsored={campaign ? campaignItemByEntity.has(d.id) : (!!d.sponsoredUntil && new Date(d.sponsoredUntil).getTime() > Date.now())}
-              busy={busyId === d.id}
-              campaignMode={!!campaign}
-              onSponsor={() => handleSponsor(d.id)}
+              profile={{ ...d, photoUrl: d.highResPhotoUrl || d.photoUrl }}
+              type="doctor"
+              variant="admin"
+              onNavigate={() => {
+                // Campaign mode: clicking a card toggles it in the campaign.
+                if (campaign) { handleSponsor(d.id); return; }
+                if (d.slug) navigate(`/doctors/${d.slug}`);
+                else navigate(editHref(d.id));
+              }}
+              adminControls={{
+                sponsored: campaign ? campaignItemByEntity.has(d.id) : (!!d.sponsoredUntil && new Date(d.sponsoredUntil).getTime() > Date.now()),
+                isHidden: d.isPublicProfile === false,
+                isPremium: false,
+                onEdit: () => navigate(editHref(d.id)),
+                onSponsor: () => handleSponsor(d.id),
+                onToggleVisibility: async (_id, hidden) => {
+                  try {
+                    await apiRequest("PUT", `/api/providers/${providerId}/members/${d.id}`, { isPublicProfile: !hidden });
+                    queryClient.invalidateQueries({ queryKey: [membersUrl] });
+                  } catch (e: any) {
+                    toast({ title: "Couldn't update visibility", description: e?.message, variant: "destructive" });
+                  }
+                },
+              }}
             />
           ))}
         </div>
@@ -279,65 +310,6 @@ function PillSelect({ value, onChange, placeholder, options, icon, allowClear = 
         {norm.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <ChevronDown className="w-4 h-4 absolute right-3 pointer-events-none text-muted-foreground" />
-    </div>
-  );
-}
-
-function DoctorRecordCard({ doctor, sponsored, busy, campaignMode, onSponsor }: {
-  doctor: any;
-  sponsored: boolean;
-  busy: boolean;
-  campaignMode: boolean;
-  onSponsor: () => void;
-}) {
-  const photo = getPhotoSrc((doctor.highResPhotoUrl || doctor.photoUrl) ?? undefined) ?? undefined;
-  const specialties: string[] = doctor.specialties || [];
-  const loc = doctor.locations?.[0]?.location;
-  const locLabel = loc?.city && loc?.state ? `${loc.city}, ${loc.state}` : loc?.state || loc?.city;
-  return (
-    <div
-      onClick={campaignMode ? onSponsor : undefined}
-      className={`relative overflow-hidden rounded-2xl border bg-card flex flex-col h-full ${campaignMode ? "cursor-pointer" : ""} ${sponsored ? "border-accent ring-1 ring-accent/40" : "border-border"}`}
-      data-testid={`doctor-card-${doctor.id}`}
-    >
-      {/* Fixed square box via inline aspect-ratio + absolute image, so every card
-          gets an identical photo height regardless of the source image's shape. */}
-      <div className="relative w-full shrink-0 overflow-hidden bg-secondary" style={{ aspectRatio: "1 / 1" }}>
-        {photo ? (
-          <img src={photo} alt={doctor.name} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center"><User className="w-10 h-10 text-muted-foreground" /></div>
-        )}
-        {sponsored && (
-          <Badge className="absolute top-2 left-2 bg-accent text-accent-foreground gap-1"><Sparkles className="w-3 h-3" /> Sponsored</Badge>
-        )}
-        <button onClick={(e) => { e.stopPropagation(); onSponsor(); }} disabled={busy} data-testid={`button-sponsor-doctor-${doctor.id}`}
-          title={campaignMode ? (sponsored ? "Remove from sponsorship" : "Add to sponsorship") : "Sponsor this doctor"}
-          className={`absolute top-2 right-2 w-9 h-9 rounded-full flex items-center justify-center shadow-sm transition-colors ${sponsored ? "bg-accent text-accent-foreground" : "bg-card/90 text-primary hover:bg-card"}`}>
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-        </button>
-      </div>
-      <div className="p-3 flex flex-col gap-1.5 flex-1">
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0">
-            <div className="font-heading text-sm text-foreground truncate flex items-center gap-1">
-              {doctor.name}
-              {doctor.credential && <span className="t-helper">{doctor.credential}</span>}
-            </div>
-            {doctor.title && <div className="t-helper truncate">{doctor.title}</div>}
-          </div>
-        </div>
-        {locLabel && <div className="t-helper truncate">{locLabel}</div>}
-        <div className="flex flex-wrap gap-1 mt-auto pt-1">
-          {doctor.isMedicalDirector && (
-            <Badge variant="secondary" className="gap-1 text-[11px]"><Award className="w-3 h-3" /> Medical director</Badge>
-          )}
-          {specialties.slice(0, 2).map((s) => (
-            <Badge key={s} variant="secondary" className="text-[11px]">{s}</Badge>
-          ))}
-          {specialties.length > 2 && <Badge variant="secondary" className="text-[11px]">+{specialties.length - 2}</Badge>}
-        </div>
-      </div>
     </div>
   );
 }

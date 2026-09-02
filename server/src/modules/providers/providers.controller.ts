@@ -1373,6 +1373,8 @@ export class ProvidersController {
     return {
       id: identity.id,
       slug: primary.slug, // keep the slug the user navigated to
+      // Owning clinic - lets the provider's own view offer "Edit Profile".
+      providerId: identity.providerId,
       name: identity.name,
       title: identity.title,
       bio: identity.bio,

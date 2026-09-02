@@ -85,6 +85,7 @@ export function getPhotoSrc(url: string | null | undefined): string | null {
 export function getProfileTypeLabel(type: string): string {
   if (type === "egg-donor") return "Egg Donor";
   if (type === "surrogate") return "Surrogate";
+  if (type === "doctor") return "Doctor";
   return "Sperm Donor";
 }
 
@@ -343,10 +344,28 @@ function fmtTotalCostRange(tc: { min: number; max: number } | null): string {
   return `${fmtDollarsLocal(tc.min)} - ${fmtDollarsLocal(tc.max)}`;
 }
 
-export function getProfileDetails(d: any, type: ProfileType): { label: string; value: string }[] {
+export function getProfileDetails(d: any, type: ProfileType | "doctor"): { label: string; value: string }[] {
   const result: { label: string; value: string | null }[] = [];
   const V = (val: any) => (val != null && val !== "") ? String(val) : "-";
   const B = (val: boolean | null) => val === true ? "Yes" : val === false ? "No" : "-";
+
+  // Doctors (ProviderMember rows) - the provider's own Doctors tab renders
+  // them through the same admin card as donors/surrogates.
+  if (type === "doctor") {
+    result.push(
+      { label: "Title", value: V(d.title) },
+      { label: "Credential", value: d.credential ? String(d.credential) : null },
+      { label: "Specialties", value: (d.specialties || []).join(", ") || null },
+      { label: "Languages", value: (d.languagesSpoken || []).join(", ") || null },
+      { label: "Board Certifications", value: (d.boardCertifications || []).join(", ") || null },
+      { label: "Years of Experience", value: d.yearsExperience != null ? String(d.yearsExperience) : null },
+      { label: "Accepting New Patients", value: B(d.acceptingNewPatients ?? null) },
+      { label: "Video Visits", value: B(d.offersVideoVisits ?? null) },
+      { label: "Medical Director", value: d.isMedicalDirector ? "Yes" : null },
+      { label: "NPI", value: d.npiNumber ? String(d.npiNumber) : null },
+    );
+    return result.filter((i): i is { label: string; value: string } => i.value !== null && i.value !== "" && i.value !== "-");
+  }
 
   if (type === "egg-donor") {
     const r = resolveEggDonorFields(d);

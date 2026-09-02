@@ -298,6 +298,9 @@ export const insertProviderMemberSchema = z.object({
   languagesSpoken: z.array(z.string()).optional(),
   boardCertifications: z.array(z.string()).optional(),
   education: z.array(z.string()).optional(),
+  // Doctors tab hide toggle: false hides the member from parent-facing
+  // doctor surfaces without deleting them.
+  isPublicProfile: z.boolean().optional(),
   professionalMemberships: z.array(z.string()).optional(),
   npiNumber: z.string().nullable().optional(),
   medicalSchool: z.string().nullable().optional(),
