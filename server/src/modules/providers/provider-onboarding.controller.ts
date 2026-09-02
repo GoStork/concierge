@@ -705,7 +705,7 @@ export class ProviderOnboardingController {
       // One task, three tour stops (the Legal page is the only one that
       // keeps separate tasks per section): connect, set hours, check the
       // booking link. Done = connected AND availability set (enforced below).
-      calendar: { label: "Set up your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 7,
+      calendar: { label: "Set up your calendar and availability", link: "/account/calendar", where: "Settings -> Calendar", minutes: 7,
         description: "Three things on this page: connect Google, Outlook, or Apple Calendar; set your Weekly Availability hours; then open Your Calendar Link and check the booking page parents will see.",
         sections: [
           { anchor: "calendar-connect", label: "Connected Calendars" },
