@@ -34,13 +34,7 @@ import {
   ShieldCheck,
   KeyRound,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-bar";
 import { useAuth } from "@/hooks/use-auth";
@@ -720,23 +714,24 @@ export default function ProfileDatabasePanel({
           Sync Configuration
           {!isAdmin && <span className="t-helper ml-1">(managed by GoStork)</span>}
         </h4>
-        <div className="max-w-xs">
-          <Label htmlFor={`method-${type}`} className="t-form-label-sm">
-            Sync Method
-          </Label>
-          <Select
+        <div>
+          <Label className="t-form-label-sm">Sync Method</Label>
+          <RadioGroup
             value={configSyncMethod}
             onValueChange={(v) => setConfigSyncMethod(v === "API" ? "API" : "SOURCE_URL")}
             disabled={!isAdmin || isRunning}
+            className="flex flex-wrap gap-x-6 gap-y-2 mt-1"
+            data-testid={`radio-sync-method-${type}`}
           >
-            <SelectTrigger id={`method-${type}`} data-testid={`select-sync-method-${type}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="SOURCE_URL">Source URL (scrape the provider's site)</SelectItem>
-              <SelectItem value="API">Provider API (API Key + Secret)</SelectItem>
-            </SelectContent>
-          </Select>
+            <label className="flex items-center gap-2 text-sm font-ui cursor-pointer">
+              <RadioGroupItem value="SOURCE_URL" data-testid={`radio-sync-method-source-url-${type}`} />
+              Source URL (scrape the provider's site)
+            </label>
+            <label className="flex items-center gap-2 text-sm font-ui cursor-pointer">
+              <RadioGroupItem value="API" data-testid={`radio-sync-method-api-${type}`} />
+              Provider API (API Key + Secret)
+            </label>
+          </RadioGroup>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
