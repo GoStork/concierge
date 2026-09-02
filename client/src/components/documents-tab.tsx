@@ -125,6 +125,9 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
         </p>
       </div>
 
+      {/* The templates region is the onboarding tour stop for
+          "Upload your agency agreement templates". */}
+      <div data-onb-anchor="agency-templates" className="space-y-6">
       {multiService ? (
         serviceTypes.map(st => {
           const row = rowByService.get(st);
@@ -194,6 +197,7 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
           }}
         />
       )}
+      </div>
 
       {/* GoStork admin: send + track provider service agreements. The parent
           agreement sections below are provider self-service concerns. */}

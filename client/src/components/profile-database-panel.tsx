@@ -1269,7 +1269,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      {showRecords && <div>
+      {showRecords && <div data-onb-anchor="profile-records">
         {showStartSponsorship && (
           <BoostProfilesCard
             initialEntityType={sponsorEntityType as any}

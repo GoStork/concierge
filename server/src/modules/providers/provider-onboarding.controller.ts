@@ -698,18 +698,27 @@ export class ProviderOnboardingController {
       // The GoStork agreement lives on the provider's Legal tab (with the
       // W-9) - Legal aggregates everything GoStork needs legally.
       agreement: { label: "Sign the GoStork agreement", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 5,
-        description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." },
+        description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." ,
+        sections: [{ anchor: "gostork-agreement", label: "GoStork Agreement" }] },
       w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
-        description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." },
+        description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." ,
+        sections: [{ anchor: "w9-section", label: "W-9" }] },
       // No password_reset row here: anyone READING this list already set
       // their password (first login lands on /account, where the Review My
       // Account wizard takes over). The admin checklist keeps tracking it.
       profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
-        description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." },
+        description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." ,
+        sections: [
+          { anchor: "company-profile", label: "Company Profile" },
+          { anchor: "company-locations", label: "Locations" },
+          { anchor: "company-team", label: "Team Members" },
+        ] },
       knowledge_review: { label: "Review what Eva knows about you", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
-        description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." },
+        description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." ,
+        sections: [{ anchor: "ai-knowledge", label: "What Eva knows" }] },
       doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
-        description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." },
+        description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." ,
+        sections: [{ anchor: "doctor-records", label: "Doctor Records" }] },
       // One task, three tour stops (the Legal page is the only one that
       // keeps separate tasks per section): connect, set hours, check the
       // booking link. Done = connected AND availability set (enforced below).
@@ -735,11 +744,17 @@ export class ProviderOnboardingController {
           { anchor: "business-address", label: "Business address" },
         ] },
       stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
-        description: "Connect your bank account through Stripe so parent payments reach you." },
+        description: "Connect your bank account through Stripe so parent payments reach you." ,
+        sections: [
+          { anchor: "payouts-setup", label: "Payout setup" },
+          { anchor: "payout-identity", label: "Business identity" },
+        ] },
       costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Cost Sheets", minutes: 10,
-        description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." },
+        description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." ,
+        sections: [{ anchor: "cost-sheets", label: "Cost Sheets" }] },
       agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agency Agreements", minutes: 5,
-        description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
+        description: "Upload the agreements you send to parents so signing happens right inside GoStork." ,
+        sections: [{ anchor: "agency-templates", label: "Agreement Templates" }] },
       // One Billing task, two tour stops: see the agreed GoStork fee, then
       // choose the Parent Pays Basis (the choice is what completes it).
       pay_basis: { label: "Review GoStork fees and how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 4,
@@ -749,19 +764,30 @@ export class ProviderOnboardingController {
           { anchor: "pay-basis", label: "Parent Pays Basis" },
         ] },
       team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
-        description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." },
+        description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." ,
+        sections: [{ anchor: "team-members", label: "Team Members" }] },
       ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
-        description: "Review your AI assistant's settings and the persona that speaks for your company - this is how it engages parents on your behalf." },
+        description: "Review your AI assistant's settings and the persona that speaks for your company - this is how it engages parents on your behalf." ,
+        sections: [{ anchor: "ai-assistant", label: "Your AI assistant" }] },
       parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", where: "Settings -> Parent Form", minutes: 5, selfMarkable: true,
-        description: "Review the intake form parents complete before a match call, and tailor it if you like." },
+        description: "Review the intake form parents complete before a match call, and tailor it if you like." ,
+        sections: [{ anchor: "parent-form", label: "Parent Form" }] },
       playbooks: { label: "Configure playbooks", link: "/account/playbooks", where: "Settings -> Playbooks", minutes: 5, selfMarkable: true,
-        description: "Set up playbooks that automate your follow-ups with families." },
+        description: "Set up playbooks that automate your follow-ups with families." ,
+        sections: [{ anchor: "playbooks", label: "Playbooks" }] },
       automation: { label: "Review automations", link: "/account/automation", where: "Settings -> Automation", minutes: 3, selfMarkable: true,
-        description: "Review all three sections: auto-replies, billing automation, and silence rules - sensible defaults are already on." },
+        description: "Review all three sections: auto-replies, billing automation, and silence rules - sensible defaults are already on." ,
+        sections: [
+          { anchor: "auto-reply", label: "Auto-replies" },
+          { anchor: "billing", label: "Billing automation" },
+          { anchor: "silence", label: "Silence rules" },
+        ] },
       branding: { label: "Review your branding", link: "/account/branding", where: "Settings -> Branding", minutes: 3, selfMarkable: true,
-        description: "Check your logo and brand colors - they appear on your parent-facing documents." },
+        description: "Check your logo and brand colors - they appear on your parent-facing documents." ,
+        sections: [{ anchor: "branding", label: "Brand settings" }] },
       sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
-        description: "See how sponsored placement can boost your visibility with matching families." },
+        description: "See how sponsored placement can boost your visibility with matching families." ,
+        sections: [{ anchor: "sponsorship-dashboard", label: "Sponsorship" }] },
     };
     // The provider's journey order, by IMPORTANCE of each Settings page -
     // Legal -> My Account -> Company -> Calendar -> Team -> Cost Sheets ->
@@ -818,6 +844,7 @@ export class ProviderOnboardingController {
               : `Upload your available ${inv.noun} so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile.`,
             minutes: review ? 10 : 15,
             selfMarkable: true,
+            sections: [{ anchor: "profile-records", label: `${inv.noun[0].toUpperCase()}${inv.noun.slice(1)}` }],
             // Review completes on the provider's word (the mark), never on
             // the profile count the sync produced.
             status: s.manuallyDone ? ("done" as const) : ("optional" as const),

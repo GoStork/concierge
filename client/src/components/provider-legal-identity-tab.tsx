@@ -335,13 +335,13 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           provider (the onboarding checklist's "Send provider agreement" step
           deep-links here). GoStork's own global send/track table stays on
           the admin Agreements tab. */}
-      {!isAdmin && <GostorkAgreementCard />}
+      {!isAdmin && <div data-onb-anchor="gostork-agreement"><GostorkAgreementCard /></div>}
       {isAdmin && providerId && <AdminProviderAgreements fixedProviderId={providerId} />}
 
       {/* W-9 section - moved out of Billing tab. Self-contained component
           owns its own status query + send/fill/resubmit mutations. */}
       {effectiveProviderId && (
-        <section className="space-y-3 rounded-xl border bg-card p-5">
+        <section className="space-y-3 rounded-xl border bg-card p-5" data-onb-anchor="w9-section">
           <div>
             <h3 className="font-semibold">{taxForm} Form</h3>
             <p className="t-helper mt-0.5">

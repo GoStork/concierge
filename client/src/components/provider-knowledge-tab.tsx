@@ -127,7 +127,7 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
   const answeredWhispers = whispers.filter((w: any) => w.status === "ANSWERED");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-onb-anchor="ai-knowledge">
       <div>
         <h2 className="text-xl font-display font-heading text-primary flex items-center gap-2" data-testid="text-knowledge-title">
           <Brain className="w-5 h-5" />

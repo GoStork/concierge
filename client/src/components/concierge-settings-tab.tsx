@@ -146,7 +146,7 @@ export default function ConciergeSettingsTab({ readOnly = false }: { readOnly?: 
 
   return (
     <div className="space-y-6" data-testid="concierge-settings-tab">
-      <Card className="p-6">
+      <Card className="p-6" data-onb-anchor="ai-assistant">
         <div className="flex items-center gap-2 mb-1">
           <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
           <h2 className="font-display text-lg font-semibold" data-testid="text-concierge-heading">

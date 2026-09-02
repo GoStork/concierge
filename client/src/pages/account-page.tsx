@@ -1997,12 +1997,12 @@ export default function AccountPage() {
         )}
         <Route path="branding" element={
           isAdmin ? <BrandSettingsTab /> :
-          isProvider && providerId ? <BrandSettingsForm
+          isProvider && providerId ? <div data-onb-anchor="branding"><BrandSettingsForm
             getEndpoint={`/api/brand/provider/${providerId}`}
             putEndpoint={`/api/brand/provider/${providerId}`}
             resetEndpoint={`/api/brand/provider/${providerId}/reset`}
             disableLivePreview
-          /> : <Navigate to="/account" replace />
+          /></div> : <Navigate to="/account" replace />
         } />
         {/* Knowledge merged into the AI Concierge tab - keep old links working. */}
         <Route path="knowledge" element={<Navigate to="/account/concierge" replace />} />
@@ -2016,7 +2016,7 @@ export default function AccountPage() {
           ) : <ConciergeSettingsTab />
         } />
         {(isProvider || isAdmin) && (
-          <Route path="playbooks" element={<AccountPlaybooksPage />} />
+          <Route path="playbooks" element={<div data-onb-anchor="playbooks"><AccountPlaybooksPage /></div>} />
         )}
         {(isProvider || isAdmin) && (
           <Route path="automation" element={<AccountAutomationPage />} />
@@ -2025,7 +2025,7 @@ export default function AccountPage() {
           <Route path="ip-form-template" element={<AdminIpFormTemplatePage />} />
         )}
         {isProvider && !isAdmin && providerId && (
-          <Route path="parent-form" element={<ProviderParentFormTab providerId={providerId} mode="provider" />} />
+          <Route path="parent-form" element={<div data-onb-anchor="parent-form"><ProviderParentFormTab providerId={providerId} mode="provider" /></div>} />
         )}
         {isAdmin && (
           <Route path="scrapers/*" element={<ScrapersSummaryPage />} />
@@ -2047,13 +2047,15 @@ export default function AccountPage() {
         )}
         {showCosts && providerId && (
           <Route path="costs" element={
-            <ProviderCostsTab
-              isAdminView={false}
-              canManagePrograms={true}
-              providerId={providerId}
-              providerType={firstApprovedSvcName}
-              providerServices={approvedServices}
-            />
+            <div data-onb-anchor="cost-sheets">
+              <ProviderCostsTab
+                isAdminView={false}
+                canManagePrograms={true}
+                providerId={providerId}
+                providerType={firstApprovedSvcName}
+                providerServices={approvedServices}
+              />
+            </div>
           } />
         )}
         <Route path="*" element={<Navigate to="/account" replace />} />

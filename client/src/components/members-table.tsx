@@ -260,7 +260,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-onb-anchor="team-members">
       {!compact && (
         <div className="flex items-center justify-between">
           <p className="t-helper">{sortedMembers.length} {context === "parent" ? "member" : "team member"}{sortedMembers.length !== 1 ? "s" : ""}</p>

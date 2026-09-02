@@ -32,7 +32,12 @@ function paintAnchor(anchor: string, onFound: (el: HTMLElement | null) => void):
   let tries = 15;
   const attempt = () => {
     if (cancelled) return;
-    el = document.querySelector<HTMLElement>(`[data-onb-anchor="${anchor}"]`);
+    // Anchor resolution: explicit data-onb-anchor first, then an element id
+    // (the Automation page's own section ids), then a data-testid.
+    el =
+      document.querySelector<HTMLElement>(`[data-onb-anchor="${anchor}"]`) ||
+      document.getElementById(anchor) ||
+      document.querySelector<HTMLElement>(`[data-testid="${anchor}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.style.transition = "box-shadow 0.3s ease";

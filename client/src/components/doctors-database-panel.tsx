@@ -196,7 +196,7 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3" data-onb-anchor="doctor-records">
         <h4 className="font-heading text-sm" data-testid="doctors-table-title">
           Doctor Records ({doctors.length})
           {filtered.length !== doctors.length && (

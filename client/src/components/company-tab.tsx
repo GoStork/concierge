@@ -491,7 +491,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
   return (
     <>
     <form ref={companyFormRef} onSubmit={handleSave} className="space-y-8" data-testid="company-form">
-      <Card className="p-6 space-y-5">
+      <Card className="p-6 space-y-5" data-onb-anchor="company-profile">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-heading flex items-center gap-2" data-testid="text-company-heading">
             <Building2 className="w-5 h-5 text-primary" /> Company Profile
@@ -603,7 +603,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
         </div>
       </Card>
 
-      <Card className="p-6 space-y-4">
+      <Card className="p-6 space-y-4" data-onb-anchor="company-locations">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <MapPin className="w-5 h-5 text-primary" /> Locations ({locations.length})
@@ -997,7 +997,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
           live in the Team tab (login accounts). Real providers keep this: it
           feeds the team section parents see on clinic/agency public profiles. */}
       {!isGoStorkHouse && (
-      <Card className="p-6 space-y-4">
+      <Card className="p-6 space-y-4" data-onb-anchor="company-team">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <User className="w-5 h-5 text-primary" /> Team Members ({teamMembers.length})

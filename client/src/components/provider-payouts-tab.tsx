@@ -157,7 +157,7 @@ export function ProviderPayoutsTab() {
   // Onboarded + payouts enabled - show a compact status card, no form.
   if (state?.readyForPayouts) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" data-onb-anchor="payouts-setup">
         <header>
           <h2 className="text-2xl font-heading">Payouts</h2>
           <p className="t-helper mt-1">
@@ -746,7 +746,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           "Edit in Legal Identity" link carries that, not a dimmer surface.
           It was on secondary to recede against the editable cards, but a
           cream panel between two white ones just read as unfinished. */}
-      <div className="rounded-xl border p-5 bg-card space-y-3">
+      <div className="rounded-xl border p-5 bg-card space-y-3" data-onb-anchor="payout-identity">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold text-sm">Business identity</h3>
