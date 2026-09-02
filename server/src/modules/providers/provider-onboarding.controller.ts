@@ -732,10 +732,14 @@ export class ProviderOnboardingController {
         description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." },
       agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
         description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
-      pay_basis: { label: "Choose how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 2,
-        description: "Pick how your parent payments are structured so invoicing works the way you do." },
-      fees_review: { label: "Review your GoStork fees", link: "/account/billing", where: "Settings -> Billing", minutes: 2, selfMarkable: true,
-        description: "See the referral fee agreed with GoStork for each of your services - no surprises on your first invoice." },
+      // One Billing task, two tour stops: see the agreed GoStork fee, then
+      // choose the Parent Pays Basis (the choice is what completes it).
+      pay_basis: { label: "Review GoStork fees and how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 4,
+        description: "Two things on this page: see the referral fee agreed with GoStork for each of your services, then choose your Parent Pays Basis - how parents are invoiced.",
+        sections: [
+          { anchor: "gostork-fees", label: "GoStork Referral Fee" },
+          { anchor: "pay-basis", label: "Parent Pays Basis" },
+        ] },
       team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
         description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." },
       ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
@@ -758,7 +762,7 @@ export class ProviderOnboardingController {
       "agreement", "w9",
       "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review", "knowledge_review",
       "calendar", "video_room",
-      "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis", "fees_review",
+      "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis",
       "team", "ai",
       "parent_form_provider", "playbooks", "automation", "branding", "sponsorship",
     ];

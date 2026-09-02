@@ -195,7 +195,7 @@ export function ReferralFeeConfigSection({
   return (
     <section className="space-y-4">
       {/* GoStork Referral Fee Type + amount input grouped in an outlined box */}
-      <div className="rounded-lg border p-4 space-y-4 bg-card">
+      <div className="rounded-lg border p-4 space-y-4 bg-card" data-onb-anchor="gostork-fees">
         <div className="space-y-2">
           <Label>
             GoStork Referral Fee Type
@@ -265,7 +265,7 @@ export function ReferralFeeConfigSection({
           their onboarding), but it stays fully editable here too - the admin
           can fill it in when the answer is already known. It is only REQUIRED
           on the provider side; the admin can save the fee economics alone. */}
-      <div className="rounded-lg border p-4 space-y-3 bg-card">
+      <div className="rounded-lg border p-4 space-y-3 bg-card" data-onb-anchor="pay-basis">
         <Label>
           Parent Pays Basis
           {!isProviderMode && <span className="t-helper ml-2 font-normal">(the provider's call - optional here, they set it during onboarding)</span>}
