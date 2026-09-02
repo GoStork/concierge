@@ -68,6 +68,10 @@ export class ProviderServicesController {
     }
     try {
       const input = insertProviderServiceSchema.omit({ providerId: true }).parse(body);
+      // A provider can only REQUEST a service: it enters as NEW and goes
+      // live solely through GoStork's approval (status === APPROVED is the
+      // marketplace publish switch - never self-service).
+      if (!isAdmin) input.status = "NEW";
       return await this.prisma.providerService.create({
         data: { ...input, providerId },
       });
@@ -104,6 +108,11 @@ export class ProviderServicesController {
     if (!existing) {
       throw new NotFoundException("Service not found");
     }
+    // Removing an APPROVED line unpublishes live inventory - GoStork only.
+    // Providers may withdraw their own unapproved requests.
+    if (!isAdmin && existing.status === "APPROVED") {
+      throw new ForbiddenException("Approved services can only be removed by GoStork - contact us to retire a service line.");
+    }
     await this.prisma.providerService.delete({ where: { id } });
     return { success: true };
   }
@@ -136,6 +145,9 @@ export class ProviderServicesController {
         .omit({ providerId: true })
         .partial()
         .parse(body);
+      // Status is GoStork's publish switch - a provider must never move it
+      // (self-approving here would bypass the entire go-live review).
+      if (!isAdmin) delete (input as any).status;
       return await this.prisma.providerService.update({
         where: { id },
         data: input,

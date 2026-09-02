@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useProvider } from "@/hooks/use-providers";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { hasProviderRole } from "@shared/roles";
@@ -132,6 +132,59 @@ function SortableItem({ id, children, disabled, readOnly }: { id: string; childr
         </button>
         <div className="flex-1 min-w-0">{children}</div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline "Request a service" (no dialog, per app rules): the provider picks a
+ * service line they don't have yet and requests it. It lands as NEW - GoStork
+ * sees it on the admin checklist ("Go live - approve services"), sets the
+ * referral fee, and approval is what publishes it.
+ */
+function ServiceRequestInline({ providerId, services }: { providerId: string; services: any[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [typeId, setTypeId] = useState("");
+  const [requesting, setRequesting] = useState(false);
+  const { data: providerTypes } = useQuery<any[]>({ queryKey: ["/api/provider-types"] });
+  const have = new Set(services.map((s: any) => s.providerType?.id || s.providerTypeId));
+  const available = (providerTypes || []).filter((t: any) => !have.has(t.id));
+  if (available.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      <Select value={typeId} onValueChange={setTypeId}>
+        <SelectTrigger className="w-64 h-9" data-testid="select-request-service-type">
+          <SelectValue placeholder="Request a new service..." />
+        </SelectTrigger>
+        <SelectContent>
+          {available.map((t: any) => (
+            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={!typeId || requesting}
+        onClick={async () => {
+          setRequesting(true);
+          try {
+            await apiRequest("POST", `/api/providers/${providerId}/services`, { providerTypeId: typeId, status: "NEW" });
+            queryClient.invalidateQueries({ queryKey: [api.providers.get.path, providerId] });
+            setTypeId("");
+            toast({ title: "Service requested", description: "GoStork will review it, set up the fees with you, and approve it to go live.", variant: "success" });
+          } catch (e: any) {
+            toast({ title: "Couldn't request the service", description: e?.message, variant: "destructive" });
+          } finally {
+            setRequesting(false);
+          }
+        }}
+        data-testid="btn-request-service"
+      >
+        <Plus className="w-3 h-3 mr-1" /> Request
+      </Button>
     </div>
   );
 }
@@ -719,12 +772,36 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                 data-testid={`badge-service-${service.id}`}
               >
                 {service.providerType?.name || "Service"}: {service.status?.replace("_", " ")}
+                {/* Providers can withdraw their own not-yet-approved requests;
+                    approved lines are GoStork's to retire. */}
+                {isProviderAdmin && !isGostorkAdmin && service.status !== "APPROVED" && (
+                  <button
+                    type="button"
+                    className="ml-1.5 rounded-full hover:bg-foreground/10 p-0.5"
+                    title="Withdraw this service request"
+                    onClick={async () => {
+                      if (!window.confirm(`Withdraw the ${service.providerType?.name || "service"} request?`)) return;
+                      try {
+                        await apiRequest("POST", `/api/providers/${providerId}/services/${service.id}/delete`);
+                        queryClient.invalidateQueries({ queryKey: [api.providers.get.path, providerId] });
+                      } catch (e: any) {
+                        toast({ title: "Couldn't withdraw the request", description: e?.message, variant: "destructive" });
+                      }
+                    }}
+                    data-testid={`btn-withdraw-service-${service.id}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </Badge>
             ))}
           </div>
         ) : (
           <p className="t-helper py-2">No services registered yet.</p>
         )}
+        {/* Provider self-service: REQUEST a new line (enters as NEW; GoStork
+            reviews, sets fees, and approval is what publishes it). */}
+        {isProviderAdmin && !isGostorkAdmin && <ServiceRequestInline providerId={providerId} services={services || []} />}
       </Card>
       )}
 
