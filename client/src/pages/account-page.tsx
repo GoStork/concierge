@@ -93,8 +93,9 @@ const allTabs = [
   // enabled canEditParentForm) - admins manage per-provider forms from the
   // admin provider edit page instead.
   { to: '/account/parent-form', label: 'Parent Form', icon: ClipboardList, roles: 'provider-form' as const },
-  { to: '/account/documents', label: 'Agreements', icon: FileText, roles: 'provider' as const },
-  { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
+  { to: '/account/documents', label: 'Agency Agreements', icon: FileText, roles: 'provider' as const },
+  // Knowledge lives INSIDE the AI Concierge tab now (below the assistant
+  // picker) - /account/knowledge redirects there.
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
   { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
   { to: '/account/automation', label: 'Automation', icon: RefreshCw, roles: 'provider' as const },
@@ -1852,13 +1853,18 @@ export default function AccountPage() {
   if (showSurrogates) donorTabs.push({ to: '/account/surrogates', label: 'Surrogates', icon: Baby, roles: 'provider' });
   if (showSpermDonors) donorTabs.push({ to: '/account/sperm-donors', label: 'Sperm Donors', icon: FlaskConical, roles: 'provider' });
   if (showDoctors) donorTabs.push({ to: '/account/doctors', label: 'Doctors', icon: Stethoscope, roles: 'provider' });
-  if (showCosts) donorTabs.push({ to: '/account/costs', label: 'Costs', icon: DollarSign, roles: 'provider' });
+  if (showCosts) donorTabs.push({ to: '/account/costs', label: 'Cost Sheets', icon: DollarSign, roles: 'provider' });
 
+  // Tab order by IMPORTANCE - the same order the onboarding checklist walks:
+  // Legal -> My Account -> Company -> Calendar -> Team -> Cost Sheets ->
+  // Agency Agreements -> Billing -> Payouts -> Parent Form -> inventory ->
+  // Sponsorship -> Automation -> Playbooks -> AI Concierge -> Branding.
   const providerTabOrder = [
-    '/account', '/account/company', '/account/team', '/account/members',
-    '/account/calendar', '/account/costs', '/account/documents', '/account/parent-form',
+    '/account/legal-identity', '/account', '/account/company', '/account/calendar', '/account/team',
+    '/account/costs', '/account/documents', '/account/billing', '/account/payouts', '/account/parent-form',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
-    '/account/knowledge', '/account/concierge', '/account/playbooks', '/account/automation', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
+    '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
+    '/account/members', '/account/scrapers', '/account/test-runner',
   ];
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
@@ -1875,7 +1881,6 @@ export default function AccountPage() {
     // GoStork admins manage global sponsorship programs; providers buy (needs a providerId).
     if (tab.roles === 'sponsorship') return isAdmin || (isProvider && !!providerId);
     if (tab.roles === 'branding') return showBranding;
-    if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
     if (tab.roles === 'admin') return isAdmin;
     if (tab.roles === 'provider-form') return isProvider && !isAdmin && !!providerId;
@@ -1999,11 +2004,16 @@ export default function AccountPage() {
             disableLivePreview
           /> : <Navigate to="/account" replace />
         } />
-        {isProvider && !isAdmin && (
-          <Route path="knowledge" element={<ProviderKnowledgeTab />} />
-        )}
+        {/* Knowledge merged into the AI Concierge tab - keep old links working. */}
+        <Route path="knowledge" element={<Navigate to="/account/concierge" replace />} />
         <Route path="concierge" element={
-          isAdmin ? <AdminConciergePage /> : <ConciergeSettingsTab />
+          isAdmin ? <AdminConciergePage /> :
+          isProvider && !isAdmin ? (
+            <div className="space-y-6">
+              <ConciergeSettingsTab />
+              <ProviderKnowledgeTab />
+            </div>
+          ) : <ConciergeSettingsTab />
         } />
         {(isProvider || isAdmin) && (
           <Route path="playbooks" element={<AccountPlaybooksPage />} />

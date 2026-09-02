@@ -159,7 +159,8 @@ export default function AdminProviderEditPage() {
   // Auto-reply was consolidated into the Automation tab (same as the provider
   // side); old ?tab=auto-replies links land there. Company was folded into
   // Profile (one admin editor, a strict superset of the provider's view).
-  const currentTab = rawTab === "auto-replies" ? "automation" : rawTab === "company" ? "profile" : rawTab;
+  // Knowledge merged into the AI Concierge tab (same as the provider side).
+  const currentTab = rawTab === "auto-replies" ? "automation" : rawTab === "company" ? "profile" : rawTab === "knowledge" ? "ai-concierge" : rawTab;
   const handleTabChange = (value: string) => setSearchParams({ tab: value }, { replace: true });
 
   const sensors = useSensors(
@@ -758,50 +759,49 @@ export default function AdminProviderEditPage() {
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         {/* scrollbar-hide: the strip still scrolls horizontally, just without the visible bar. */}
-        {/* Tab order groups by lifecycle: Identity -> Inventory -> Parent Experience -> Money & Compliance -> Growth. */}
+        {/* Tab order by importance - mirrors the provider Settings strip and onboarding. */}
         <div className="overflow-x-auto w-full scrollbar-hide scroll-mt-24">
         <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start scroll-mt-24">
-          {/* Identity */}
-          <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
-          <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
-          <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
-            <Palette className="w-4 h-4 mr-1.5 inline" />
-            Branding
-          </TabsTrigger>
-          {/* Inventory */}
-          {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
-          {showSurrogates && <TabsTrigger value="surrogates" className={tabTriggerClass} data-testid="tab-edit-surrogates">Surrogates</TabsTrigger>}
-          {showSpermDonors && <TabsTrigger value="sperm-donors" className={tabTriggerClass} data-testid="tab-edit-sperm-donors">Sperm Donors</TabsTrigger>}
-          {isIvfClinic && <TabsTrigger value="doctors" className={tabTriggerClass} data-testid="tab-edit-doctors">Doctors</TabsTrigger>}
-          <TabsTrigger value="costs" className={tabTriggerClass} data-testid="tab-edit-costs">
-            <DollarSign className="w-4 h-4 mr-1.5 inline" />
-            Costs
-          </TabsTrigger>
-          {/* Parent experience */}
-          <TabsTrigger value="parent-form" className={tabTriggerClass} data-testid="tab-edit-parent-form">Parent Form</TabsTrigger>
-          <TabsTrigger value="agreements" className={tabTriggerClass} data-testid="tab-edit-agreements">Agreements</TabsTrigger>
-          <TabsTrigger value="knowledge" className={tabTriggerClass} data-testid="tab-edit-knowledge">Knowledge</TabsTrigger>
-          <TabsTrigger value="ai-concierge" className={tabTriggerClass} data-testid="tab-edit-ai-concierge">AI Concierge</TabsTrigger>
-          <TabsTrigger value="playbooks" className={tabTriggerClass} data-testid="tab-edit-playbooks">Playbooks</TabsTrigger>
-          <TabsTrigger value="automation" className={tabTriggerClass} data-testid="tab-edit-automation">
-            <MessageSquarePlus className="w-4 h-4 mr-1.5 inline" />
-            Automation
-          </TabsTrigger>
-          <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-edit-calendar">Calendar</TabsTrigger>
-          {/* Money & compliance */}
+          {/* Order by IMPORTANCE - mirrors the provider Settings strip and the
+              onboarding checklist: Legal -> Profile -> Calendar -> Team ->
+              Cost Sheets -> Agency Agreements -> Billing -> Payouts ->
+              Parent Form -> inventory -> Sponsorship -> Automation ->
+              Playbooks -> AI Concierge (with Knowledge inside) -> Branding. */}
           <TabsTrigger value="legal-identity" className={tabTriggerClass} data-testid="tab-edit-legal-identity">
             Legal
           </TabsTrigger>
+          <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
+          <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-edit-calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
+          <TabsTrigger value="costs" className={tabTriggerClass} data-testid="tab-edit-costs">
+            <DollarSign className="w-4 h-4 mr-1.5 inline" />
+            Cost Sheets
+          </TabsTrigger>
+          <TabsTrigger value="agreements" className={tabTriggerClass} data-testid="tab-edit-agreements">Agency Agreements</TabsTrigger>
           <TabsTrigger value="billing" className={tabTriggerClass} data-testid="tab-edit-billing">
             Billing
           </TabsTrigger>
           <TabsTrigger value="payouts" className={tabTriggerClass} data-testid="tab-edit-payouts">
             Payouts
           </TabsTrigger>
-          {/* Growth */}
+          <TabsTrigger value="parent-form" className={tabTriggerClass} data-testid="tab-edit-parent-form">Parent Form</TabsTrigger>
+          {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
+          {showSurrogates && <TabsTrigger value="surrogates" className={tabTriggerClass} data-testid="tab-edit-surrogates">Surrogates</TabsTrigger>}
+          {showSpermDonors && <TabsTrigger value="sperm-donors" className={tabTriggerClass} data-testid="tab-edit-sperm-donors">Sperm Donors</TabsTrigger>}
+          {isIvfClinic && <TabsTrigger value="doctors" className={tabTriggerClass} data-testid="tab-edit-doctors">Doctors</TabsTrigger>}
           <TabsTrigger value="sponsorship" className={tabTriggerClass} data-testid="tab-edit-sponsorship">
             <Sparkles className="w-4 h-4 mr-1.5 inline" />
             Sponsorship
+          </TabsTrigger>
+          <TabsTrigger value="automation" className={tabTriggerClass} data-testid="tab-edit-automation">
+            <MessageSquarePlus className="w-4 h-4 mr-1.5 inline" />
+            Automation
+          </TabsTrigger>
+          <TabsTrigger value="playbooks" className={tabTriggerClass} data-testid="tab-edit-playbooks">Playbooks</TabsTrigger>
+          <TabsTrigger value="ai-concierge" className={tabTriggerClass} data-testid="tab-edit-ai-concierge">AI Concierge</TabsTrigger>
+          <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
+            <Palette className="w-4 h-4 mr-1.5 inline" />
+            Branding
           </TabsTrigger>
         </TabsList>
         </div>
@@ -1546,12 +1546,13 @@ export default function AdminProviderEditPage() {
           </TabsContent>
         )}
 
-        <TabsContent value="knowledge">
-          <ProviderKnowledgeTab providerId={provider.id} />
-        </TabsContent>
-
         <TabsContent value="ai-concierge">
-          <ConciergeSettingsTab readOnly />
+          {/* Knowledge merged below the assistant section (mirrors the
+              provider's own AI Concierge tab). */}
+          <div className="space-y-6">
+            <ConciergeSettingsTab readOnly />
+            <ProviderKnowledgeTab providerId={provider.id} />
+          </div>
         </TabsContent>
 
         <TabsContent value="playbooks">

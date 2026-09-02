@@ -698,7 +698,7 @@ export class ProviderOnboardingController {
       // Account wizard takes over). The admin checklist keeps tracking it.
       profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
         description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." },
-      knowledge_review: { label: "Review what Eva knows about you", link: "/account/knowledge", where: "Settings -> Knowledge", minutes: 5, selfMarkable: true,
+      knowledge_review: { label: "Review what Eva knows about you", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
         description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." },
       doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
         description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." },
@@ -728,9 +728,9 @@ export class ProviderOnboardingController {
         ] },
       stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
         description: "Connect your bank account through Stripe so parent payments reach you." },
-      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Costs", minutes: 10,
+      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Cost Sheets", minutes: 10,
         description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." },
-      agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agreements", minutes: 5,
+      agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agency Agreements", minutes: 5,
         description: "Upload the agreements you send to parents so signing happens right inside GoStork." },
       // One Billing task, two tour stops: see the agreed GoStork fee, then
       // choose the Parent Pays Basis (the choice is what completes it).
@@ -755,16 +755,28 @@ export class ProviderOnboardingController {
       sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
         description: "See how sponsored placement can boost your visibility with matching families." },
     };
-    // The provider's journey order - decoupled from the admin checklist's
-    // phase order (the same fact can sit elsewhere in each audience's story):
-    // get in -> your presence -> get bookable -> get paid -> team & tools.
+    // The provider's journey order, by IMPORTANCE of each Settings page -
+    // Legal -> My Account -> Company -> Calendar -> Team -> Cost Sheets ->
+    // Agency Agreements -> Billing -> Payouts -> Parent Form -> inventory ->
+    // Sponsorship -> Automation -> Playbooks -> AI Concierge -> Branding.
+    // This same order drives the Settings tab strips on both sides.
     const PROVIDER_ORDER = [
-      "agreement", "w9",
-      "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review", "knowledge_review",
-      "calendar", "video_room",
-      "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis",
-      "team", "ai",
-      "parent_form_provider", "playbooks", "automation", "branding", "sponsorship",
+      "agreement", "w9", "legal_details",
+      "video_room",
+      "profile_review",
+      "calendar",
+      "team",
+      "costs_uploaded",
+      "agreement_templates",
+      "pay_basis",
+      "stripe",
+      "parent_form_provider",
+      "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review",
+      "sponsorship",
+      "automation",
+      "playbooks",
+      "ai", "knowledge_review",
+      "branding",
     ];
     const orderOf = (key: string) => {
       const i = PROVIDER_ORDER.indexOf(key);
