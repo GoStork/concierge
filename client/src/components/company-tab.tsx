@@ -239,11 +239,24 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
   function handleMemberDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    setTeamMembers((items) => {
-      const oldIndex = items.findIndex((item, i) => getSortId(item, i) === active.id);
-      const newIndex = items.findIndex((item, i) => getSortId(item, i) === over.id);
-      return arrayMove(items, oldIndex, newIndex);
-    });
+    const oldIndex = teamMembers.findIndex((item, i) => getSortId(item, i) === active.id);
+    const newIndex = teamMembers.findIndex((item, i) => getSortId(item, i) === over.id);
+    const next = arrayMove(teamMembers, oldIndex, newIndex);
+    setTeamMembers(next);
+    // Members persist on their own (Done/x), so the new order saves right
+    // away too instead of riding the page Save.
+    for (let i = 0; i < next.length; i++) {
+      const m = next[i];
+      if (!m.id) continue;
+      apiRequest("PUT", `/api/providers/${providerId}/members/${m.id}`, {
+        name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null,
+        isMedicalDirector: m.isMedicalDirector || false, sortOrder: i,
+        locationIds: m.locationIds || [], specialties: m.specialties || [],
+        languagesSpoken: m.languagesSpoken || [],
+        acceptingNewPatients: m.acceptingNewPatients ?? true,
+        offersVideoVisits: m.offersVideoVisits ?? false,
+      }).catch(() => {});
+    }
   }
 
   // Track which provider snapshot the form was initialized from. Re-sync
@@ -340,7 +353,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, locations, teamMembers, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, partnerProviderIds]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, locations, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, partnerProviderIds]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -439,22 +452,10 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
         }
       }
 
-      const existingMemberIds = new Set((provider.members || []).map((d: any) => d.id));
-      const currentMemberIds = new Set(teamMembers.filter(m => m.id).map(m => m.id));
-
-      for (const mem of provider.members || []) {
-        if (!currentMemberIds.has(mem.id)) {
-          try { await apiRequest("DELETE", `/api/providers/${provider.id}/members/${mem.id}`); } catch (e: any) { errors.push(`Delete member: ${e.message}`); }
-        }
-      }
-      for (let i = 0; i < teamMembers.length; i++) {
-        const member = teamMembers[i];
-        if (member.id && existingMemberIds.has(member.id)) {
-          try { await apiRequest("PUT", `/api/providers/${provider.id}/members/${member.id}`, { name: member.name, title: member.title || null, bio: member.bio || null, photoUrl: member.photoUrl || null, isMedicalDirector: member.isMedicalDirector || false, sortOrder: i, locationIds: member.locationIds || [], specialties: member.specialties || [], languagesSpoken: member.languagesSpoken || [], acceptingNewPatients: member.acceptingNewPatients ?? true, offersVideoVisits: member.offersVideoVisits ?? false }); } catch (e: any) { errors.push(`Update member "${member.name}": ${e.message}`); }
-        } else if (!member.id || !existingMemberIds.has(member.id)) {
-          try { await apiRequest("POST", `/api/providers/${provider.id}/members`, { name: member.name, title: member.title || null, bio: member.bio || null, photoUrl: member.photoUrl || null, isMedicalDirector: member.isMedicalDirector || false, sortOrder: i, locationIds: member.locationIds || [], specialties: member.specialties || [], languagesSpoken: member.languagesSpoken || [], acceptingNewPatients: member.acceptingNewPatients ?? true, offersVideoVisits: member.offersVideoVisits ?? false }); } catch (e: any) { errors.push(`Add member "${member.name}": ${e.message}`); }
-        }
-      }
+      // Team members are NOT part of the page save: Done/x on each card
+      // persist immediately. Re-submitting them here double-created members
+      // (a Done-created id missing from the cached provider.members list
+      // looked "new" and was POSTed again).
 
       queryClient.invalidateQueries({ queryKey: [api.providers.get.path, provider.id] });
       queryClient.invalidateQueries({ queryKey: [api.providers.list.path] });
