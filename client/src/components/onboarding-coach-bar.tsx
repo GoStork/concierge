@@ -17,7 +17,7 @@ import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ListChecks, ArrowRight, Clock, Check } from "lucide-react";
+import { CheckCircle2, ListChecks, ArrowRight, ArrowDown, Clock, Check } from "lucide-react";
 import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-onboarding";
 
 /**
@@ -152,22 +152,21 @@ export function OnboardingCoachBar() {
   if (hidden) return null;
 
   const isLastSection = sectionIdx >= sections.length - 1;
-  // Prefer perching on the card's left edge; on narrow screens sit just
-  // inside it instead of off-screen.
-  const flagOutside = (anchorRect?.left ?? 0) >= 140;
+  // Centered above the section, straddling its top border - clear of the
+  // left-aligned section titles - bobbing vertically to say "this card".
   const sectionFlag = section && anchorRect && current
     ? createPortal(
         <>
           <style>{`
-            @keyframes onbFlagNudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
+            @keyframes onbFlagNudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
             .onb-section-flag-inner { animation: onbFlagNudge 1.2s ease-in-out infinite; }
           `}</style>
           <div
             className="fixed z-40"
             style={{
-              top: Math.min(Math.max(anchorRect.top + 10, 76), window.innerHeight - 56),
-              left: flagOutside ? anchorRect.left - 12 : anchorRect.left + 12,
-              transform: flagOutside ? "translateX(-100%)" : "none",
+              top: Math.min(Math.max(anchorRect.top - 18, 76), window.innerHeight - 56),
+              left: anchorRect.left + anchorRect.width / 2,
+              transform: "translateX(-50%)",
             }}
           >
             <button
@@ -193,7 +192,7 @@ export function OnboardingCoachBar() {
               ) : (
                 <>
                   Next
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowDown className="w-4 h-4" />
                 </>
               )}
             </button>
