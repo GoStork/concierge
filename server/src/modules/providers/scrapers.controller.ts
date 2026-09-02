@@ -398,6 +398,10 @@ export class ScrapersController {
 
     let lastSyncErrors: string[] = [];
     let lastSyncStats: { succeeded: number; failed: number; total: number } | null = null;
+    // Terminal status of the last run ("completed" | "partial" | "failed"), read from
+    // the authoritative source rather than inferred from stats. See the SyncLog
+    // fallback below for why inferring it was a bug.
+    let lastRunStatus: string | null = null;
     let lastSyncAt: Date | null = null;
     let staleProfilesMarked = 0;
     let newProfiles = 0;
@@ -417,6 +421,7 @@ export class ScrapersController {
     const latestJob = getLatestCompletedSyncJob(providerId, type as DonorType);
     if (latestJob) {
       lastSyncErrors = latestJob.errors || [];
+      lastRunStatus = latestJob.status;
       lastSyncStats = {
         succeeded: latestJob.succeeded,
         failed: latestJob.failed,
@@ -430,6 +435,8 @@ export class ScrapersController {
           missingFields: latestJob.missingFields,
           lastSyncErrors,
           lastSyncStats,
+          lastRunStatus,
+          lastRunSource: latestJob.source || null,
           lastSyncAt,
           staleProfilesMarked,
           newProfiles,
@@ -440,6 +447,7 @@ export class ScrapersController {
       }
     } else if (nightlyResult) {
       lastSyncErrors = nightlyResult.errors || [];
+      lastRunStatus = nightlyResult.status;
       lastSyncStats = {
         succeeded: nightlyResult.succeeded,
         failed: nightlyResult.failed,
@@ -457,6 +465,8 @@ export class ScrapersController {
               missingFields: job.missingFields,
               lastSyncErrors,
               lastSyncStats,
+              lastRunStatus,
+              lastRunSource: job.source || null,
               lastSyncAt,
               staleProfilesMarked,
               newProfiles,
@@ -469,35 +479,56 @@ export class ScrapersController {
       }
     }
 
-    // Fallback when no in-memory job exists (e.g., after a server restart).
-    // Use the real lastSyncAt (written only on actual successful completion), NOT
-    // lastSyncEndedAt (which gets stamped whenever the process is killed/restarted).
-    // If lastSyncAt < lastSyncStartedAt, the last run never completed - leave stats null
-    // so the banner correctly shows "overdue" rather than "successful".
-    if (!lastSyncStats && lastSyncEndedAt && totalProfiles > 0) {
-      const dbLastSyncAt: Date | null = syncConfig?.lastSyncAt || null;
-      lastSyncAt = dbLastSyncAt;
-      const runCompleted = dbLastSyncAt && lastSyncStartedAt && dbLastSyncAt >= lastSyncStartedAt;
-      if (runCompleted) {
-        lastSyncStats = { succeeded: totalProfiles, failed: 0, total: totalProfiles };
-      }
-      // If the run never completed (killed mid-run), lastSyncStats remains null so the
-      // banner shows "overdue" or "no sync completed" correctly.
-    }
-
-    // Determine the source of the last completed run (nightly / manual / auto-resume)
-    // Prefer in-memory job source, fall back to most recent SyncLog entry from DB
+    // Fallback when no in-memory job exists. On the prod VM the pull-deploy restarts
+    // the process every time main moves, so this is the COMMON path, not a rare one.
+    //
+    // The SyncLog row records exactly how the last run ended. It used to be read only
+    // for its `source`, while the outcome was INFERRED from two heuristics that both
+    // lied on a failed run:
+    //   1. "lastSyncAt >= lastSyncStartedAt means the run completed" - but lastSyncAt
+    //      is stamped even when a run fails, so every failure read as a completion; and
+    //   2. stats were then SYNTHESISED as { succeeded: totalProfiles, failed: 0 }, i.e.
+    //      the current donor count was reported as "profiles synced by that run".
+    // Together they rendered Eggspecting's 403 login failure (Sep 2 2026) as a green
+    // "Auto-resumed run completed in 27s. 50 profiles synced." banner, while the Run
+    // History table directly below it - which reads SyncLog - correctly said "Failed".
+    // A green banner over a dead scraper is how a broken agency stays invisible for a
+    // week, so: read the outcome, never infer it.
     let lastRunSource: string | null = latestJob?.source || null;
-    if (!lastRunSource) {
+    if (!lastRunStatus) {
       try {
-        const recentLog = await this.prisma.syncLog.findFirst({
-          where: { providerId, type, status: { not: "running" } },
-          orderBy: { startedAt: "desc" },
-          select: { source: true },
-        });
-        lastRunSource = recentLog?.source || null;
+        const [recentLog, lastSuccessLog] = await Promise.all([
+          this.prisma.syncLog.findFirst({
+            where: { providerId, type, status: { not: "running" } },
+            orderBy: { startedAt: "desc" },
+          }),
+          this.prisma.syncLog.findFirst({
+            where: { providerId, type, status: { in: ["completed", "partial"] } },
+            orderBy: { startedAt: "desc" },
+            select: { startedAt: true, completedAt: true },
+          }),
+        ]);
+        if (recentLog) {
+          lastRunStatus = recentLog.status;
+          lastRunSource = lastRunSource || recentLog.source || null;
+          lastSyncErrors = Array.isArray(recentLog.errors) ? (recentLog.errors as string[]) : [];
+          lastSyncStats = {
+            succeeded: recentLog.succeeded,
+            failed: recentLog.failed,
+            total: recentLog.total,
+          };
+          newProfiles = recentLog.newProfiles;
+          staleProfilesMarked = recentLog.staleMarked;
+        }
+        // "Last synced" must track the last run that actually SUCCEEDED. The config's
+        // lastSyncAt is stamped on failure too, so a provider broken for a week still
+        // looked freshly synced and never tripped the overdue banner.
+        lastSyncAt = lastSuccessLog?.completedAt || lastSuccessLog?.startedAt || null;
       } catch {
-        // SyncLog may not exist yet if server hasn't restarted with new schema
+        // SyncLog may not exist yet if the server hasn't restarted with the new schema.
+        // Fall back to the config timestamp, and leave lastRunStatus null so the client
+        // knows the outcome is unverified rather than assuming success.
+        lastSyncAt = syncConfig?.lastSyncAt || null;
       }
     }
 
@@ -505,6 +536,7 @@ export class ScrapersController {
       missingFields,
       lastSyncErrors,
       lastSyncStats,
+      lastRunStatus,
       lastSyncAt,
       staleProfilesMarked,
       newProfiles,

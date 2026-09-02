@@ -30,6 +30,12 @@ export interface SyncReport {
   missingFields: MissingFieldSummary[];
   lastSyncErrors: string[];
   lastSyncStats: { succeeded: number; failed: number; total: number } | null;
+  /**
+   * Terminal status of the last run, straight from SyncLog ("completed" | "partial"
+   * | "failed"). Authoritative - never re-derive the outcome from stats/errors when
+   * this is present. Optional only because an older server build may not send it.
+   */
+  lastRunStatus?: string | null;
   lastSyncAt: string | null;
   staleProfilesMarked: number;
   newProfiles: number;
@@ -252,11 +258,21 @@ export function SyncReportContent({
     }
     const errors = data.lastSyncErrors || [];
     const stats = data.lastSyncStats;
-    if (errors.length > 0 && (!stats || stats.succeeded === 0)) {
+    // SyncLog's terminal status is the truth. The outcome used to be inferred from
+    // errors/stats alone, so a failed run that arrived with no error list and no stats
+    // (the normal shape after a server restart) fell all the way through to the success
+    // branch and rendered green. Check the recorded status FIRST; infer only when the
+    // server could not supply one.
+    const runStatus = data.lastRunStatus || null;
+    const runFailed = runStatus === "failed";
+    const runPartial = runStatus === "partial";
+    const runSucceeded = runStatus === "completed";
+    if (runFailed || (!runStatus && errors.length > 0 && (!stats || stats.succeeded === 0))) {
       const overdueNote = isOverdue && daysSinceSync ? ` Last successful sync was ${daysSinceSync} day(s) ago.` : "";
-      return { type: "failed" as const, text: `Last run failed: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ""}${overdueNote}` };
+      const detail = errors[0] || "no error detail was recorded for this run";
+      return { type: "failed" as const, text: `Last run failed: ${detail}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ""}${overdueNote}` };
     }
-    if (errors.length > 0 || (stats && stats.failed > 0)) {
+    if (runPartial || errors.length > 0 || (stats && stats.failed > 0)) {
       const dur = duration !== "N/A" ? ` in ${duration}` : "";
       const overdueNote = isOverdue && daysSinceSync ? ` Last successful sync was ${daysSinceSync} day(s) ago.` : "";
       return {
@@ -278,19 +294,31 @@ export function SyncReportContent({
     const dur = duration !== "N/A" ? ` in ${duration}` : "";
     const newNote = data.newProfiles > 0 ? ` ${data.newProfiles} new profiles added.` : "";
     const inactiveNote = data.staleProfilesMarked > 0 ? ` ${data.staleProfilesMarked} profiles marked inactive.` : "";
+    // Report what THIS run synced, or say nothing. `data.totalProfiles` is the current
+    // donor count, not a per-run figure - using it as a fallback is how a run that
+    // synced nothing got to claim "50 profiles synced".
+    const syncedNote = stats ? ` ${stats.succeeded} profiles synced.` : "";
+    // A recorded status that is neither "completed" nor absent must never reach the
+    // success wording below.
+    if (runStatus && !runSucceeded) {
+      return {
+        type: "partial" as const,
+        text: `Last run finished with status "${runStatus}"${dur}.${syncedNote}${newNote}${inactiveNote}`,
+      };
+    }
     // If the last run was not a nightly (e.g. auto-resume or manual), call that out clearly
     // so admins don't mistake it for the scheduled 2am nightly completing successfully
     if (data.lastRunSource && data.lastRunSource !== "nightly") {
       const sourceLabel = data.lastRunSource === "auto-resume" ? "Auto-resumed run" : "Manual run";
       return {
         type: "manual" as const,
-        text: `${sourceLabel} completed${dur}. ${stats?.succeeded ?? data.totalProfiles} profiles synced.${newNote}${inactiveNote}`,
+        text: `${sourceLabel} completed${dur}.${syncedNote}${newNote}${inactiveNote}`,
         subtext: "This was not the scheduled 2am nightly sync. The next nightly will run tonight.",
       };
     }
     return {
       type: "success" as const,
-      text: `Last nightly sync completed successfully${dur}. ${stats?.succeeded ?? data.totalProfiles} profiles synced.${newNote}${inactiveNote}`,
+      text: `Last nightly sync completed successfully${dur}.${syncedNote}${newNote}${inactiveNote}`,
     };
   };
 
