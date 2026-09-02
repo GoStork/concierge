@@ -13,6 +13,7 @@
  * Disappears entirely at 100%. No modals - a slim inline bar, per app rules.
  */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,7 @@ import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-o
  * ?focus deep link. Retries while the page is still rendering; the returned
  * cleanup removes the ring when the tour moves on.
  */
-function paintAnchor(anchor: string): () => void {
+function paintAnchor(anchor: string, onFound: (el: HTMLElement | null) => void): () => void {
   let cancelled = false;
   let el: HTMLElement | null = null;
   let tries = 15;
@@ -37,6 +38,7 @@ function paintAnchor(anchor: string): () => void {
       el.style.transition = "box-shadow 0.3s ease";
       el.style.borderRadius = "var(--radius)";
       el.style.boxShadow = "0 0 0 3px hsl(var(--primary))";
+      onFound(el);
     } else if (--tries > 0) {
       setTimeout(attempt, 300);
     }
@@ -45,6 +47,7 @@ function paintAnchor(anchor: string): () => void {
   return () => {
     cancelled = true;
     if (el) el.style.boxShadow = "";
+    onFound(null);
   };
 }
 
@@ -109,19 +112,102 @@ export function OnboardingCoachBar() {
     setSectionIdx(0);
   }, [currentKey, location.pathname]);
   const sections = current?.sections || [];
-  const section = sections.length ? sections[Math.min(sectionIdx, sections.length - 1)] : null;
+  // sectionIdx === sections.length means the tour was finished ("Done" on
+  // the last flag) - ring and flag retire until the step changes.
+  const section = sections.length && sectionIdx < sections.length ? sections[sectionIdx] : null;
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    if (!section) return;
-    return paintAnchor(section.anchor);
+    if (!section) {
+      setAnchorEl(null);
+      return;
+    }
+    return paintAnchor(section.anchor, setAnchorEl);
   }, [currentKey, section?.anchor]);
 
+  // The flag rides the highlighted section: track its viewport rect through
+  // scrolls and resizes (rAF-throttled) so the fixed-position flag stays
+  // pinned to the card, PandaDoc-style.
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!anchorEl) {
+      setAnchorRect(null);
+      return;
+    }
+    let raf = 0;
+    const update = () => setAnchorRect(anchorEl.getBoundingClientRect());
+    update();
+    const onMove = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [anchorEl]);
+
   if (hidden) return null;
+
+  const isLastSection = sectionIdx >= sections.length - 1;
+  // Prefer perching on the card's left edge; on narrow screens sit just
+  // inside it instead of off-screen.
+  const flagOutside = (anchorRect?.left ?? 0) >= 140;
+  const sectionFlag = section && anchorRect && current
+    ? createPortal(
+        <>
+          <style>{`
+            @keyframes onbFlagNudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
+            .onb-section-flag-inner { animation: onbFlagNudge 1.2s ease-in-out infinite; }
+          `}</style>
+          <div
+            className="fixed z-40"
+            style={{
+              top: Math.min(Math.max(anchorRect.top + 10, 76), window.innerHeight - 56),
+              left: flagOutside ? anchorRect.left - 12 : anchorRect.left + 12,
+              transform: flagOutside ? "translateX(-100%)" : "none",
+            }}
+          >
+            <button
+              type="button"
+              className="onb-section-flag-inner flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[hsl(var(--primary))] text-primary-foreground text-sm font-medium shadow-lg hover:brightness-110 transition-all"
+              disabled={markDone.isPending}
+              onClick={() => {
+                if (!isLastSection) {
+                  setSectionIdx((i) => Math.min(sections.length - 1, i + 1));
+                } else if (current.selfMarkable) {
+                  markDone.mutate(current.key);
+                } else {
+                  setSectionIdx(sections.length); // end the tour
+                }
+              }}
+              data-testid="onboarding-section-flag"
+            >
+              {isLastSection ? (
+                <>
+                  {markDone.isPending ? "Saving..." : "Done"}
+                  <Check className="w-4 h-4" />
+                </>
+              ) : (
+                <>
+                  Next
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </>,
+        document.body,
+      )
+    : null;
 
   // ── Celebrate: it just flipped to done right here ──
   if (celebrated && !current) {
     return (
       <div
-        className="sticky top-0 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[hsl(var(--brand-success)/0.08)] flex items-center gap-3"
+        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[hsl(var(--brand-success)/0.08)] flex items-center gap-3"
         data-testid="onboarding-coach-done"
       >
         <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success))] shrink-0" />
@@ -143,7 +229,7 @@ export function OnboardingCoachBar() {
   if (current) {
     return (
       <div
-        className="sticky top-0 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)] flex items-center gap-3"
+        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)] flex items-center gap-3"
         data-testid="onboarding-coach-bar"
       >
         <span className="w-8 h-8 rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] flex items-center justify-center shrink-0">
@@ -172,18 +258,6 @@ export function OnboardingCoachBar() {
                   Back
                 </button>
               )}
-              {sectionIdx < sections.length - 1 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 px-2 text-xs border-[hsl(var(--primary)/0.4)] text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.08)]"
-                  onClick={() => setSectionIdx((i) => Math.min(sections.length - 1, i + 1))}
-                  data-testid="onboarding-coach-next-section"
-                >
-                  Next section
-                  <ArrowRight className="w-3 h-3 ml-1" />
-                </Button>
-              )}
             </div>
           )}
         </div>
@@ -198,6 +272,7 @@ export function OnboardingCoachBar() {
             {markDone.isPending ? "Saving..." : "All good - mark as done"}
           </Button>
         )}
+        {sectionFlag}
       </div>
     );
   }
@@ -206,7 +281,7 @@ export function OnboardingCoachBar() {
   if (!next) return null;
   return (
     <div
-      className="sticky top-0 z-20 -mx-1 mb-4 px-3.5 py-2 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[hsl(var(--primary)/0.03)] flex items-center gap-3"
+      className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[hsl(var(--primary)/0.03)] flex items-center gap-3"
       data-testid="onboarding-coach-mirror"
     >
       <div className="flex-1 min-w-0 flex items-center gap-3">
