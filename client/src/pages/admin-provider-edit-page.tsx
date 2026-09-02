@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { TagListInput, LANGUAGE_SUGGESTIONS } from "@/components/ui/tag-list-input";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1327,12 +1328,12 @@ export default function AdminProviderEditPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="t-form-label-sm">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
-                          <Input
-                            value={(member.specialties || []).join(", ")}
-                            onChange={e => {
+                          <Label className="t-form-label-sm">Specialties <span className="text-muted-foreground">(press comma or Enter to add)</span></Label>
+                          <TagListInput
+                            value={member.specialties || []}
+                            onChange={next => {
                               const updated = [...editTeamMembers];
-                              updated[idx] = { ...updated[idx], specialties: csvToArr(e.target.value) };
+                              updated[idx] = { ...updated[idx], specialties: next };
                               setEditTeamMembers(updated);
                             }}
                             placeholder="e.g. Male Factor Infertility, LGBTQ+ Family Building, PCOS"
@@ -1341,14 +1342,15 @@ export default function AdminProviderEditPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="t-form-label-sm">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
-                          <Input
-                            value={(member.languagesSpoken || []).join(", ")}
-                            onChange={e => {
+                          <Label className="t-form-label-sm">Languages spoken <span className="text-muted-foreground">(type to search, comma or Enter to add)</span></Label>
+                          <TagListInput
+                            value={member.languagesSpoken || []}
+                            onChange={next => {
                               const updated = [...editTeamMembers];
-                              updated[idx] = { ...updated[idx], languagesSpoken: csvToArr(e.target.value) };
+                              updated[idx] = { ...updated[idx], languagesSpoken: next };
                               setEditTeamMembers(updated);
                             }}
+                            suggestions={LANGUAGE_SUGGESTIONS}
                             placeholder="e.g. English, Spanish"
                             className="h-8 text-sm"
                             data-testid={`input-edit-member-languages-${idx}`}
