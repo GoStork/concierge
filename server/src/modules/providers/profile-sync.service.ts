@@ -2805,9 +2805,15 @@ export async function getSyncConfig(
   // callers (runSyncJob -> credentials) get the plaintext login. decryptNullable
   // returns legacy plaintext values unchanged, so pre-encryption rows keep
   // working without a migration. Note: the config GET endpoint whitelists fields
-  // and never returns encryptedPassword to the client, so this never leaks.
-  if (row?.encryptedPassword) {
-    return { ...row, encryptedPassword: decryptNullable(row.encryptedPassword) };
+  // and never returns encrypted values to the client, so this never leaks.
+  // API key/secret get the same treatment for the API sync method.
+  if (row && (row.encryptedPassword || (row as any).encryptedApiKey || (row as any).encryptedApiSecret)) {
+    return {
+      ...row,
+      encryptedPassword: row.encryptedPassword ? decryptNullable(row.encryptedPassword) : row.encryptedPassword,
+      encryptedApiKey: (row as any).encryptedApiKey ? decryptNullable((row as any).encryptedApiKey) : (row as any).encryptedApiKey,
+      encryptedApiSecret: (row as any).encryptedApiSecret ? decryptNullable((row as any).encryptedApiSecret) : (row as any).encryptedApiSecret,
+    };
   }
   return row;
 }
@@ -2816,24 +2822,43 @@ export async function saveSyncConfig(
   prisma: PrismaService,
   providerId: string,
   type: DonorType,
-  data: { databaseUrl: string; username?: string; password?: string },
+  data: {
+    databaseUrl: string;
+    username?: string;
+    password?: string;
+    syncMethod?: string;
+    apiKey?: string;
+    apiSecret?: string;
+  },
 ) {
   const hasNewPassword =
     typeof data.password === "string" && data.password.trim().length > 0;
+  const hasNewApiKey =
+    typeof data.apiKey === "string" && data.apiKey.trim().length > 0;
+  const hasNewApiSecret =
+    typeof data.apiSecret === "string" && data.apiSecret.trim().length > 0;
 
+  const validMethod = data.syncMethod === "SOURCE_URL" || data.syncMethod === "API" ? data.syncMethod : undefined;
   const baseFields = {
     databaseUrl: data.databaseUrl,
     username: data.username || null,
+    ...(validMethod ? { syncMethod: validMethod } : {}),
   };
   const encryptedPassword = hasNewPassword ? encryptNullable(data.password!) : null;
+  const encryptedApiKey = hasNewApiKey ? encryptNullable(data.apiKey!) : null;
+  const encryptedApiSecret = hasNewApiSecret ? encryptNullable(data.apiSecret!) : null;
 
-  // Only touch the password column when a non-empty password is supplied, so
-  // editing the URL/username with a blank password field does NOT wipe the
-  // stored credential (the old behavior silently broke authenticated syncs).
-  const updatePayload = hasNewPassword
-    ? { ...baseFields, encryptedPassword }
-    : baseFields;
-  const createPayload = { providerId, ...baseFields, encryptedPassword };
+  // Only touch a secret column when a non-empty value is supplied, so editing
+  // the URL/username with blank credential fields does NOT wipe the stored
+  // credentials (the old behavior silently broke authenticated syncs). Applies
+  // identically to the password and the API key/secret.
+  const updatePayload = {
+    ...baseFields,
+    ...(hasNewPassword ? { encryptedPassword } : {}),
+    ...(hasNewApiKey ? { encryptedApiKey } : {}),
+    ...(hasNewApiSecret ? { encryptedApiSecret } : {}),
+  };
+  const createPayload = { providerId, ...baseFields, encryptedPassword, encryptedApiKey, encryptedApiSecret };
 
   switch (type) {
     case "egg-donor":
@@ -3065,7 +3090,26 @@ export async function startSync(
     ? { username: config.username, password: config.encryptedPassword }
     : undefined;
 
-  runSyncJob(prisma, job, config.databaseUrl, credentials, profileLimit, storageService || null).catch(async (err) => {
+  // Admin-selected sync method: "API" pulls JSON from the provider's API with
+  // the stored key/secret; anything else runs the Source URL scraper engine.
+  const syncMethod = (config as any).syncMethod === "API" ? "API" : "SOURCE_URL";
+  const runnerPromise = syncMethod === "API"
+    ? runApiSyncJob(
+        prisma,
+        job,
+        config.databaseUrl,
+        {
+          apiKey: ((config as any).encryptedApiKey as string) || "",
+          apiSecret: ((config as any).encryptedApiSecret as string) || "",
+          username: config.username || undefined,
+          password: (config.encryptedPassword as string) || undefined,
+        },
+        profileLimit,
+        storageService || null,
+      )
+    : runSyncJob(prisma, job, config.databaseUrl, credentials, profileLimit, storageService || null);
+
+  runnerPromise.catch(async (err) => {
     // A rejection here means runSyncJob threw OUTSIDE its own try/catch (e.g. an
     // EAUTHTIMEOUT propagating before the try), so neither its config write nor
     // its SyncLog finalize ran. Without persisting terminal state the config
@@ -5050,6 +5094,445 @@ async function finalizeSyncLog(prisma: PrismaService, job: SyncJob): Promise<voi
     job.finalized = true;
   } catch (err: any) {
     console.error(`[donor-sync] Failed to update SyncLog ${job.syncLogId}: ${err.message}`);
+  }
+}
+
+// ─── API sync method ────────────────────────────────────────────────────────
+// Generic JSON API client for providers that hand us an API key/secret instead
+// of a scrapeable site. There is no single industry standard for how these
+// platforms authenticate, so we try the common conventions in order and stick
+// with the first one the endpoint accepts. Everything downstream (upserts,
+// stale marking, SyncLog) reuses the exact same pipeline as the scraper.
+
+interface ApiSyncCredentials {
+  apiKey: string;
+  apiSecret: string;
+  username?: string;
+  password?: string;
+}
+
+type ApiAuthStrategy = { name: string; headers: Record<string, string>; query?: Record<string, string> };
+
+function buildApiAuthStrategies(creds: ApiSyncCredentials): ApiAuthStrategy[] {
+  const strategies: ApiAuthStrategy[] = [];
+  if (creds.apiKey) {
+    const secretHeader: Record<string, string> = creds.apiSecret ? { "X-API-Secret": creds.apiSecret, "X-Api-Secret": creds.apiSecret } : {};
+    strategies.push({ name: "bearer", headers: { Authorization: `Bearer ${creds.apiKey}`, ...secretHeader } });
+    strategies.push({ name: "x-api-key", headers: { "X-API-Key": creds.apiKey, "X-Api-Key": creds.apiKey, ...secretHeader } });
+    if (creds.apiSecret) {
+      strategies.push({
+        name: "basic key:secret",
+        headers: { Authorization: `Basic ${Buffer.from(`${creds.apiKey}:${creds.apiSecret}`).toString("base64")}` },
+      });
+    }
+    strategies.push({ name: "query api_key", headers: {}, query: creds.apiSecret ? { api_key: creds.apiKey, api_secret: creds.apiSecret } : { api_key: creds.apiKey } });
+  }
+  if (creds.username && creds.password) {
+    strategies.push({
+      name: "basic username:password",
+      headers: { Authorization: `Basic ${Buffer.from(`${creds.username}:${creds.password}`).toString("base64")}` },
+    });
+  }
+  return strategies;
+}
+
+async function fetchApiPage(
+  url: string,
+  strategy: ApiAuthStrategy,
+  timeoutMs = 30000,
+): Promise<{ status: number; body: any | null; rawSnippet: string }> {
+  const target = new URL(url);
+  if (strategy.query) {
+    for (const [k, v] of Object.entries(strategy.query)) target.searchParams.set(k, v);
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(target.href, {
+      headers: { Accept: "application/json", "User-Agent": DEFAULT_HEADERS["User-Agent"], ...strategy.headers },
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let body: any | null = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
+    return { status: res.status, body, rawSnippet: text.slice(0, 200) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Pull the array of profile records out of an arbitrary JSON API response body. */
+function extractApiRecords(body: any): any[] | null {
+  if (Array.isArray(body)) return body;
+  if (!body || typeof body !== "object") return null;
+  const WRAPPER_KEYS = ["data", "results", "items", "records", "profiles", "donors", "surrogates", "list", "rows"];
+  for (const key of WRAPPER_KEYS) {
+    const val = body[key];
+    if (Array.isArray(val)) return val;
+    // One level of nesting is common ({ data: { items: [...] } })
+    if (val && typeof val === "object") {
+      for (const inner of WRAPPER_KEYS) {
+        if (Array.isArray(val[inner])) return val[inner];
+      }
+    }
+  }
+  return null;
+}
+
+/** Follow standard pagination conventions; returns the absolute next-page URL or null. */
+function extractApiNextPage(body: any, currentUrl: string): string | null {
+  if (!body || typeof body !== "object") return null;
+  const candidates = [
+    body.next,
+    body.next_page_url,
+    body.nextPageUrl,
+    body.links?.next,
+    body.meta?.next,
+    body.pagination?.next,
+    body.paging?.next,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length > 0) {
+      try {
+        return new URL(c, currentUrl).href;
+      } catch {
+        /* malformed next link - try the next candidate */
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeApiKeyName(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function titleizeApiKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function looksLikeImageValue(val: any): boolean {
+  return typeof val === "string" && /^https?:\/\//.test(val) && (isValidImageUrl(val) || /photo|image|picture|avatar/i.test(val));
+}
+
+function collectApiPhotos(record: Record<string, any>): string[] {
+  const photos: string[] = [];
+  for (const [key, val] of Object.entries(record)) {
+    const nk = normalizeApiKeyName(key);
+    const isPhotoKey = /photo|image|picture|avatar|gallery|headshot/.test(nk);
+    if (Array.isArray(val)) {
+      for (const entry of val) {
+        if (typeof entry === "string" && (isPhotoKey || looksLikeImageValue(entry)) && /^https?:\/\//.test(entry)) photos.push(entry);
+        else if (entry && typeof entry === "object") {
+          const u = entry.url || entry.src || entry.href;
+          if (typeof u === "string" && /^https?:\/\//.test(u) && (isPhotoKey || looksLikeImageValue(u))) photos.push(u);
+        }
+      }
+    } else if (typeof val === "string" && isPhotoKey && /^https?:\/\//.test(val)) {
+      photos.push(val);
+    }
+  }
+  return Array.from(new Set(photos));
+}
+
+/**
+ * Deterministically map one API record onto the shape upsertEggDonor /
+ * upsertSurrogate / upsertSpermDonor expect. No AI in this path: API payloads
+ * are already structured, so key-name matching is exact enough, and the full
+ * record is preserved verbatim in profileData for the profile page.
+ */
+function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Record<string, any> {
+  const byKey: Record<string, any> = {};
+  for (const [key, val] of Object.entries(record)) byKey[normalizeApiKeyName(key)] = val;
+  const pick = (...names: string[]): any => {
+    for (const n of names) {
+      const v = byKey[n];
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+    return undefined;
+  };
+  const num = (v: any): number | undefined => {
+    if (v === undefined) return undefined;
+    const n = parseFloat(String(v).replace(/[$,\s]/g, ""));
+    return isNaN(n) ? undefined : n;
+  };
+  const bool = (v: any): boolean | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v === "boolean") return v;
+    const s = String(v).toLowerCase();
+    if (["yes", "true", "1", "y"].includes(s)) return true;
+    if (["no", "false", "0", "n"].includes(s)) return false;
+    return undefined;
+  };
+
+  const externalIdRaw = pick("externalid", "donorid", "surrogateid", "id", "uuid", "slug", "donornumber", "profileid");
+  const item: Record<string, any> = {
+    externalId: externalIdRaw !== undefined ? String(externalIdRaw) : undefined,
+    firstName: pick("firstname", "first", "givenname"),
+    lastName: pick("lastname", "last", "surname", "familyname"),
+    age: num(pick("age")),
+    race: pick("race"),
+    ethnicity: pick("ethnicity", "ethnicbackground"),
+    religion: pick("religion"),
+    education: pick("education", "educationlevel", "highesteducation"),
+    occupation: pick("occupation", "job", "profession"),
+    relationshipStatus: pick("relationshipstatus", "maritalstatus"),
+    location: pick("location") || [pick("city"), pick("state") || pick("region")].filter(Boolean).join(", ") || undefined,
+    profileUrl: pick("profileurl", "url", "link", "permalink"),
+    videoUrl: pick("videourl", "video"),
+  };
+
+  if (type === "egg-donor" || type === "sperm-donor") {
+    item.height = pick("height");
+    item.weight = pick("weight");
+    item.eyeColor = pick("eyecolor", "eyecolour", "eyes");
+    item.hairColor = pick("haircolor", "haircolour", "hair");
+    item.donorType = pick("donortype", "type");
+  }
+  if (type === "egg-donor") {
+    item.donorCompensation = num(pick("donorcompensation", "compensation", "fee"));
+    item.bloodType = pick("bloodtype");
+    item.donationTypes = pick("donationtypes", "donationtype");
+  } else if (type === "sperm-donor") {
+    item.compensation = num(pick("compensation", "fee"));
+  } else {
+    item.bmi = num(pick("bmi"));
+    item.height = pick("height");
+    item.weight = pick("weight");
+    item.baseCompensation = num(pick("basecompensation", "compensation", "fee"));
+    item.liveBirths = num(pick("livebirths", "births", "deliveries"));
+    item.miscarriages = num(pick("miscarriages"));
+    item.cSections = num(pick("csections", "cesareans"));
+    item.abortions = num(pick("abortions"));
+    item.agreesToAbortion = bool(pick("agreestoabortion", "abortionok", "willterminate"));
+    item.agreesToTwins = bool(pick("agreestotwins", "twinsok"));
+    item.covidVaccinated = bool(pick("covidvaccinated", "vaccinated"));
+    item.openToSameSexCouple = bool(pick("opentosamesexcouple", "samesexok", "lgbtfriendly"));
+    item.agreesToInternationalParents = bool(pick("agreestointernationalparents", "internationalok"));
+    const ldy = num(pick("lastdeliveryyear"));
+    if (ldy && ldy > 1900) item.lastDeliveryYear = ldy;
+  }
+
+  const statusRaw = pick("status", "availability", "available");
+  if (statusRaw !== undefined) item.status = normalizeDonorStatus(String(statusRaw));
+
+  const photos = collectApiPhotos(record);
+  if (photos.length > 0) {
+    item.photoUrl = photos[0];
+    item.photos = photos;
+    item.photoCount = photos.length;
+    if (photos.length > 1) item.additionalPhotos = photos.slice(1);
+  }
+
+  // Preserve the complete record on the profile page. Scalars become labeled
+  // fields; nested objects/arrays are kept as-is under their titleized key.
+  const profileData: Record<string, any> = {};
+  for (const [key, val] of Object.entries(record)) {
+    if (val === null || val === undefined || val === "") continue;
+    profileData[titleizeApiKey(key)] = val;
+  }
+  if (photos.length > 0) profileData["All Photos"] = photos;
+  item.profileData = profileData;
+
+  // Strip undefineds so upserts don't overwrite existing values with nulls
+  for (const k of Object.keys(item)) {
+    if (item[k] === undefined) delete item[k];
+  }
+  return item;
+}
+
+async function runApiSyncJob(
+  prisma: PrismaService,
+  job: SyncJob,
+  apiUrl: string,
+  creds: ApiSyncCredentials,
+  profileLimit?: number,
+  storageService?: StorageService | null,
+): Promise<void> {
+  try {
+    console.log(`[donor-sync] Starting ${job.type} API sync for provider ${job.providerId} from ${apiUrl}`);
+    job.currentStep = "Connecting to the provider API...";
+
+    const strategies = buildApiAuthStrategies(creds);
+    if (strategies.length === 0) {
+      throw new Error("API sync method is selected but no API key was saved. Add the provider's API key (and secret, if any) in the sync configuration.");
+    }
+
+    // Find the auth convention this API accepts, then keep using it for every page.
+    let workingStrategy: ApiAuthStrategy | null = null;
+    let firstBody: any | null = null;
+    const attemptErrors: string[] = [];
+    for (const strategy of strategies) {
+      try {
+        const { status, body, rawSnippet } = await fetchApiPage(apiUrl, strategy);
+        if (status >= 200 && status < 300 && body !== null) {
+          workingStrategy = strategy;
+          firstBody = body;
+          console.log(`[donor-sync] API auth accepted via "${strategy.name}"`);
+          break;
+        }
+        attemptErrors.push(`[${strategy.name}] HTTP ${status}${body === null ? ` (non-JSON response: ${rawSnippet.replace(/\s+/g, " ")})` : ""}`);
+      } catch (err: any) {
+        attemptErrors.push(`[${strategy.name}] ${err.message}`);
+      }
+    }
+    if (!workingStrategy || firstBody === null) {
+      throw new Error(`Could not authenticate against the provider API. Attempts: ${attemptErrors.join(" | ")}`);
+    }
+
+    // Collect records across pages (standard next-link or nothing).
+    job.currentStep = "Fetching profiles from the API...";
+    const records: any[] = [];
+    let body: any = firstBody;
+    let pageUrl: string = apiUrl;
+    const MAX_PAGES = 100;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const pageRecords = extractApiRecords(body);
+      if (pageRecords === null) {
+        if (page === 0) {
+          throw new Error(
+            `The API responded but no profile array was found in the JSON. Top-level keys: ${Object.keys(body || {}).slice(0, 10).join(", ") || "(none)"}. The endpoint must return an array of profiles (directly or under data/results/items/records/profiles).`,
+          );
+        }
+        break;
+      }
+      records.push(...pageRecords);
+      if (profileLimit && records.length >= profileLimit) break;
+      if (pageRecords.length === 0) break;
+      const nextUrl = extractApiNextPage(body, pageUrl);
+      if (!nextUrl || nextUrl === pageUrl) break;
+      if (isJobCancelled(job.id)) break;
+      const { status, body: nextBody } = await fetchApiPage(nextUrl, workingStrategy);
+      if (status < 200 || status >= 300 || nextBody === null) {
+        job.errors.push(`Pagination stopped at page ${page + 2}: HTTP ${status}`);
+        break;
+      }
+      body = nextBody;
+      pageUrl = nextUrl;
+      job.currentStep = `Fetching profiles from the API... (${records.length} so far)`;
+    }
+
+    const limited = profileLimit ? records.slice(0, profileLimit) : records;
+    console.log(`[donor-sync] API returned ${records.length} records${profileLimit ? ` (importing ${limited.length})` : ""}`);
+    if (limited.length === 0) {
+      throw new Error("The provider API returned zero profiles. Check that the endpoint URL points at the profile list and the credentials have access.");
+    }
+
+    const items = limited
+      .filter((r) => r && typeof r === "object")
+      .map((r) => mapApiRecordToItem(r, job.type));
+
+    // De-dupe by externalId (an API page overlap must not double-import)
+    const seen = new Set<string>();
+    const uniqueItems = items.filter((it) => {
+      if (!it.externalId) return true;
+      if (seen.has(it.externalId)) return false;
+      seen.add(it.externalId);
+      return true;
+    });
+
+    job.total = uniqueItems.length;
+    job.currentStep = `Importing ${uniqueItems.length} profiles...`;
+
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
+      if (isJobCancelled(job.id)) {
+        job.status = "failed";
+        job.errors.push("Sync cancelled by user");
+        job.completedAt = new Date();
+        break;
+      }
+      const batch = uniqueItems.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (item) => {
+          try {
+            const result =
+              job.type === "surrogate"
+                ? await upsertSurrogate(prisma, job.providerId, item, storageService)
+                : job.type === "sperm-donor"
+                  ? await upsertSpermDonor(prisma, job.providerId, item, storageService)
+                  : await upsertEggDonor(prisma, job.providerId, item, storageService);
+            job.succeeded++;
+            if (result.isNew) job.newProfiles++;
+          } catch (err: any) {
+            job.failed++;
+            job.errors.push(`Failed to import ${item.externalId || "unknown"}: ${err.message}`);
+          }
+          job.processed++;
+        }),
+      );
+      persistJobProgress(prisma, job);
+    }
+
+    if (!isJobCancelled(job.id)) {
+      try {
+        const importedIds = new Set(uniqueItems.map((d: any) => d.externalId).filter(Boolean));
+        job.staleProfilesMarked = await markStaleProfiles(prisma, job.providerId, job.type, importedIds);
+      } catch (e: any) {
+        job.errors.push(`Stale profile detection error: ${e.message}`);
+      }
+      job.status = job.failed === 0 ? "completed" : "partial";
+      job.completedAt = new Date();
+    }
+    cancelledJobs.delete(job.id);
+
+    const syncConfigUpdate = {
+      lastSyncAt: new Date(),
+      lastSyncEndedAt: new Date(),
+      syncStatus: job.status === "completed" ? "SUCCESS" : job.succeeded > 0 ? "PARTIAL" : "FAILED",
+    };
+    switch (job.type) {
+      case "egg-donor":
+        await prisma.eggDonorSyncConfig.update({ where: { providerId: job.providerId }, data: syncConfigUpdate });
+        break;
+      case "surrogate":
+        await prisma.surrogateSyncConfig.update({ where: { providerId: job.providerId }, data: syncConfigUpdate });
+        break;
+      case "sperm-donor":
+        await prisma.spermDonorSyncConfig.update({ where: { providerId: job.providerId }, data: syncConfigUpdate });
+        break;
+    }
+
+    await recalcAndPersistTotalCostsForProvider(prisma, job.providerId, [job.type]).catch((e: any) => {
+      job.errors.push(`Total cost recalc error: ${e.message}`);
+    });
+    console.log(`[donor-sync] API sync ${job.status}: ${job.succeeded} succeeded, ${job.failed} failed, ${job.newProfiles} new`);
+  } catch (err: any) {
+    const savedSomething = job.succeeded > 0;
+    if (!isJobCancelled(job.id)) {
+      job.status = savedSomething ? "partial" : "failed";
+      job.errors.push(`Fatal error: ${err.message}`);
+      job.completedAt = new Date();
+    }
+    cancelledJobs.delete(job.id);
+    console.error(`[donor-sync] API sync ${savedSomething ? "partial" : "failed"}:`, err);
+    try {
+      const failUpdate = { lastSyncAt: new Date(), lastSyncEndedAt: new Date(), syncStatus: savedSomething ? "PARTIAL" : "FAILED" };
+      switch (job.type) {
+        case "egg-donor":
+          await prisma.eggDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+        case "surrogate":
+          await prisma.surrogateSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+        case "sperm-donor":
+          await prisma.spermDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+      }
+    } catch (dbErr: any) {
+      console.error(`[donor-sync] Failed to update sync config after API sync error: ${dbErr.message}`);
+    }
+    await finalizeSyncLog(prisma, job);
+  } finally {
+    await finalizeSyncLog(prisma, job);
   }
 }
 

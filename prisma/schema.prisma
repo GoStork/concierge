@@ -1189,17 +1189,22 @@ model EggDonor {
 }
 
 model EggDonorSyncConfig {
-  id                String    @id @default(uuid())
-  providerId        String    @unique
-  databaseUrl       String
-  username          String?
-  encryptedPassword String?
-  lastSyncAt        DateTime?
-  syncStatus        String    @default("PENDING")
-  syncFrequency     String    @default("manual")
-  lastSyncEndedAt   DateTime?
-  lastSyncStartedAt DateTime?
-  provider          Provider  @relation(fields: [providerId], references: [id])
+  id                 String    @id @default(uuid())
+  providerId         String    @unique
+  databaseUrl        String
+  username           String?
+  encryptedPassword  String?
+  // How profiles are pulled: "SOURCE_URL" (scrape the provider's site) or
+  // "API" (fetch JSON from the provider's API using the key/secret below).
+  syncMethod         String    @default("SOURCE_URL")
+  encryptedApiKey    String?
+  encryptedApiSecret String?
+  lastSyncAt         DateTime?
+  syncStatus         String    @default("PENDING")
+  syncFrequency      String    @default("manual")
+  lastSyncEndedAt    DateTime?
+  lastSyncStartedAt  DateTime?
+  provider           Provider  @relation(fields: [providerId], references: [id])
 }
 
 model Surrogate {
@@ -1282,17 +1287,21 @@ model Surrogate {
 }
 
 model SurrogateSyncConfig {
-  id                String    @id @default(uuid())
-  providerId        String    @unique
-  databaseUrl       String
-  username          String?
-  encryptedPassword String?
-  lastSyncAt        DateTime?
-  syncStatus        String    @default("PENDING")
-  syncFrequency     String    @default("manual")
-  lastSyncEndedAt   DateTime?
-  lastSyncStartedAt DateTime?
-  provider          Provider  @relation(fields: [providerId], references: [id])
+  id                 String    @id @default(uuid())
+  providerId         String    @unique
+  databaseUrl        String
+  username           String?
+  encryptedPassword  String?
+  // "SOURCE_URL" or "API" - see EggDonorSyncConfig.syncMethod.
+  syncMethod         String    @default("SOURCE_URL")
+  encryptedApiKey    String?
+  encryptedApiSecret String?
+  lastSyncAt         DateTime?
+  syncStatus         String    @default("PENDING")
+  syncFrequency      String    @default("manual")
+  lastSyncEndedAt    DateTime?
+  lastSyncStartedAt  DateTime?
+  provider           Provider  @relation(fields: [providerId], references: [id])
 }
 
 model SpermDonor {
@@ -1356,18 +1365,22 @@ model SpermDonor {
 }
 
 model SpermDonorSyncConfig {
-  id                String    @id @default(uuid())
-  providerId        String    @unique
-  databaseUrl       String
-  username          String?
-  encryptedPassword String?
-  lastSyncAt        DateTime?
-  syncStatus        String    @default("PENDING")
-  syncFrequency     String    @default("manual")
-  lastSyncEndedAt   DateTime?
-  lastSyncStartedAt DateTime?
-  defaultVialTypes  String[]  @default([])
-  provider          Provider  @relation(fields: [providerId], references: [id])
+  id                 String    @id @default(uuid())
+  providerId         String    @unique
+  databaseUrl        String
+  username           String?
+  encryptedPassword  String?
+  // "SOURCE_URL" or "API" - see EggDonorSyncConfig.syncMethod.
+  syncMethod         String    @default("SOURCE_URL")
+  encryptedApiKey    String?
+  encryptedApiSecret String?
+  lastSyncAt         DateTime?
+  syncStatus         String    @default("PENDING")
+  syncFrequency      String    @default("manual")
+  lastSyncEndedAt    DateTime?
+  lastSyncStartedAt  DateTime?
+  defaultVialTypes   String[]  @default([])
+  provider           Provider  @relation(fields: [providerId], references: [id])
 }
 
 model SyncLog {

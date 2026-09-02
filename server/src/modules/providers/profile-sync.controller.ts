@@ -109,6 +109,10 @@ export class ProfileSyncController {
       providerId: config.providerId,
       databaseUrl: config.databaseUrl,
       username: config.username,
+      syncMethod: (config as any).syncMethod || "SOURCE_URL",
+      // Presence flags only - the key/secret themselves never leave the server.
+      hasApiKey: !!(config as any).encryptedApiKey,
+      hasApiSecret: !!(config as any).encryptedApiSecret,
       lastSyncAt: config.lastSyncAt,
       syncStatus: config.syncStatus,
       syncFrequency: config.syncFrequency,
@@ -120,11 +124,21 @@ export class ProfileSyncController {
   async saveConfig(
     @Param("providerId") providerId: string,
     @Param("type") type: string,
-    @Body() body: { databaseUrl: string; username?: string; password?: string },
+    @Body() body: {
+      databaseUrl: string;
+      username?: string;
+      password?: string;
+      syncMethod?: string;
+      apiKey?: string;
+      apiSecret?: string;
+    },
   ) {
     const validType = validateType(type);
     if (!body.databaseUrl) {
       throw new BadRequestException("databaseUrl is required");
+    }
+    if (body.syncMethod && body.syncMethod !== "SOURCE_URL" && body.syncMethod !== "API") {
+      throw new BadRequestException('syncMethod must be "SOURCE_URL" or "API"');
     }
     const config = await saveSyncConfig(
       this.prisma,
@@ -137,6 +151,9 @@ export class ProfileSyncController {
       providerId: config.providerId,
       databaseUrl: config.databaseUrl,
       username: config.username,
+      syncMethod: (config as any).syncMethod || "SOURCE_URL",
+      hasApiKey: !!(config as any).encryptedApiKey,
+      hasApiSecret: !!(config as any).encryptedApiSecret,
       lastSyncAt: config.lastSyncAt,
       syncStatus: config.syncStatus,
     };

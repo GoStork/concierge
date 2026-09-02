@@ -17,6 +17,10 @@ re-discovering the same problems on every new agency.
 
 ## Adding a new agency - the 60-second checklist
 
+0. **Sync Method** - if the provider hands us an **API key/secret** instead of a
+   scrapeable portal, pick **Provider API** in the Sync Configuration and skip
+   the scraper entirely (see "API sync method" at the bottom). Default is
+   **Source URL** (scrape).
 1. **Source URL** = the page that lists donors/surrogates **after login** (or the
    login page itself). For WordPress sites this is the **donor-list page, NOT
    `wp-login.php`** (see Login below).
@@ -454,3 +458,41 @@ To inspect real markup before changing any parser:
 `npx tsx -r dotenv/config scripts/dump-donor-profile-html.ts <externalId> /tmp/p.html`
 It reuses the sync engine's own login + fetch, so it authenticates exactly the
 way a real sync does.
+
+---
+
+## API sync method (Sync Method = "Provider API")
+
+Some providers offer an API with a key/secret instead of a scrapeable portal.
+The admin selects **Provider API** in the Sync Configuration (per provider, per
+type - egg-donor / surrogate / sperm-donor) and enters the **API Endpoint URL**
+plus the **API Key** and optional **API Secret** (both stored AES-256-GCM
+encrypted in the `*SyncConfig` row, same as the scraper password). Username and
+password stay available for APIs that also need a login (used as Basic auth).
+
+Implementation: `runApiSyncJob` in `profile-sync.service.ts`. No AI in this
+path - API payloads are already structured JSON.
+
+- **Auth conventions are auto-detected**, tried in order until one returns 2xx
+  JSON: `Authorization: Bearer <key>` (+ `X-API-Secret`), `X-API-Key`/`X-API-Secret`
+  headers, `Basic key:secret`, `?api_key=&api_secret=` query params, then
+  `Basic username:password`. The first accepted strategy is reused for every page.
+- **The endpoint must return the profile list as JSON**: a top-level array, or
+  under `data` / `results` / `items` / `records` / `profiles` / `donors` /
+  `surrogates` / `list` / `rows` (one level of nesting tolerated).
+- **Pagination** follows standard next-link conventions (`next`,
+  `next_page_url`, `links.next`, `meta.next`, `pagination.next`, `paging.next`),
+  capped at 100 pages.
+- **Field mapping is deterministic** (`mapApiRecordToItem`): well-known key names
+  (case/underscore-insensitive) map onto the DB columns; the FULL record is
+  preserved in `profileData` with titleized keys; photo URLs are collected from
+  photo/image/gallery-ish keys and persisted to GCS by the same upsert path the
+  scraper uses. Status goes through `normalizeDonorStatus`.
+- Everything downstream is shared with the scraper: upserts, manual-edit
+  protection, ASRM gate, stale marking, SyncLog, nightly sync, total-cost recalc.
+- Failures are loud: zero profiles, non-JSON responses, or all-auth-rejected
+  abort the run with the per-strategy HTTP codes in `SyncLog.errors`.
+
+When an API doesn't fit these conventions, extend `runApiSyncJob` (auth
+strategy, wrapper key, pagination) in the shared engine - never fork a
+per-provider client.

@@ -32,7 +32,15 @@ import {
   X,
   Sparkles,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-bar";
 import { useAuth } from "@/hooks/use-auth";
@@ -169,6 +177,13 @@ export default function ProfileDatabasePanel({
   const [configUsername, setConfigUsername] = useState("");
   const [configPassword, setConfigPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // Admin-selected sync method: scrape the provider's site (SOURCE_URL) or
+  // pull JSON from the provider's API with a key/secret they hand us (API).
+  const [configSyncMethod, setConfigSyncMethod] = useState<"SOURCE_URL" | "API">("SOURCE_URL");
+  const [configApiKey, setConfigApiKey] = useState("");
+  const [configApiSecret, setConfigApiSecret] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showApiSecret, setShowApiSecret] = useState(false);
   // First-time setup gate: require the admin to acknowledge the scraper playbook
   // before the FIRST sync of a brand-new config (one that has never synced).
   const [setupAck, setSetupAck] = useState(false);
@@ -231,6 +246,7 @@ export default function ProfileDatabasePanel({
     if (configQuery.data) {
       setConfigUrl(configQuery.data.databaseUrl || "");
       setConfigUsername(configQuery.data.username || "");
+      setConfigSyncMethod(configQuery.data.syncMethod === "API" ? "API" : "SOURCE_URL");
     }
   }, [configQuery.data]);
 
@@ -295,16 +311,21 @@ export default function ProfileDatabasePanel({
     };
   }, [providerId, type]);
 
+  const buildConfigPayload = () => ({
+    databaseUrl: configUrl,
+    username: configUsername || undefined,
+    password: configPassword || undefined,
+    syncMethod: configSyncMethod,
+    apiKey: configApiKey || undefined,
+    apiSecret: configApiSecret || undefined,
+  });
+
   const saveConfigMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest(
         "PUT",
         `/api/providers/${providerId}/sync-config/${type}`,
-        {
-          databaseUrl: configUrl,
-          username: configUsername || undefined,
-          password: configPassword || undefined,
-        },
+        buildConfigPayload(),
       );
       return res.json();
     },
@@ -331,11 +352,7 @@ export default function ProfileDatabasePanel({
         await apiRequest(
           "PUT",
           `/api/providers/${providerId}/sync-config/${type}`,
-          {
-            databaseUrl: configUrl,
-            username: configUsername || undefined,
-            password: configPassword || undefined,
-          },
+          buildConfigPayload(),
         );
         queryClient.invalidateQueries({
           queryKey: [`/api/providers/${providerId}/sync-config/${type}`],
@@ -611,6 +628,11 @@ export default function ProfileDatabasePanel({
     ? new Date(configQuery.data.lastSyncAt)
     : null;
   const hasConfig = !!configQuery.data;
+  // The scraper-playbook acknowledgment gate is scraper-specific - an API pull
+  // has no login page, captcha, or list-page pitfalls, so it skips the gate but
+  // instead requires an API key (typed now or already saved) before starting.
+  const setupGateBlocks = configSyncMethod === "SOURCE_URL" && !configQuery.data?.lastSyncAt && !setupAck;
+  const apiKeyMissing = configSyncMethod === "API" && !configApiKey && !configQuery.data?.hasApiKey;
 
   return (
     <div className="space-y-6" data-testid={`donor-panel-${type}`}>
@@ -698,20 +720,98 @@ export default function ProfileDatabasePanel({
           Sync Configuration
           {!isAdmin && <span className="t-helper ml-1">(managed by GoStork)</span>}
         </h4>
+        <div className="max-w-xs">
+          <Label htmlFor={`method-${type}`} className="t-form-label-sm">
+            Sync Method
+          </Label>
+          <Select
+            value={configSyncMethod}
+            onValueChange={(v) => setConfigSyncMethod(v === "API" ? "API" : "SOURCE_URL")}
+            disabled={!isAdmin || isRunning}
+          >
+            <SelectTrigger id={`method-${type}`} data-testid={`select-sync-method-${type}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="SOURCE_URL">Source URL (scrape the provider's site)</SelectItem>
+              <SelectItem value="API">Provider API (API Key + Secret)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <Label htmlFor={`url-${type}`} className="t-form-label-sm">
-              Source URL
+              {configSyncMethod === "API" ? "API Endpoint URL" : "Source URL"}
             </Label>
             <Input
               id={`url-${type}`}
               data-testid={`input-sync-url-${type}`}
-              placeholder="https://provider.com/donors"
+              placeholder={configSyncMethod === "API" ? "https://api.provider.com/v1/donors" : "https://provider.com/donors"}
               value={configUrl}
               onChange={(e) => setConfigUrl(e.target.value)}
               disabled={!isAdmin || isRunning}
             />
           </div>
+          {configSyncMethod === "API" && (
+            <>
+              <div>
+                <Label htmlFor={`api-key-${type}`} className="t-form-label-sm">
+                  API Key
+                </Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id={`api-key-${type}`}
+                    data-testid={`input-sync-api-key-${type}`}
+                    type={showApiKey ? "text" : "password"}
+                    placeholder={configQuery.data?.hasApiKey ? "•••••••• (saved)" : "provider API key"}
+                    value={configApiKey}
+                    onChange={(e) => setConfigApiKey(e.target.value)}
+                    className="pl-8 pr-8"
+                    disabled={!isAdmin || isRunning}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    data-testid={`toggle-api-key-${type}`}
+                    disabled={!isAdmin}
+                  >
+                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor={`api-secret-${type}`} className="t-form-label-sm">
+                  API Secret (optional)
+                </Label>
+                <div className="relative">
+                  <Lock className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id={`api-secret-${type}`}
+                    data-testid={`input-sync-api-secret-${type}`}
+                    type={showApiSecret ? "text" : "password"}
+                    placeholder={configQuery.data?.hasApiSecret ? "•••••••• (saved)" : "provider API secret"}
+                    value={configApiSecret}
+                    onChange={(e) => setConfigApiSecret(e.target.value)}
+                    className="pl-8 pr-8"
+                    disabled={!isAdmin || isRunning}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowApiSecret(!showApiSecret)}
+                    data-testid={`toggle-api-secret-${type}`}
+                    disabled={!isAdmin}
+                  >
+                    {showApiSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
           <div>
             <Label htmlFor={`user-${type}`} className="t-form-label-sm">
               Username (optional)
@@ -767,7 +867,14 @@ export default function ProfileDatabasePanel({
             </div>
           </div>
         </div>
-        {isAdmin && !configQuery.data?.lastSyncAt && (
+        {isAdmin && configSyncMethod === "API" && (
+          <p className="t-helper" data-testid={`api-method-note-${type}`}>
+            GoStork calls the provider's API directly with the key/secret above (standard auth conventions are auto-detected).
+            The endpoint must return the {label.toLowerCase()} profiles as JSON. Username/password are only needed if the API also
+            requires a login.
+          </p>
+        )}
+        {isAdmin && configSyncMethod === "SOURCE_URL" && !configQuery.data?.lastSyncAt && (
           <div className="rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] bg-[hsl(var(--brand-warning)/0.08)] p-3 space-y-2" data-testid="scraper-setup-gate">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[hsl(var(--brand-warning))]" />
@@ -822,7 +929,7 @@ export default function ProfileDatabasePanel({
                 size="sm"
                 onClick={() => startSyncMutation.mutate(undefined)}
                 disabled={
-                  !configUrl || startSyncMutation.isPending || isSyncRunning || (!configQuery.data?.lastSyncAt && !setupAck)
+                  !configUrl || startSyncMutation.isPending || isSyncRunning || setupGateBlocks || apiKeyMissing
                 }
                 data-testid={`btn-start-sync-${type}`}
               >
@@ -839,7 +946,7 @@ export default function ProfileDatabasePanel({
                   variant="outline"
                   onClick={() => startSyncMutation.mutate(10)}
                   disabled={
-                    !configUrl || startSyncMutation.isPending || isSyncRunning || (!configQuery.data?.lastSyncAt && !setupAck)
+                    !configUrl || startSyncMutation.isPending || isSyncRunning || setupGateBlocks || apiKeyMissing
                   }
                   data-testid={`btn-sync-10-${type}`}
                 >
