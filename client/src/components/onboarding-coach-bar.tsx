@@ -116,7 +116,49 @@ export function OnboardingCoachBar() {
   useEffect(() => {
     setSectionIdx(0);
   }, [currentKey, location.pathname]);
-  const sections = current?.sections || [];
+  // The tour walks EVERY section actually rendered on the page, not just the
+  // server-declared list: all visible [data-onb-anchor] elements in document
+  // order, labeled from the declared sections when they match (else the
+  // section's own heading). Declared anchors that resolve via element id or
+  // testid (e.g. the Automation page) are appended in declared order. This
+  // makes tours complete by construction - a page section can only be
+  // skipped if its wrapper carries no anchor at all.
+  const [discovered, setDiscovered] = useState<{ anchor: string; label: string }[]>([]);
+  const declaredSections = current?.sections;
+  useEffect(() => {
+    if (!current) {
+      setDiscovered([]);
+      return;
+    }
+    let cancelled = false;
+    let tries = 15;
+    const attempt = () => {
+      if (cancelled) return;
+      const declared = declaredSections || [];
+      const list: { anchor: string; label: string }[] = [];
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-onb-anchor]"))) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue; // not rendered
+        const a = el.getAttribute("data-onb-anchor")!;
+        if (list.some((x) => x.anchor === a)) continue;
+        const d = declared.find((s) => s.anchor === a);
+        const heading = el.querySelector("h1,h2,h3,h4")?.textContent?.trim();
+        list.push({ anchor: a, label: d?.label || el.getAttribute("data-onb-label") || heading || a });
+      }
+      for (const s of declared) {
+        if (list.some((x) => x.anchor === s.anchor)) continue;
+        if (document.getElementById(s.anchor) || document.querySelector(`[data-testid="${s.anchor}"]`)) list.push(s);
+      }
+      if (list.length) setDiscovered(list);
+      else if (--tries > 0) setTimeout(attempt, 300);
+    };
+    attempt();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey, location.pathname]);
+  const sections = discovered;
   // sectionIdx === sections.length means the tour was finished ("Done" on
   // the last flag) - ring and flag retire until the step changes.
   const section = sections.length && sectionIdx < sections.length ? sections[sectionIdx] : null;

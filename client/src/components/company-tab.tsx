@@ -692,7 +692,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
           its "approved services" were only ever scaffolding and caused it to
           masquerade as an agency/clinic. Section hidden for the house. */}
       {!isGoStorkHouse && (
-      <Card className="p-6 space-y-4">
+      <Card className="p-6 space-y-4" data-onb-anchor="company-services">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <Settings className="w-5 h-5 text-primary" /> Services
@@ -729,6 +729,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
       )}
 
       {!isGoStorkHouse && (isIvfClinic || isSurrogacyAgency) && (
+        <div data-onb-anchor="company-partners" data-onb-label="Partner Providers">
         <PartnerProvidersCard
           editingType={isSurrogacyAgency ? "surrogacy-agency" : "ivf-clinic"}
           selfId={providerId}
@@ -736,10 +737,11 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
           onChange={setPartnerProviderIds}
           readOnly={readOnly}
         />
+        </div>
       )}
 
       {hasDonorServices && (
-        <Card className="p-6 space-y-4">
+        <Card className="p-6 space-y-4" data-onb-anchor="company-face-matching">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <ScanFace className="w-5 h-5 text-primary" /> Look-Alike Face Matching
           </h2>
@@ -765,7 +767,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
       )}
 
       {!isGoStorkHouse && (isIvfClinic || isSurrogacyAgency) && (
-        <Card className="p-6 space-y-6">
+        <Card className="p-6 space-y-6" data-onb-anchor="company-parents-matching">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <Check className="w-5 h-5 text-primary" /> Parents Matching Requirements
           </h2>
@@ -916,7 +918,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
       )}
 
       {(isIvfClinic || isGoStorkHouse) && (
-        <Card className="p-6 space-y-6">
+        <Card className="p-6 space-y-6" data-onb-anchor="company-surrogate-matching" data-onb-label="Surrogate Matching Requirements">
           <div className="space-y-1">
             <h2 className="text-lg font-heading flex items-center gap-2">
               <Check className="w-5 h-5 text-primary" />
