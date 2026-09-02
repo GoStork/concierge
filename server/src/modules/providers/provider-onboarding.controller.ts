@@ -693,8 +693,9 @@ export class ProviderOnboardingController {
         description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." },
       w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
         description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." },
-      password_reset: { label: "Set your password", link: "/account", where: "Settings -> My Account", minutes: 1,
-        description: "Create your password from the welcome email so you can sign in anytime." },
+      // No password_reset row here: anyone READING this list already set
+      // their password (first login lands on /account, where the Review My
+      // Account wizard takes over). The admin checklist keeps tracking it.
       profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
         description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." },
       knowledge_review: { label: "Review what Eva knows about you", link: "/account/knowledge", where: "Settings -> Knowledge", minutes: 5, selfMarkable: true,
@@ -754,7 +755,7 @@ export class ProviderOnboardingController {
     // phase order (the same fact can sit elsewhere in each audience's story):
     // get in -> your presence -> get bookable -> get paid -> team & tools.
     const PROVIDER_ORDER = [
-      "agreement", "w9", "password_reset",
+      "agreement", "w9",
       "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review", "knowledge_review",
       "calendar", "video_room",
       "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis", "fees_review",
