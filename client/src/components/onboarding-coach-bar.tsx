@@ -206,7 +206,7 @@ export function OnboardingCoachBar() {
   if (celebrated && !current) {
     return (
       <div
-        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[hsl(var(--brand-success)/0.08)] flex items-center gap-3"
+        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[color-mix(in_srgb,hsl(var(--brand-success))_8%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
         data-testid="onboarding-coach-done"
       >
         <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success))] shrink-0" />
@@ -228,7 +228,7 @@ export function OnboardingCoachBar() {
   if (current) {
     return (
       <div
-        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)] flex items-center gap-3"
+        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[color-mix(in_srgb,hsl(var(--primary))_5%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
         data-testid="onboarding-coach-bar"
       >
         <span className="w-8 h-8 rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] flex items-center justify-center shrink-0">
@@ -280,7 +280,7 @@ export function OnboardingCoachBar() {
   if (!next) return null;
   return (
     <div
-      className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[hsl(var(--primary)/0.03)] flex items-center gap-3"
+      className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[color-mix(in_srgb,hsl(var(--primary))_3%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
       data-testid="onboarding-coach-mirror"
     >
       <div className="flex-1 min-w-0 flex items-center gap-3">
