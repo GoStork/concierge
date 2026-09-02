@@ -701,14 +701,16 @@ export class ProviderOnboardingController {
         description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." },
       doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
         description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." },
-      calendar: { label: "Connect your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2,
-        description: "Connect Google, Outlook, or Apple Calendar so parents can book consultations on your real availability." },
-      availability: { label: "Set your availability hours", link: "/account/calendar", where: "Settings -> Calendar", minutes: 3,
-        description: "Choose the days and hours parents can book you - the calendar connection blocks conflicts, your availability opens the slots.",
-        sections: [{ anchor: "availability", label: "Weekly Availability" }] },
-      calendar_link: { label: "Review your booking link", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2, selfMarkable: true,
-        description: "Open Your Calendar Link (on My Account or the Calendar tab) and check the booking page parents will see - times, duration, meeting details.",
-        sections: [{ anchor: "calendar-link", label: "Your Calendar Link" }] },
+      // One task, three tour stops (the Legal page is the only one that
+      // keeps separate tasks per section): connect, set hours, check the
+      // booking link. Done = connected AND availability set (enforced below).
+      calendar: { label: "Set up your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 7,
+        description: "Three things on this page: connect Google, Outlook, or Apple Calendar; set your Weekly Availability hours; then open Your Calendar Link and check the booking page parents will see.",
+        sections: [
+          { anchor: "calendar-connect", label: "Connected Calendars" },
+          { anchor: "availability", label: "Weekly Availability" },
+          { anchor: "booking-link", label: "Your Calendar Link" },
+        ] },
       video_room: { label: "Review My Account", link: "/account", where: "Settings -> My Account", minutes: 2, selfMarkable: true,
         description: "On My Account, check three things: your personal info and mobile number for text updates, your Video Room link, and your Connected Calendars.",
         sections: [
@@ -754,7 +756,7 @@ export class ProviderOnboardingController {
     const PROVIDER_ORDER = [
       "agreement", "w9", "password_reset",
       "profile_review", "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review", "knowledge_review",
-      "calendar", "availability", "calendar_link", "video_room",
+      "calendar", "video_room",
       "legal_details", "stripe", "costs_uploaded", "agreement_templates", "pay_basis", "fees_review",
       "team", "ai",
       "parent_form_provider", "playbooks", "automation", "branding", "sponsorship",
@@ -818,6 +820,14 @@ export class ProviderOnboardingController {
         };
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
+    // The merged calendar task absorbs the availability requirement: it only
+    // reads done once the calendar is connected AND hours are set (both are
+    // still separate rows on the admin checklist).
+    {
+      const cal = steps.find((s) => s.key === "calendar");
+      const availabilityDone = summary.steps.find((s) => s.key === "availability")?.status === "done";
+      if (cal && cal.status === "done" && !availabilityDone) cal.status = "pending";
+    }
     // Steps that live on the same Settings tab always sit together (the way
     // Stripe's setup guide groups its sections). The order is STATIC - groups
     // in journey order (by their first step), journey order inside each

@@ -563,7 +563,7 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
 
   return (
     <div className="space-y-6">
-      <Card className="p-6" data-testid="calendar-connect-section">
+      <Card className="p-6" data-testid="calendar-connect-section" data-onb-anchor="calendar-connect">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             {hasConnections ? (
@@ -792,7 +792,7 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
       </Card>
 
       {!connectionsOnly && (<>
-      <Card className="p-6" data-testid="booking-link-section">
+      <Card className="p-6" data-testid="booking-link-section" data-onb-anchor="booking-link">
         <div className="flex items-center gap-2 mb-4">
           <Link2 className="w-5 h-5 text-primary" />
           <h2 className="t-micro-label font-heading">Your Calendar Link</h2>
