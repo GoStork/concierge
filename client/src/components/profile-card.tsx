@@ -332,6 +332,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               <button
                 className="py-2 px-3 rounded-[var(--radius)] text-xs font-ui border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
                 onClick={(e) => { e.stopPropagation(); adminControls.onEdit!(profile.id); }}
+                title="Edit profile"
                 data-testid={`btn-edit-${type}-${profile.id}`}
               >
                 <Pencil className="w-3.5 h-3.5" />
