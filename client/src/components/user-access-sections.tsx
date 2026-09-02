@@ -24,7 +24,7 @@ export type CalendarConnection = {
 
 export function VideoRoomSection({ url }: { url: string }) {
   return (
-    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
+    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4" data-onb-anchor="video-room">
       <h2 className="t-micro-label font-heading">Video Room</h2>
       <div className="flex items-center gap-2">
         <Video className="w-4 h-4 text-primary shrink-0" />
@@ -49,7 +49,7 @@ export function ConnectedCalendarsSection({
   const navigate = useNavigate();
   const hasConnections = !!connections && connections.length > 0;
   return (
-    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
+    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4" data-onb-anchor="connected-calendars">
       <h2 className="t-micro-label font-heading">Connected Calendars</h2>
       {hasConnections ? (
         <div className="space-y-2">
@@ -97,7 +97,7 @@ export function CalendarLinkSection({ slug }: { slug: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
+    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4" data-onb-anchor="calendar-link">
       <div className="flex items-center gap-2">
         <Link2 className="w-5 h-5 text-primary" />
         <h2 className="t-micro-label font-heading">Your Calendar Link</h2>

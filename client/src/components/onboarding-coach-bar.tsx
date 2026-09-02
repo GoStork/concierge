@@ -19,6 +19,35 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, ListChecks, ArrowRight, Clock, Check } from "lucide-react";
 import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-onboarding";
 
+/**
+ * Scroll a page section (a data-onb-anchor element) into view and ring it
+ * with the primary highlight - the same visual language as the parent-record
+ * ?focus deep link. Retries while the page is still rendering; the returned
+ * cleanup removes the ring when the tour moves on.
+ */
+function paintAnchor(anchor: string): () => void {
+  let cancelled = false;
+  let el: HTMLElement | null = null;
+  let tries = 15;
+  const attempt = () => {
+    if (cancelled) return;
+    el = document.querySelector<HTMLElement>(`[data-onb-anchor="${anchor}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "box-shadow 0.3s ease";
+      el.style.borderRadius = "var(--radius)";
+      el.style.boxShadow = "0 0 0 3px hsl(var(--primary))";
+    } else if (--tries > 0) {
+      setTimeout(attempt, 300);
+    }
+  };
+  attempt();
+  return () => {
+    cancelled = true;
+    if (el) el.style.boxShadow = "";
+  };
+}
+
 export function OnboardingCoachBar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -62,14 +91,31 @@ export function OnboardingCoachBar() {
     setCelebrateKey(null);
   }, [location.pathname]);
 
-  if (!data || data.percent >= 100) return null;
-
-  const next = data.steps.find((s) => s.key === data.nextKey) || null;
-  const onPage = data.steps.filter((s) => s.link === location.pathname);
+  const steps = data?.steps || [];
+  const hidden = !data || data.percent >= 100;
+  const next = steps.find((s) => s.key === data?.nextKey) || null;
+  const onPage = steps.filter((s) => s.link === location.pathname);
   // Several steps can share a page (/account/documents holds both the
   // GoStork agreement and parent templates) - coach the first open one.
-  const current = onPage.find((s) => s.status === "pending") || onPage.find((s) => s.status === "optional") || null;
-  const celebrated = celebrateKey ? data.steps.find((s) => s.key === celebrateKey) : null;
+  const current = (!hidden && (onPage.find((s) => s.status === "pending") || onPage.find((s) => s.status === "optional"))) || null;
+  const celebrated = celebrateKey ? steps.find((s) => s.key === celebrateKey) : null;
+
+  // ── Section tour: walk the step's page sections wizard-style ──
+  // Landing on a step's page highlights its first section; "Next section"
+  // advances through the rest, each scrolled to and ringed in turn.
+  const [sectionIdx, setSectionIdx] = useState(0);
+  const currentKey = current?.key ?? null;
+  useEffect(() => {
+    setSectionIdx(0);
+  }, [currentKey, location.pathname]);
+  const sections = current?.sections || [];
+  const section = sections.length ? sections[Math.min(sectionIdx, sections.length - 1)] : null;
+  useEffect(() => {
+    if (!section) return;
+    return paintAnchor(section.anchor);
+  }, [currentKey, section?.anchor]);
+
+  if (hidden) return null;
 
   // ── Celebrate: it just flipped to done right here ──
   if (celebrated && !current) {
@@ -111,6 +157,35 @@ export function OnboardingCoachBar() {
             </span>
           </div>
           <div className="text-sm text-muted-foreground truncate">{current.description}</div>
+          {section && sections.length > 1 && (
+            <div className="mt-1 flex items-center gap-2 text-xs font-medium text-[hsl(var(--primary))]">
+              <span>
+                Section {sectionIdx + 1}/{sections.length}: {section.label}
+              </span>
+              {sectionIdx > 0 && (
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:opacity-80"
+                  onClick={() => setSectionIdx((i) => Math.max(0, i - 1))}
+                  data-testid="onboarding-coach-prev-section"
+                >
+                  Back
+                </button>
+              )}
+              {sectionIdx < sections.length - 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-xs border-[hsl(var(--primary)/0.4)] text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.08)]"
+                  onClick={() => setSectionIdx((i) => Math.min(sections.length - 1, i + 1))}
+                  data-testid="onboarding-coach-next-section"
+                >
+                  Next section
+                  <ArrowRight className="w-3 h-3 ml-1" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         {current.selfMarkable && (
           <Button

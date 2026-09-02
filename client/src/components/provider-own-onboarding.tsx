@@ -39,6 +39,9 @@ export type OwnStep = {
   minutes: number;
   /** Review-style step the provider confirms themselves ("all good here"). */
   selfMarkable: boolean;
+  /** Ordered on-page sections the coach bar tours (scroll + highlight),
+   *  each matching a data-onb-anchor element on the step's page. */
+  sections?: { anchor: string; label: string }[];
   status: "done" | "pending" | "optional" | "locked";
   isOptional: boolean;
 };

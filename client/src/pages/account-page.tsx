@@ -871,7 +871,7 @@ function AccountTab() {
 
   return (
     <>
-    <Card className="p-8">
+    <Card className="p-8" data-onb-anchor="personal-info">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-heading">Personal Information</h2>
         {!editing ? (

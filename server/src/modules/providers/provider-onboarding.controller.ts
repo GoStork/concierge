@@ -682,7 +682,11 @@ export class ProviderOnboardingController {
     // `optionalOverride` relaxes an admin-required step for the provider's
     // view (inventory: some agencies genuinely have no available roster and
     // match on their agency profile instead).
-    const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean }> = {
+    // `sections` (ordered) drives the coach bar's on-page tour: each entry
+    // matches a data-onb-anchor element on the step's page, and the bar
+    // scrolls to and highlights them one by one, PandaDoc-wizard style.
+    type StepSection = { anchor: string; label: string };
+    const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean; sections?: StepSection[] }> = {
       // The GoStork agreement lives on the provider's Legal tab (with the
       // W-9) - Legal aggregates everything GoStork needs legally.
       agreement: { label: "Sign the GoStork agreement", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 5,
@@ -692,7 +696,7 @@ export class ProviderOnboardingController {
       password_reset: { label: "Set your password", link: "/account", where: "Settings -> My Account", minutes: 1,
         description: "Create your password from the welcome email so you can sign in anytime." },
       profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
-        description: "Check the profile we built for you - description, photos, locations - and fix anything that is off. This is what parents see." },
+        description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." },
       knowledge_review: { label: "Review what Eva knows about you", link: "/account/knowledge", where: "Settings -> Knowledge", minutes: 5, selfMarkable: true,
         description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." },
       doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
@@ -700,13 +704,25 @@ export class ProviderOnboardingController {
       calendar: { label: "Connect your calendar", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2,
         description: "Connect Google, Outlook, or Apple Calendar so parents can book consultations on your real availability." },
       availability: { label: "Set your availability hours", link: "/account/calendar", where: "Settings -> Calendar", minutes: 3,
-        description: "Choose the days and hours parents can book you - the calendar connection blocks conflicts, your availability opens the slots." },
+        description: "Choose the days and hours parents can book you - the calendar connection blocks conflicts, your availability opens the slots.",
+        sections: [{ anchor: "availability", label: "Weekly Availability" }] },
       calendar_link: { label: "Review your booking link", link: "/account/calendar", where: "Settings -> Calendar", minutes: 2, selfMarkable: true,
-        description: "Open your public booking page and check the times and meeting details parents will see." },
-      video_room: { label: "Review your video room", link: "/account", where: "Settings -> My Account", minutes: 1, selfMarkable: true,
-        description: "Consultations happen in your personal video room - open it once so you know where calls take place." },
+        description: "Open Your Calendar Link (on My Account or the Calendar tab) and check the booking page parents will see - times, duration, meeting details.",
+        sections: [{ anchor: "calendar-link", label: "Your Calendar Link" }] },
+      video_room: { label: "Review My Account", link: "/account", where: "Settings -> My Account", minutes: 2, selfMarkable: true,
+        description: "On My Account, check three things: your personal info and mobile number for text updates, your Video Room link, and your Connected Calendars.",
+        sections: [
+          { anchor: "personal-info", label: "Personal Information" },
+          { anchor: "video-room", label: "Video Room" },
+          { anchor: "connected-calendars", label: "Connected Calendars" },
+          { anchor: "calendar-link", label: "Your Calendar Link" },
+        ] },
       legal_details: { label: "Complete your legal details", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
-        description: "Confirm your legal entity name, tax ID, and business address - they auto-fill from your signed W-9 and are needed for payouts." },
+        description: "Review both sections: Business identity (legal name, tax classification, tax ID) and Business address. They auto-fill from your signed W-9 - confirm and fix anything off.",
+        sections: [
+          { anchor: "business-identity", label: "Business identity" },
+          { anchor: "business-address", label: "Business address" },
+        ] },
       stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
         description: "Connect your bank account through Stripe so parent payments reach you." },
       costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Costs", minutes: 10,
@@ -720,13 +736,13 @@ export class ProviderOnboardingController {
       team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
         description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." },
       ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
-        description: "Meet your AI assistant and choose how it represents your company to parents." },
+        description: "Review your AI assistant's settings and the persona that speaks for your company - this is how it engages parents on your behalf." },
       parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", where: "Settings -> Parent Form", minutes: 5, selfMarkable: true,
         description: "Review the intake form parents complete before a match call, and tailor it if you like." },
       playbooks: { label: "Configure playbooks", link: "/account/playbooks", where: "Settings -> Playbooks", minutes: 5, selfMarkable: true,
         description: "Set up playbooks that automate your follow-ups with families." },
       automation: { label: "Review automations", link: "/account/automation", where: "Settings -> Automation", minutes: 3, selfMarkable: true,
-        description: "Review your defaults for auto-replies and invoicing cadence - sensible defaults are already on." },
+        description: "Review all three sections: auto-replies, billing automation, and silence rules - sensible defaults are already on." },
       branding: { label: "Review your branding", link: "/account/branding", where: "Settings -> Branding", minutes: 3, selfMarkable: true,
         description: "Check your logo and brand colors - they appear on your parent-facing documents." },
       sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
@@ -791,6 +807,7 @@ export class ProviderOnboardingController {
           description: v.description,
           minutes: v.minutes,
           selfMarkable: !!v.selfMarkable,
+          sections: v.sections,
           // "waiting on provider" IS their to-do; locked steps stay locked
           // (e.g. signing before the document is sent). A step relaxed to
           // optional for the provider also wears the optional status.
