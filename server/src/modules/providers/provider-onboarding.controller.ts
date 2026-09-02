@@ -29,6 +29,7 @@ import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { prisma } from "../../../db";
+import { isClinicianMember } from "./clinician";
 
 type StepStatus = "done" | "pending" | "waiting_on_provider" | "optional" | "locked";
 
@@ -185,8 +186,15 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     // Booking availability: connected calendars block conflicts, but the
     // OPEN slots come from availability hours - a separate required step.
     db.availabilitySlot.count({ where: { scheduleConfig: { user: { providerId } } } }),
-    // Scraped/enriched doctor profiles (IVF clinics) - the clinic reviews them.
-    hasIvf ? db.providerMember.count({ where: { providerId, isPublicProfile: true } }) : 0,
+    // Scraped/enriched doctor profiles (IVF clinics) - the clinic reviews
+    // them. Counts CLINICIANS only (same gate as the Doctors tab), so an
+    // agency's founder/program-director team members never trigger it.
+    hasIvf
+      ? db.providerMember.findMany({
+          where: { providerId, isPublicProfile: true },
+          select: { name: true, title: true, credential: true, npiNumber: true, isMedicalDirector: true },
+        }).then((rows: any[]) => rows.filter((m) => isClinicianMember(m)).length)
+      : 0,
     db.providerLegalIdentity.findUnique({
       where: { providerId },
       select: { legalName: true, taxId: true, businessAddressLine1: true, businessAddressCity: true },

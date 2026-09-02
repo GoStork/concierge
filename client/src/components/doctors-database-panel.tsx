@@ -238,7 +238,7 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
 
       {filtered.length === 0 ? (
         <div className="t-helper rounded-xl border border-dashed border-border p-10 text-center">
-          {doctors.length === 0 ? "No doctor profiles yet. Add doctors from the Team tab." : "No doctors match your filters."}
+          {doctors.length === 0 ? "No doctor profiles yet. Add them as Team Members on the Company tab - anyone with a physician credential (M.D., D.O.) in their name or a clinical title appears here automatically." : "No doctors match your filters."}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">

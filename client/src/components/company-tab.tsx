@@ -170,6 +170,18 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  // A refresh/close with unsaved changes silently threw away work (a freshly
+  // added team member most painfully) - make the browser ask first.
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [isDirty]);
   // IVF Parents Matching Requirements
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
   const [ivfGenderSelectionAllowed, setIvfGenderSelectionAllowed] = useState(false);
