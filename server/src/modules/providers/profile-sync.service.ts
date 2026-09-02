@@ -2357,6 +2357,7 @@ async function upsertEggDonor(
       occupation: skipIfManual("occupation", donor.occupation || null, mf),
       donorCompensation: skipIfManual("donorCompensation", donor.donorCompensation ? parseFloat(String(donor.donorCompensation)) : null, mf),
       eggLotCost: skipIfManual("eggLotCost", donor.eggLotCost ? parseFloat(String(donor.eggLotCost)) : null, mf),
+      numberOfEggs: skipIfManual("numberOfEggs", donor.numberOfEggs ? parseInt(String(donor.numberOfEggs), 10) : null, mf),
       totalCost: skipIfManual("totalCost", donor.totalCost ? parseFloat(String(donor.totalCost)) : null, mf),
       photoUrl: skipIfManual("photoUrl", resolvePersistedPhotoUrl(donor.photoUrl, extractPhotosArray(donor)[0], existing?.photoUrl), mf),
       photos: skipIfManual("photos", resolvePersistedPhotos(extractPhotosArray(donor), existing?.photos as string[] | null | undefined), mf),
@@ -2392,6 +2393,7 @@ async function upsertEggDonor(
       occupation: donor.occupation || null,
       donorCompensation: donor.donorCompensation ? parseFloat(String(donor.donorCompensation)) : null,
       eggLotCost: donor.eggLotCost ? parseFloat(String(donor.eggLotCost)) : null,
+      numberOfEggs: donor.numberOfEggs ? parseInt(String(donor.numberOfEggs), 10) : null,
       totalCost: donor.totalCost ? parseFloat(String(donor.totalCost)) : null,
       photoUrl: donor.photoUrl || null,
       photos: extractPhotosArray(donor),
@@ -5251,6 +5253,52 @@ function looksLikeImageValue(val: any): boolean {
   return typeof val === "string" && /^https?:\/\//.test(val) && (isValidImageUrl(val) || /photo|image|picture|avatar/i.test(val));
 }
 
+/**
+ * Frozen egg-lot pricing (egg banks): find cohorts of {eggs, price} nested
+ * under keys like journeys[].cohorts[] (Lucina) or a flat lots[] array.
+ * `available` follows the platform's status codes ("av" = available,
+ * "so" = sold out on Lucina; generic sold/unavailable words otherwise).
+ */
+function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; price: number; available: boolean }> {
+  const lots: Array<{ eggs: number; price: number; available: boolean }> = [];
+  const consider = (entry: any) => {
+    if (!entry || typeof entry !== "object") return;
+    const eggs = Number(entry.eggs ?? entry.numberOfEggs ?? entry.count);
+    const price = Number(entry.price ?? entry.cost ?? entry.lotCost);
+    if (!isFinite(eggs) || eggs <= 0 || !isFinite(price) || price <= 0) return;
+    const status = String(entry.status ?? "").toLowerCase();
+    const available = !(status === "so" || /sold|unavail|reserved/.test(status));
+    lots.push({ eggs, price, available });
+  };
+  for (const val of Object.values(record)) {
+    if (!Array.isArray(val)) continue;
+    for (const entry of val) {
+      consider(entry);
+      // one level of nesting: journeys[].cohorts[]
+      if (entry && typeof entry === "object") {
+        for (const inner of Object.values(entry)) {
+          if (Array.isArray(inner)) inner.forEach(consider);
+        }
+      }
+    }
+  }
+  return lots;
+}
+
+// Hair TEXTURE words masquerading as a hair color (Lucina's hairColor field
+// carries "Straight"/"Wavy"/"Fine" for many donors). A texture is not a color.
+function isHairTexture(val: any): boolean {
+  return typeof val === "string" && /^(straight|wavy|curly|coily|kinky|fine|thick|medium|thin)$/i.test(val.trim());
+}
+
+// Platform-internal keys that must not surface on a parent-facing profile:
+// gallery analytics, duplicate ids, and the photo/thumb URLs we already
+// collect into the photos array.
+function isApiInternalKey(normalizedKey: string): boolean {
+  if (normalizedKey.startsWith("thumb")) return true;
+  return ["key", "real", "photo", "views7", "viewsall", "views", "likes", "unique", "impressions", "clicks"].includes(normalizedKey);
+}
+
 function collectApiPhotos(record: Record<string, any>): string[] {
   const photos: string[] = [];
   for (const [key, val] of Object.entries(record)) {
@@ -5322,13 +5370,27 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
     item.height = pick("height");
     item.weight = pick("weight");
     item.eyeColor = pick("eyecolor", "eyecolour", "eyes");
-    item.hairColor = pick("haircolor", "haircolour", "hair");
+    const hairColorRaw = pick("haircolor", "haircolour", "hair");
+    if (!isHairTexture(hairColorRaw)) item.hairColor = hairColorRaw;
     item.donorType = pick("donortype", "type");
   }
   if (type === "egg-donor") {
     item.donorCompensation = num(pick("donorcompensation", "compensation", "fee"));
     item.bloodType = pick("bloodtype");
     item.donationTypes = pick("donationtypes", "donationtype");
+    // Frozen egg banks price per LOT, not per donor: surface the cheapest
+    // available cohort as the donor's egg lot, and flag the frozen offering.
+    const lots = collectApiEggLots(record);
+    if (lots.length > 0) {
+      if (!item.donorType) item.donorType = "Frozen";
+      if (!item.donationTypes) item.donationTypes = "Frozen Eggs";
+      const available = lots.filter((l) => l.available);
+      const pool = available.length > 0 ? available : lots;
+      const cheapest = pool.reduce((a, b) => (a.price <= b.price ? a : b));
+      item.numberOfEggs = cheapest.eggs;
+      item.eggLotCost = cheapest.price;
+      item.totalCost = cheapest.price;
+    }
   } else if (type === "sperm-donor") {
     item.compensation = num(pick("compensation", "fee"));
   } else {
@@ -5360,12 +5422,28 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
     if (photos.length > 1) item.additionalPhotos = photos.slice(1);
   }
 
-  // Preserve the complete record on the profile page. Scalars become labeled
-  // fields; nested objects/arrays are kept as-is under their titleized key.
+  // Preserve the record on the profile page. Scalars become labeled fields;
+  // nested objects/arrays are kept as-is under their titleized key. Platform
+  // analytics, duplicate ids, and photo/thumb URLs stay OUT - they are noise
+  // on a parent-facing profile (photos live in the photos array instead).
   const profileData: Record<string, any> = {};
   for (const [key, val] of Object.entries(record)) {
     if (val === null || val === undefined || val === "") continue;
+    if (isApiInternalKey(normalizeApiKeyName(key))) continue;
     profileData[titleizeApiKey(key)] = val;
+  }
+  const allLots = type === "egg-donor" ? collectApiEggLots(record) : [];
+  if (allLots.length > 0) {
+    delete profileData["Journeys"];
+    delete profileData["Cohort Status"];
+    profileData["Egg Lots"] = allLots
+      .map((l) => `${l.eggs} eggs - $${l.price.toLocaleString("en-US")}${l.available ? "" : " (sold)"}`)
+      .join("; ");
+    // Feeds upsertEggDonor's computedFrozenLotStatus (and reads naturally on
+    // the profile) - the upsert derives frozenLotStatus from this exact label.
+    profileData["Frozen Egg Availability"] = allLots.some((l) => l.available)
+      ? "Frozen Eggs Available"
+      : "No Frozen Eggs Available";
   }
   if (photos.length > 0) profileData["All Photos"] = photos;
   item.profileData = profileData;
