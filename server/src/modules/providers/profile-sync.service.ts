@@ -2860,6 +2860,7 @@ export async function saveSyncConfig(
     apiKey?: string;
     apiSecret?: string;
     apiDetailUrl?: string;
+    loginUrl?: string;
   },
 ) {
   const hasNewPassword =
@@ -2869,13 +2870,20 @@ export async function saveSyncConfig(
   const hasNewApiSecret =
     typeof data.apiSecret === "string" && data.apiSecret.trim().length > 0;
 
-  const validMethod = data.syncMethod === "SOURCE_URL" || data.syncMethod === "API" ? data.syncMethod : undefined;
+  const validMethod =
+    data.syncMethod === "SOURCE_URL" || data.syncMethod === "API" || data.syncMethod === "PDF_UPLOAD"
+      ? data.syncMethod
+      : undefined;
   const baseFields = {
-    databaseUrl: data.databaseUrl,
+    // PDF_UPLOAD has no source URL; the column is NOT NULL so store "".
+    databaseUrl: data.databaseUrl || "",
     username: data.username || null,
     ...(validMethod ? { syncMethod: validMethod } : {}),
     // Not a secret - saved (and clearable) on every save like the URL itself.
     ...(data.apiDetailUrl !== undefined ? { apiDetailUrl: data.apiDetailUrl.trim() || null } : {}),
+    // Where the scraper signs in. Clearing it deliberately hands the engine back
+    // to the learned-URL/guess path, so treat "" as null exactly like the above.
+    ...(data.loginUrl !== undefined ? { loginUrl: data.loginUrl.trim() || null } : {}),
   };
   const encryptedPassword = hasNewPassword ? encryptNullable(data.password!) : null;
   const encryptedApiKey = hasNewApiKey ? encryptNullable(data.apiKey!) : null;
@@ -2912,6 +2920,40 @@ export async function saveSyncConfig(
         update: updatePayload,
         create: createPayload,
       });
+  }
+}
+
+/**
+ * Remember the login URL that just authenticated, so the next run goes straight
+ * to it instead of re-walking the guess list. Re-discovery is where syncs break:
+ * a guessed path the site does not have can answer 403/429 from the edge, which
+ * reads as a block and aborts the walk before the working path is reached.
+ *
+ * Fire-and-forget and best-effort - a failed write must never fail the sync, and
+ * the guess walk still works without it.
+ */
+async function rememberGoodLoginUrl(
+  prisma: PrismaService,
+  providerId: string,
+  type: DonorType,
+  loginUrl: string,
+): Promise<void> {
+  try {
+    const data = { lastGoodLoginUrl: loginUrl } as any;
+    switch (type) {
+      case "egg-donor":
+        await prisma.eggDonorSyncConfig.update({ where: { providerId }, data });
+        break;
+      case "surrogate":
+        await prisma.surrogateSyncConfig.update({ where: { providerId }, data });
+        break;
+      case "sperm-donor":
+        await prisma.spermDonorSyncConfig.update({ where: { providerId }, data });
+        break;
+    }
+    console.log(`[donor-sync] Remembered working login URL ${loginUrl} for ${type} provider ${providerId}`);
+  } catch (err: any) {
+    console.warn(`[donor-sync] Could not persist the working login URL: ${err.message}`);
   }
 }
 
@@ -3120,7 +3162,12 @@ export async function startSync(
   }
 
   const credentials = config.username && config.encryptedPassword
-    ? { username: config.username, password: config.encryptedPassword }
+    ? {
+        username: config.username,
+        password: config.encryptedPassword,
+        loginUrl: ((config as any).loginUrl as string | null) || null,
+        lastGoodLoginUrl: ((config as any).lastGoodLoginUrl as string | null) || null,
+      }
     : undefined;
 
   // Admin-selected sync method: "API" pulls JSON from the provider's API with
@@ -5959,7 +6006,14 @@ async function runSyncJob(
   prisma: PrismaService,
   job: SyncJob,
   sourceUrl: string,
-  credentials?: { username: string; password: string },
+  credentials?: {
+    username: string;
+    password: string;
+    /** Admin-configured login page. When set it is the ONLY page tried. */
+    loginUrl?: string | null;
+    /** Login page that last worked, learned by this engine. Tried first. */
+    lastGoodLoginUrl?: string | null;
+  },
   profileLimit?: number,
   storageService?: StorageService | null,
 ): Promise<void> {
@@ -5970,19 +6024,62 @@ async function runSyncJob(
 
     if (credentials) {
       const loginUrl = new URL(sourceUrl);
+      // A configured/learned value may be a full URL or just a path ("/login").
+      // Resolve against the source origin either way; ignore anything unparseable
+      // rather than throwing mid-sync.
+      const resolveLoginUrl = (value?: string | null): string | null => {
+        const raw = (value || "").trim();
+        if (!raw) return null;
+        try {
+          return new URL(raw, loginUrl.origin).href;
+        } catch {
+          console.warn(`[donor-sync] Ignoring unparseable login URL "${raw}"`);
+          return null;
+        }
+      };
+
+      const configuredLoginUrl = resolveLoginUrl(credentials.loginUrl);
+      const learnedLoginUrl = resolveLoginUrl(credentials.lastGoodLoginUrl);
+
       const loginCandidates: string[] = [];
-      const sourcePath = loginUrl.pathname.toLowerCase();
-      if (sourcePath.includes("login") || sourcePath.includes("signin") || sourcePath.includes("sign-in")) {
-        loginCandidates.push(sourceUrl);
-      }
-      // WordPress sites (e.g. Eggspecting) log in at /wp-login.php while the
-      // donor list lives elsewhere (/donor-list), so the source URL points at
-      // the list, not the login page. Always offer the WP login endpoint.
-      loginCandidates.push(loginUrl.origin + "/wp-login.php");
-      loginCandidates.push(loginUrl.origin + "/Account/Login");
-      if (!loginCandidates.includes(loginUrl.origin + "/login")) {
+      if (configuredLoginUrl) {
+        // The admin told us exactly where to sign in, so probe NOTHING else.
+        // Guessing past it would spend requests (and captcha solves) on paths
+        // this site may not have, and a 403/429 from the edge on one of those
+        // guesses is precisely what used to abort the walk before the working
+        // path was reached. A wrong value here fails loudly, which is correct -
+        // it is a one-field fix in the sync config, not a silent zero-import.
+        loginCandidates.push(configuredLoginUrl);
+        console.log(`[donor-sync] Using the configured login URL ${configuredLoginUrl} (no path guessing)`);
+      } else {
+        // Whatever authenticated last time goes first: a site solved once should
+        // never be re-discovered, and re-discovery is where the aborts happen.
+        if (learnedLoginUrl) {
+          loginCandidates.push(learnedLoginUrl);
+          console.log(`[donor-sync] Trying the last known-good login URL ${learnedLoginUrl} first`);
+        }
+        const sourcePath = loginUrl.pathname.toLowerCase();
+        if (sourcePath.includes("login") || sourcePath.includes("signin") || sourcePath.includes("sign-in")) {
+          loginCandidates.push(sourceUrl);
+        }
+        // WordPress sites (e.g. Eggspecting) log in at /wp-login.php while the
+        // donor list lives elsewhere (/donor-list), so the source URL points at
+        // the list, not the login page. Always offer the WP login endpoint.
+        loginCandidates.push(loginUrl.origin + "/wp-login.php");
+        loginCandidates.push(loginUrl.origin + "/Account/Login");
         loginCandidates.push(loginUrl.origin + "/login");
       }
+      // De-dupe while preserving order - the learned URL is very often one of
+      // the guesses below it, and probing the same path twice both wastes a
+      // request and pushes our threat score up at the edge.
+      const seenCandidates = new Set<string>();
+      const orderedCandidates = loginCandidates.filter((c) => {
+        if (seenCandidates.has(c)) return false;
+        seenCandidates.add(c);
+        return true;
+      });
+      loginCandidates.length = 0;
+      loginCandidates.push(...orderedCandidates);
 
       let authenticated = false;
       const authFailures: { candidate: string; reason: string }[] = [];
@@ -5999,6 +6096,11 @@ async function runSyncJob(
         if (result.ok) {
           sessionCookies = result.cookies;
           authenticated = true;
+          // Only write when it actually changed - a nightly that already starts
+          // at the right URL should not issue a pointless UPDATE every run.
+          if (candidate !== learnedLoginUrl) {
+            await rememberGoodLoginUrl(prisma, job.providerId, job.type, candidate);
+          }
           break;
         }
         authFailures.push({ candidate, reason: result.reason });
@@ -6037,7 +6139,12 @@ async function runSyncJob(
         const detail = authFailures
           .map(f => `[${new URL(f.candidate).pathname}] ${f.reason}`)
           .join(" | ");
-        job.errors.push(`Login failed: ${detail}`);
+        // Say WHICH login page was used and why, so the admin knows whether to
+        // fix the Login URL field or chase credentials/captcha/the edge.
+        const loginSource = configuredLoginUrl
+          ? ` (using the Login URL configured for this provider: ${configuredLoginUrl} - correct it in the sync config if that is not the right sign-in page)`
+          : ` (no Login URL is configured for this provider, so these paths were guessed - set the Login URL field in the sync config to stop the guessing)`;
+        job.errors.push(`Login failed: ${detail}${loginSource}`);
         job.completedAt = new Date();
         console.error(`[donor-sync] Login failed for ${credentials.username} - aborting sync. Details: ${detail}`);
 

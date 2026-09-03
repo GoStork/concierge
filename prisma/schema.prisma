@@ -1202,6 +1202,18 @@ model EggDonorSyncConfig {
   // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
   // this endpoint gives the full profile; called per record and merged).
   apiDetailUrl       String?
+  // Where the scraper signs in. OPTIONAL. When set, it is the ONLY login page
+  // tried - no guessing, no extra requests against a Cloudflare-fronted origin.
+  // Leave blank and the engine falls back to lastGoodLoginUrl, then to guessed
+  // paths (/wp-login.php, /Account/Login, /login). databaseUrl is the profile
+  // LIST page (post-login), which on most sites is NOT the login page - that
+  // gap is why the guessing existed. Accepts a full URL or a path ("/login").
+  loginUrl           String?
+  // The login URL that last authenticated successfully, written by the engine.
+  // Tried ahead of the guesses so a site that has been solved once is never
+  // re-discovered - a wrong guess answering 403/429 used to abort the walk
+  // before the working path was reached (Family Creations, Sep 3 2026).
+  lastGoodLoginUrl   String?
   lastSyncAt         DateTime?
   syncStatus         String    @default("PENDING")
   syncFrequency      String    @default("manual")
@@ -1302,6 +1314,18 @@ model SurrogateSyncConfig {
   // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
   // this endpoint gives the full profile; called per record and merged).
   apiDetailUrl       String?
+  // Where the scraper signs in. OPTIONAL. When set, it is the ONLY login page
+  // tried - no guessing, no extra requests against a Cloudflare-fronted origin.
+  // Leave blank and the engine falls back to lastGoodLoginUrl, then to guessed
+  // paths (/wp-login.php, /Account/Login, /login). databaseUrl is the profile
+  // LIST page (post-login), which on most sites is NOT the login page - that
+  // gap is why the guessing existed. Accepts a full URL or a path ("/login").
+  loginUrl           String?
+  // The login URL that last authenticated successfully, written by the engine.
+  // Tried ahead of the guesses so a site that has been solved once is never
+  // re-discovered - a wrong guess answering 403/429 used to abort the walk
+  // before the working path was reached (Family Creations, Sep 3 2026).
+  lastGoodLoginUrl   String?
   lastSyncAt         DateTime?
   syncStatus         String    @default("PENDING")
   syncFrequency      String    @default("manual")
@@ -1383,6 +1407,18 @@ model SpermDonorSyncConfig {
   // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
   // this endpoint gives the full profile; called per record and merged).
   apiDetailUrl       String?
+  // Where the scraper signs in. OPTIONAL. When set, it is the ONLY login page
+  // tried - no guessing, no extra requests against a Cloudflare-fronted origin.
+  // Leave blank and the engine falls back to lastGoodLoginUrl, then to guessed
+  // paths (/wp-login.php, /Account/Login, /login). databaseUrl is the profile
+  // LIST page (post-login), which on most sites is NOT the login page - that
+  // gap is why the guessing existed. Accepts a full URL or a path ("/login").
+  loginUrl           String?
+  // The login URL that last authenticated successfully, written by the engine.
+  // Tried ahead of the guesses so a site that has been solved once is never
+  // re-discovered - a wrong guess answering 403/429 used to abort the walk
+  // before the working path was reached (Family Creations, Sep 3 2026).
+  lastGoodLoginUrl   String?
   lastSyncAt         DateTime?
   syncStatus         String    @default("PENDING")
   syncFrequency      String    @default("manual")

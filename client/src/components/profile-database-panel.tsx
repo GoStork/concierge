@@ -171,12 +171,16 @@ export default function ProfileDatabasePanel({
   const [configUsername, setConfigUsername] = useState("");
   const [configPassword, setConfigPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  // Admin-selected sync method: scrape the provider's site (SOURCE_URL) or
-  // pull JSON from the provider's API with a key/secret they hand us (API).
-  const [configSyncMethod, setConfigSyncMethod] = useState<"SOURCE_URL" | "API">("SOURCE_URL");
+  // Admin-selected sync method: scrape the provider's site (SOURCE_URL),
+  // pull JSON from the provider's API with a key/secret they hand us (API),
+  // or import profiles from uploaded PDFs (PDF_UPLOAD, surrogate only).
+  const [configSyncMethod, setConfigSyncMethod] = useState<"SOURCE_URL" | "API" | "PDF_UPLOAD">("SOURCE_URL");
   const [configApiKey, setConfigApiKey] = useState("");
   const [configApiSecret, setConfigApiSecret] = useState("");
   const [configApiDetailUrl, setConfigApiDetailUrl] = useState("");
+  // Where the scraper signs in. Blank = let the engine use the last known-good
+  // URL, then guess. See the Login URL field below for why this exists.
+  const [configLoginUrl, setConfigLoginUrl] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
   // First-time setup gate: require the admin to acknowledge the scraper playbook
@@ -241,8 +245,13 @@ export default function ProfileDatabasePanel({
     if (configQuery.data) {
       setConfigUrl(configQuery.data.databaseUrl || "");
       setConfigUsername(configQuery.data.username || "");
-      setConfigSyncMethod(configQuery.data.syncMethod === "API" ? "API" : "SOURCE_URL");
+      setConfigSyncMethod(
+        configQuery.data.syncMethod === "API" || configQuery.data.syncMethod === "PDF_UPLOAD"
+          ? configQuery.data.syncMethod
+          : "SOURCE_URL",
+      );
       setConfigApiDetailUrl(configQuery.data.apiDetailUrl || "");
+      setConfigLoginUrl(configQuery.data.loginUrl || "");
     }
   }, [configQuery.data]);
 
@@ -315,6 +324,7 @@ export default function ProfileDatabasePanel({
     apiKey: configApiKey || undefined,
     apiSecret: configApiSecret || undefined,
     apiDetailUrl: configApiDetailUrl,
+    loginUrl: configLoginUrl,
   });
 
   const saveConfigMutation = useMutation({
@@ -723,7 +733,9 @@ export default function ProfileDatabasePanel({
           <Label className="t-form-label-sm">Sync Method</Label>
           <RadioGroup
             value={configSyncMethod}
-            onValueChange={(v) => setConfigSyncMethod(v === "API" ? "API" : "SOURCE_URL")}
+            onValueChange={(v) =>
+              setConfigSyncMethod(v === "API" || v === "PDF_UPLOAD" ? v : "SOURCE_URL")
+            }
             disabled={!isAdmin || isRunning}
             className="flex flex-wrap gap-x-6 gap-y-2 mt-1"
             data-testid={`radio-sync-method-${type}`}
@@ -736,8 +748,15 @@ export default function ProfileDatabasePanel({
               <RadioGroupItem value="API" data-testid={`radio-sync-method-api-${type}`} />
               Provider API (API Key + Secret)
             </label>
+            {type === "surrogate" && (
+              <label className="flex items-center gap-2 text-sm font-ui cursor-pointer">
+                <RadioGroupItem value="PDF_UPLOAD" data-testid={`radio-sync-method-pdf-upload-${type}`} />
+                Bulk PDF Upload
+              </label>
+            )}
           </RadioGroup>
         </div>
+        {configSyncMethod !== "PDF_UPLOAD" && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <Label htmlFor={`url-${type}`} className="t-form-label-sm">
@@ -752,6 +771,40 @@ export default function ProfileDatabasePanel({
               disabled={!isAdmin || isRunning}
             />
           </div>
+          {configSyncMethod === "SOURCE_URL" && (
+            <div>
+              <Label htmlFor={`login-url-${type}`} className="t-form-label-sm">
+                Login URL (optional)
+              </Label>
+              <Input
+                id={`login-url-${type}`}
+                data-testid={`input-sync-login-url-${type}`}
+                placeholder="https://provider.com/login"
+                value={configLoginUrl}
+                onChange={(e) => setConfigLoginUrl(e.target.value)}
+                disabled={!isAdmin || isRunning}
+              />
+              <p className="t-helper mt-1">
+                {configLoginUrl
+                  ? "The only sign-in page the scraper will use."
+                  : "Blank = the scraper guesses the sign-in page. Set this if logins fail."}
+                {!configLoginUrl && configQuery.data?.lastGoodLoginUrl && (
+                  <>
+                    {" "}Last worked:{" "}
+                    <button
+                      type="button"
+                      className="underline text-[hsl(var(--primary))] font-ui"
+                      data-testid={`button-use-last-good-login-${type}`}
+                      onClick={() => setConfigLoginUrl(configQuery.data.lastGoodLoginUrl)}
+                      disabled={!isAdmin || isRunning}
+                    >
+                      {configQuery.data.lastGoodLoginUrl}
+                    </button>
+                  </>
+                )}
+              </p>
+            </div>
+          )}
           {configSyncMethod === "API" && (
             <>
               <div>
@@ -880,6 +933,13 @@ export default function ProfileDatabasePanel({
             </div>
           </div>
         </div>
+        )}
+        {isAdmin && configSyncMethod === "PDF_UPLOAD" && (
+          <p className="t-helper" data-testid={`pdf-method-note-${type}`}>
+            Profiles are imported from PDFs you upload below - no site scraping or API calls are made. Save the
+            configuration, then drop the profile PDFs into the Bulk PDF Upload section.
+          </p>
+        )}
         {isAdmin && configSyncMethod === "API" && (
           <p className="t-helper" data-testid={`api-method-note-${type}`}>
             GoStork calls the provider's API directly (standard auth and pagination conventions are auto-detected; GET and
@@ -896,6 +956,7 @@ export default function ProfileDatabasePanel({
                 <p className="font-heading text-foreground">First-time setup - review the scraper guide before the first run</p>
                 <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
                   <li><strong>Source URL</strong> = the donor/surrogate <strong>list page after login</strong> (for WordPress sites, NOT the <code>wp-login.php</code> page).</li>
+                  <li><strong>Login URL</strong> = the site's actual <strong>sign-in page</strong>. Leave it blank and the scraper guesses, which can fail on sites behind Cloudflare - fill it in whenever you know it.</li>
                   <li>Sites that present a <strong>reCAPTCHA</strong> need <code>TWOCAPTCHA_API_KEY</code> set in the server environment.</li>
                   <li>Run <strong>"Sync 10 Profiles"</strong> first and watch the run history before kicking a full sync.</li>
                 </ul>
@@ -929,7 +990,11 @@ export default function ProfileDatabasePanel({
                 size="sm"
                 variant="outline"
                 onClick={() => saveConfigMutation.mutate()}
-                disabled={!configUrl || saveConfigMutation.isPending || isSyncRunning}
+                disabled={
+                  (configSyncMethod !== "PDF_UPLOAD" && !configUrl) ||
+                  saveConfigMutation.isPending ||
+                  isSyncRunning
+                }
                 data-testid={`btn-save-config-${type}`}
               >
                 {saveConfigMutation.isPending ? (
@@ -939,6 +1004,7 @@ export default function ProfileDatabasePanel({
                 )}
                 Save Config
               </Button>
+              {configSyncMethod !== "PDF_UPLOAD" && (
               <Button
                 size="sm"
                 onClick={() => startSyncMutation.mutate(undefined)}
@@ -954,7 +1020,8 @@ export default function ProfileDatabasePanel({
                 )}
                 {isSyncRunning ? "Syncing..." : `Start ${label} Sync`}
               </Button>
-              {isAdmin && (
+              )}
+              {isAdmin && configSyncMethod !== "PDF_UPLOAD" && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1193,7 +1260,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      {showConfig && type === "surrogate" && (isAdmin || roles.includes("PROVIDER_ADMIN")) && (
+      {showConfig && type === "surrogate" && configSyncMethod === "PDF_UPLOAD" && (isAdmin || roles.includes("PROVIDER_ADMIN")) && (
         <div className="border rounded-[var(--radius)] p-4 space-y-4 bg-card" data-testid="pdf-upload-card">
           <h4 className="font-heading text-sm flex items-center gap-2">
             <FileUp className="w-4 h-4" />

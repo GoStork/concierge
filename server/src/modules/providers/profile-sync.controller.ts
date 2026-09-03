@@ -111,6 +111,10 @@ export class ProfileSyncController {
       username: config.username,
       syncMethod: (config as any).syncMethod || "SOURCE_URL",
       apiDetailUrl: (config as any).apiDetailUrl || null,
+      loginUrl: (config as any).loginUrl || null,
+      // Read-only: the login page the engine last authenticated against. Shown
+      // as a hint so an admin can promote it into loginUrl with one click.
+      lastGoodLoginUrl: (config as any).lastGoodLoginUrl || null,
       // Presence flags only - the key/secret themselves never leave the server.
       hasApiKey: !!(config as any).encryptedApiKey,
       hasApiSecret: !!(config as any).encryptedApiSecret,
@@ -133,14 +137,35 @@ export class ProfileSyncController {
       apiKey?: string;
       apiSecret?: string;
       apiDetailUrl?: string;
+      loginUrl?: string;
     },
   ) {
     const validType = validateType(type);
-    if (!body.databaseUrl) {
+    // PDF_UPLOAD imports from uploaded files, so it is the one method with no URL.
+    if (!body.databaseUrl && body.syncMethod !== "PDF_UPLOAD") {
       throw new BadRequestException("databaseUrl is required");
     }
-    if (body.syncMethod && body.syncMethod !== "SOURCE_URL" && body.syncMethod !== "API") {
-      throw new BadRequestException('syncMethod must be "SOURCE_URL" or "API"');
+    if (
+      body.syncMethod &&
+      body.syncMethod !== "SOURCE_URL" &&
+      body.syncMethod !== "API" &&
+      body.syncMethod !== "PDF_UPLOAD"
+    ) {
+      throw new BadRequestException('syncMethod must be "SOURCE_URL", "API" or "PDF_UPLOAD"');
+    }
+    // Reject a malformed Login URL at save time. The engine ignores an
+    // unparseable value and falls back to guessing, which would turn a typo here
+    // into the exact silent-guessing failure this field exists to prevent.
+    if (body.loginUrl && body.loginUrl.trim()) {
+      const candidate = body.loginUrl.trim();
+      try {
+        // A bare path is valid - the engine resolves it against the source origin.
+        new URL(candidate, "https://placeholder.invalid");
+      } catch {
+        throw new BadRequestException(
+          `loginUrl is not a valid URL or path: "${candidate}"`,
+        );
+      }
     }
     const config = await saveSyncConfig(
       this.prisma,
@@ -155,6 +180,8 @@ export class ProfileSyncController {
       username: config.username,
       syncMethod: (config as any).syncMethod || "SOURCE_URL",
       apiDetailUrl: (config as any).apiDetailUrl || null,
+      loginUrl: (config as any).loginUrl || null,
+      lastGoodLoginUrl: (config as any).lastGoodLoginUrl || null,
       hasApiKey: !!(config as any).encryptedApiKey,
       hasApiSecret: !!(config as any).encryptedApiSecret,
       lastSyncAt: config.lastSyncAt,
