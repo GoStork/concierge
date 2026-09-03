@@ -105,7 +105,26 @@ source-limited fields to request from the provider.
 
 ## Login / authentication
 
-- **Candidate-URL fallback.** The engine tries the Source URL, then **`/wp-login.php`**
+- **FIRST: set the `Login URL` field on the sync config (Sep 3 2026).** The config's
+  **Source URL is the profile LIST page** (post-login); on most sites the sign-in page is a
+  DIFFERENT url, and nothing used to tell the engine where it was - hence the guess walk
+  below. `Login URL` closes that gap:
+  - **When set, it is the ONLY page tried.** No guessing, no extra requests raising our
+    threat score at the WAF, and a wrong value fails loudly naming the field to fix.
+  - **When blank**, the engine tries `lastGoodLoginUrl` (the page that last authenticated,
+    written automatically after every successful sign-in) and then the guess walk.
+    So a site solved once is never re-discovered.
+  - Accepts a full URL or a bare path (`/login`), resolved against the Source URL's origin.
+  - **Why it exists - Family Creations surrogate, Sep 3 2026.** `wp-login.php` 404s there
+    (the site hides it), and the next guess `/Account/Login` - **a path the site does not
+    have** - came back as a Cloudflare **429** because a manual FC egg-donor sync was
+    hitting the same origin that minute. A 429 sets `wafBlocked`, which breaks the walk,
+    so `/login` (the path that works, and which this very playbook already documented) was
+    never reached. Identical failure Aug 24. On the nights `/Account/Login` happened to
+    fail *harmlessly* the walk reached `/login` and the sync passed - which is why it
+    looked random. **Two syncs against one origin at the same time is enough to trip
+    this**, so it is not rare. Fill in `Login URL` for every provider you know.
+- **Candidate-URL fallback** (used only when `Login URL` is blank)**.** The engine tries the Source URL, then **`/wp-login.php`**
   (WordPress), `/Account/Login`, then `/login` (and `/user/login`). It auto-detects the form
   `action`, CSRF/verification tokens (`__RequestVerificationToken`, `_token`, `csrf-token`),
   and email/password fields.
@@ -487,6 +506,7 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | Provider profile shows duplicate / region-label locations (`Los Angeles, CA` beside `Woodland Hills, CA`; `Mid-West, USA`) | AI extractor emitted coarse address-less rows next to street addresses | `prunedLocations`/`REGION_STATE_TOKENS` pass in `scrape.service.ts` + client `dedupeProviderLocations`. **Permanent delete: narrow city-dup rule only - the broad state rule erases real satellite offices** |
 | Profiles import fine but the Missing Mandatory Fields report flags nearly EVERY field (Education, Religion, Ethnicity, Blood Type, gallery...) for every donor | Only listing-card data was captured: donors never got a `profileUrl` (card markup lacked `donor-card`/`view-more`, so `wpProfileUrlMap` stayed empty) AND the WP egg-donor branch skipped Gemini section extraction entirely (old Eggspecting perf carve-out) | `addNumericProfileDetailUrls` captures `/donor/<id>/` links from every listing page as a generic fallback, and the WP egg section-extraction skip now applies only to donors that ALREADY have `profileData._sections` from a prior run (`existingHasSections`, now also loaded for egg donors) - `profile-sync.service.ts` (Conceptions Center, Aug 2026) |
 | 0 profiles though login succeeded; log shows `Found type-aware nav link ...` navigating away from the configured Source URL (to a `...-login/` or info page like "Egg Donor Requirements") | The type-aware nav heuristic matched a keyword link (login CTA, requirements page) and left the correct listing page | Three guards in `profile-sync.service.ts`: `countProfileDetailLinks` skips nav discovery when the source page already has >= 5 profile-detail links, a nav switch requires MORE profile links than the current page, and `loginLinkPattern` + quote-agnostic `type=["']password["']` exclude login pages (Conceptions Center, Aug 2026) |
+| `Login failed:` naming a path the site does not have (e.g. `[/Account/Login] Cloudflare JS challenge (status=429)`), and the SAME provider succeeded on other days | The guess walk was aborted at the edge on a **wrong** candidate before it reached the working one. A 403/429 sets `wafBlocked`, which breaks the walk. The 429 is usually **our own second sync hitting that origin concurrently** (Family Creations, Sep 3 2026 - a manual egg-donor sync overlapped the nightly surrogate sync) | Set the **`Login URL`** field on the sync config to the real sign-in page - it then becomes the only page tried, so there is nothing left to guess wrong. The engine also records `lastGoodLoginUrl` after any successful sign-in and tries it first. Also avoid running two syncs against one origin at once |
 
 ## Platform cheat-sheet
 
