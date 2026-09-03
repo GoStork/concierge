@@ -5195,10 +5195,25 @@ async function fetchApiPage(
   }
 }
 
+/**
+ * Structured API error envelope ({ok:false, code, message} - Lucina's ext
+ * gateway and many others). Returned as a suffix for error strings so the
+ * SyncLog shows the provider's own error code, not just an HTTP status.
+ */
+function apiErrorDetail(body: any): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+  const failed = body.ok === false || body.success === false || (typeof body.error === "string" && body.error);
+  const code = body.code ?? body.error_code ?? body.errorCode;
+  const message = body.message ?? body.error ?? body.detail;
+  if (!failed && !(code && message)) return "";
+  return ` (${[code, message].filter(Boolean).join(": ")})`;
+}
+
 /** Pull the array of profile records out of an arbitrary JSON API response body. */
 function extractApiRecords(body: any): any[] | null {
   if (Array.isArray(body)) return body;
   if (!body || typeof body !== "object") return null;
+  if (body.ok === false || body.success === false) return null;
   const WRAPPER_KEYS = ["data", "results", "items", "records", "profiles", "donors", "surrogates", "list", "rows"];
   for (const key of WRAPPER_KEYS) {
     const val = body[key];
@@ -5259,8 +5274,8 @@ function looksLikeImageValue(val: any): boolean {
  * `available` follows the platform's status codes ("av" = available,
  * "so" = sold out on Lucina; generic sold/unavailable words otherwise).
  */
-function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; price: number; available: boolean }> {
-  const lots: Array<{ eggs: number; price: number; available: boolean }> = [];
+function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; price: number; available: boolean; note?: string }> {
+  const lots: Array<{ eggs: number; price: number; available: boolean; note?: string }> = [];
   const consider = (entry: any) => {
     if (!entry || typeof entry !== "object") return;
     const eggs = Number(entry.eggs ?? entry.numberOfEggs ?? entry.count);
@@ -5268,7 +5283,10 @@ function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; p
     if (!isFinite(eggs) || eggs <= 0 || !isFinite(price) || price <= 0) return;
     const status = String(entry.status ?? "").toLowerCase();
     const available = !(status === "so" || /sold|unavail|reserved/.test(status));
-    lots.push({ eggs, price, available });
+    // e.g. Lucina's availability: "Incoming" (lot not yet in the freezer)
+    const availability = typeof entry.availability === "string" ? entry.availability.trim() : "";
+    const note = availability && !/^(available|in stock)$/i.test(availability) ? availability : undefined;
+    lots.push({ eggs, price, available, note });
   };
   for (const val of Object.values(record)) {
     if (!Array.isArray(val)) continue;
@@ -5437,7 +5455,7 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
     delete profileData["Journeys"];
     delete profileData["Cohort Status"];
     profileData["Egg Lots"] = allLots
-      .map((l) => `${l.eggs} eggs - $${l.price.toLocaleString("en-US")}${l.available ? "" : " (sold)"}`)
+      .map((l) => `${l.eggs} eggs - $${l.price.toLocaleString("en-US")}${!l.available ? " (sold)" : l.note ? ` (${l.note})` : ""}`)
       .join("; ");
     // Feeds upsertEggDonor's computedFrozenLotStatus (and reads naturally on
     // the profile) - the upsert derives frozenLotStatus from this exact label.
@@ -5564,7 +5582,7 @@ async function runApiSyncJob(
             break outer;
           }
           const shapeNote = status >= 200 && status < 300 && body !== null ? " (2xx but no profile array in the JSON)" : "";
-          attemptErrors.push(`[${method} ${strategy.name}] HTTP ${status}${body === null ? ` (non-JSON response: ${rawSnippet.replace(/\s+/g, " ")})` : shapeNote}`);
+          attemptErrors.push(`[${method} ${strategy.name}] HTTP ${status}${body === null ? ` (non-JSON response: ${rawSnippet.replace(/\s+/g, " ")})` : apiErrorDetail(body) || shapeNote}`);
         } catch (err: any) {
           attemptErrors.push(`[${method} ${strategy.name}] ${err.message}`);
         }
@@ -5593,11 +5611,37 @@ async function runApiSyncJob(
       if (nextUrl && nextUrl !== pageUrl) {
         const { status, body: nextBody } = await fetchApiPage(nextUrl, workingStrategy, 30000, workingMethod, workingMethod === "POST" ? {} : undefined);
         if (status < 200 || status >= 300 || nextBody === null) {
-          job.errors.push(`Pagination stopped at page ${page + 2}: HTTP ${status}`);
+          job.errors.push(`Pagination stopped at page ${page + 2}: HTTP ${status}${apiErrorDetail(nextBody)}`);
           break;
         }
         body = nextBody;
         pageUrl = nextUrl;
+        continue;
+      }
+
+      // Page-number paging: the list URL carries ?page=N (Lucina's ext gateway:
+      // page/per with a `pages` total in the body). Advance until the last page
+      // or an empty one.
+      const pageParam = new URL(pageUrl).searchParams.get("page");
+      if (pageParam !== null && /^\d+$/.test(pageParam)) {
+        const current = parseInt(pageParam, 10);
+        const totalPages =
+          typeof body?.pages === "number" ? body.pages
+          : typeof body?.totalPages === "number" ? body.totalPages
+          : typeof body?.total_pages === "number" ? body.total_pages
+          : null;
+        if (totalPages !== null && current >= totalPages) break;
+        const nextPageUrl = new URL(pageUrl);
+        nextPageUrl.searchParams.set("page", String(current + 1));
+        const { status, body: nextBody } = await fetchApiPage(nextPageUrl.href, workingStrategy, 30000, workingMethod, workingMethod === "POST" ? {} : undefined);
+        if (status < 200 || status >= 300 || nextBody === null) {
+          job.errors.push(`Pagination stopped at page ${current + 1}: HTTP ${status}${apiErrorDetail(nextBody)}`);
+          break;
+        }
+        const nextRecords = extractApiRecords(nextBody);
+        if (!nextRecords || nextRecords.length === 0) break;
+        body = nextBody;
+        pageUrl = nextPageUrl.href;
         continue;
       }
 

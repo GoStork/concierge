@@ -542,20 +542,31 @@ path - API payloads are already structured JSON.
   common JSON login routes (`/api/auth/login`, `/api/login`, `/api/auth/signin`,
   body `{identifier, email, username, password}`), and rides the session cookies
   on every detail call.
-- **Worked example - Lucina Egg Bank (egg-donor), Sep 2 2026**: the 2023-era
-  documented endpoints (`/donor-api/get_donors` + `get_donor_full_profile_customized`
-  with `Api-Key`/`Api-Secret` headers) were REMOVED in their platform rebuild -
-  they 404 with any credentials, and the rotated key/secret Palash sent unlock
-  nothing discoverable. The rebuilt platform's real API:
-  - API Endpoint URL: `https://donors.lucinaeggbank.com/api/donors` - public
-    GET, all 940 donors in one JSON response (`donors` wrapper), rich list data
-    incl. photos on `static.lucinaeggbank.com`.
-  - Profile Detail Endpoint: `https://donors.lucinaeggbank.com/api/donors/{id}/full` -
-    gallery-session gated (`ERR_AUTH_REQUIRED`). The db@gostork.com gallery
-    login works, but the account hit `403 "Your 30-day access has ended"`
-    (`ERR_ACCESS_EXPIRED`) - Lucina must renew/exempt that account before the
-    detail URL is configured; until then leave the detail field EMPTY so runs
-    stay clean.
+- **Page-number paging**: when the list URL carries `?page=N`, the engine
+  advances `page` until the body's `pages` / `totalPages` / `total_pages` count
+  is reached (or a page comes back empty). Structured error envelopes
+  (`{ok:false, code, message}`) are surfaced by code in `SyncLog.errors`.
+- **Worked example - Lucina Egg Bank (egg-donor), Sep 3 2026** (per Palash
+  Basak's email, thread "Lucina egg bank API Access"). Their partner gateway is
+  `https://donors.lucinaeggbank.com/api/ext/API-MT1YZ7QG/` with `Api-Key` +
+  `Api-Secret` request HEADERS on every call (the `X-` spellings also work;
+  never query params or body fields):
+  - API Endpoint URL: `.../get-all-donors?page=1&per=100` - GET, 935 donors
+    over 10 pages, body `{ok, code, message, page, pages, per, total, donors[]}`.
+    Records: `caseId`, `donorId` (= externalId, e.g. BD2874), `tier`, `photo`,
+    ethnicity, race, age, height, education, `status`, `journeys[].cohorts[]`
+    (`cohortId`, `eggs`, `price`, `status`, `availability` e.g. "Incoming").
+  - `.../get-individual-donor?caseId=<caseId>` returns the SAME fields as the
+    list record (Palash: it "IS the complete partner-facing profile"). Do NOT
+    configure it as the Profile Detail Endpoint - 935 calls/run against a
+    **1,000 requests per rolling 24h per endpoint** rate limit buys nothing.
+    Leave the detail field empty; the list is the full partner profile.
+  - The gated full profile on their website (essays, medical detail, full
+    photo set) is intentionally NOT available via any API. The website's own
+    `/api/donors` + `/api/donors/{id}/full` routes are internal/unversioned -
+    Lucina asked us not to build against them (the earlier Sep 2 setup did).
+  - The 2023-era `/donor-api/get_donors` endpoints are the retired platform:
+    404 with any credentials.
 - **Field mapping is deterministic** (`mapApiRecordToItem`): well-known key names
   (case/underscore-insensitive) map onto the DB columns; the FULL record is
   preserved in `profileData` with titleized keys; photo URLs are collected from
