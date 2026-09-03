@@ -5123,12 +5123,16 @@ function buildApiAuthStrategies(creds: ApiSyncCredentials): ApiAuthStrategy[] {
   const strategies: ApiAuthStrategy[] = [];
   if (creds.apiKey) {
     // "Api-Secret"/"Api-Key" (no X- prefix) is Lucina's documented spelling -
-    // include it alongside the X- variants; servers ignore headers they don't read.
+    // include it alongside the X- variant; servers ignore headers they don't
+    // read. HTTP header names are case-insensitive, so NEVER list two casings of
+    // the same name ("X-API-Key" + "X-Api-Key"): fetch merges them into one
+    // header with a comma-joined value ("KEY, KEY"), which the server rejects as
+    // an invalid key. That silently 401'd Lucina on Sep 3 2026.
     const secretHeader: Record<string, string> = creds.apiSecret
-      ? { "X-API-Secret": creds.apiSecret, "X-Api-Secret": creds.apiSecret, "Api-Secret": creds.apiSecret }
+      ? { "X-Api-Secret": creds.apiSecret, "Api-Secret": creds.apiSecret }
       : {};
     strategies.push({ name: "bearer", headers: { Authorization: `Bearer ${creds.apiKey}`, ...secretHeader } });
-    strategies.push({ name: "x-api-key", headers: { "X-API-Key": creds.apiKey, "X-Api-Key": creds.apiKey, "Api-Key": creds.apiKey, ...secretHeader } });
+    strategies.push({ name: "x-api-key", headers: { "X-Api-Key": creds.apiKey, "Api-Key": creds.apiKey, ...secretHeader } });
     if (creds.apiSecret) {
       strategies.push({
         name: "basic key:secret",
