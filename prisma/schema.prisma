@@ -1446,6 +1446,9 @@ model SyncLog {
   newProfiles Int       @default(0)
   staleMarked Int       @default(0)
   errors      Json?
+  // Acceptance verdict computed automatically when the run finalizes (see
+  // sync-audit.ts): { accepted, gates[], fields[], mappingGaps[], sourceLimited[], ... }
+  audit       Json?
   provider    Provider  @relation(fields: [providerId], references: [id])
 
   @@index([providerId])

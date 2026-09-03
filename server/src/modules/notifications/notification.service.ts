@@ -1609,16 +1609,31 @@ export class NotificationService implements OnModuleInit {
     for (const c of surCfgs) liveStatus.set(`${c.providerId}:surrogate`, c.syncStatus);
     for (const c of spermCfgs) liveStatus.set(`${c.providerId}:sperm-donor`, c.syncStatus);
 
-    const needsAttention = results.filter(
-      (r) => liveStatus.get(`${r.providerId}:${r.type}`) === "FAILED",
-    );
+    // Acceptance audit verdicts (stored on each run's SyncLog by the engine).
+    // A run can finish "completed" and still be NOT ACCEPTED - thin data,
+    // missing photos, no price - and that must reach the same digest.
+    const auditByKey = new Map<string, any>();
+    for (const r of results) {
+      const log = await this.prisma.syncLog.findFirst({
+        where: { providerId: r.providerId, type: r.type },
+        orderBy: { startedAt: "desc" },
+        select: { audit: true },
+      });
+      if (log?.audit) auditByKey.set(`${r.providerId}:${r.type}`, log.audit);
+    }
+
+    const needsAttention = results.filter((r) => {
+      const key = `${r.providerId}:${r.type}`;
+      const audit = auditByKey.get(key);
+      return liveStatus.get(key) === "FAILED" || (audit && audit.accepted === false);
+    });
     const okCount = results.length - needsAttention.length;
     const selfHealed = results.filter(
       (r) => (r.retries || 0) > 0 && liveStatus.get(`${r.providerId}:${r.type}`) !== "FAILED",
     );
 
     if (needsAttention.length === 0) {
-      this.logger.log(`[nightly-sync] Digest: all ${results.length} configs OK (${selfHealed.length} self-healed after retry) - no alert sent`);
+      this.logger.log(`[nightly-sync] Digest: all ${results.length} configs OK and accepted (${selfHealed.length} self-healed after retry) - no alert sent`);
       return;
     }
 
@@ -1634,10 +1649,22 @@ export class NotificationService implements OnModuleInit {
 
     const brandData = await this.getBrandData();
     const base = getBaseUrl();
-    const detailRows = needsAttention.map((r) => ({
-      label: `${esc(r.providerName)} (${r.type})`,
-      value: `${esc(reasonFor(r.errors))}${(r.retries || 0) > 0 ? ` - failed after ${r.retries} retr${r.retries === 1 ? "y" : "ies"}` : ""}`,
-    }));
+    const detailRows = needsAttention.map((r) => {
+      const key = `${r.providerId}:${r.type}`;
+      const failedRun = liveStatus.get(key) === "FAILED";
+      const audit = auditByKey.get(key);
+      let value: string;
+      if (failedRun) {
+        value = `${esc(reasonFor(r.errors))}${(r.retries || 0) > 0 ? ` - failed after ${r.retries} retr${r.retries === 1 ? "y" : "ies"}` : ""}`;
+      } else {
+        // Run finished but the acceptance audit rejected the data.
+        const failures: string[] = Array.isArray(audit?.failures) ? audit.failures : [];
+        value = `Synced but NOT ACCEPTED: ${esc(failures.slice(0, 3).join("; ").slice(0, 300))}`;
+      }
+      const srcLimited: string[] = Array.isArray(audit?.sourceLimited) ? audit.sourceLimited : [];
+      if (srcLimited.length) value += ` (source does not publish: ${esc(srcLimited.slice(0, 6).join(", "))}${srcLimited.length > 6 ? ", ..." : ""})`;
+      return { label: `${esc(r.providerName)} (${r.type})`, value };
+    });
     const summaryLine =
       `${needsAttention.length} provider${needsAttention.length === 1 ? "" : "s"} need attention` +
       `${okCount > 0 ? `, ${okCount} synced fine` : ""}` +

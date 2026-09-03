@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, Clock, History, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, Clock, History, ChevronDown, ChevronUp, ShieldCheck, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 export interface MissingFieldSummary {
@@ -24,6 +24,72 @@ export interface SyncLogEntry {
   newProfiles: number;
   staleMarked: number;
   errors: string[] | null;
+  /** Acceptance audit verdict stored by the engine when the run finalized. */
+  audit?: SyncAuditVerdict | null;
+}
+
+export interface SyncAuditVerdict {
+  accepted: boolean;
+  auditedAt: string;
+  rows: number;
+  gates: { label: string; ok: boolean; detail: string }[];
+  fields: { label: string; fillPct: number; tag: "ok" | "GAP" | "VAR" | "SRC"; unmapped: number }[];
+  failures: string[];
+  mappingGaps: string[];
+  sourceLimited: string[];
+  sourceVariance: string[];
+  statusCounts: Record<string, number>;
+}
+
+const AUDIT_TAG_LABEL: Record<string, string> = {
+  ok: "ok",
+  GAP: "not mapped (our bug)",
+  VAR: "left blank by donors",
+  SRC: "source does not publish",
+};
+
+function AuditDetails({ audit }: { audit: SyncAuditVerdict }) {
+  const problems = audit.fields.filter((f) => f.tag !== "ok");
+  return (
+    <div className="space-y-2 text-xs">
+      <div className="space-y-0.5">
+        {audit.gates.map((g) => (
+          <div key={g.label} className="flex items-start gap-2">
+            {g.ok ? (
+              <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0 text-[hsl(var(--brand-success))]" />
+            ) : (
+              <XCircle className="w-3 h-3 mt-0.5 shrink-0 text-destructive" />
+            )}
+            <span className="font-heading text-foreground">{g.label}</span>
+            <span className="text-foreground/70">{g.detail}</span>
+          </div>
+        ))}
+      </div>
+      {problems.length > 0 && (
+        <div>
+          <div className="t-helper mb-0.5">Fields below 90%</div>
+          <div className="flex flex-wrap gap-1">
+            {problems.map((f) => (
+              <span
+                key={f.label}
+                className={`inline-flex items-center gap-1 rounded-[var(--radius)] px-1.5 py-0.5 border ${
+                  f.tag === "GAP"
+                    ? "border-destructive/40 bg-destructive/10 text-destructive"
+                    : f.tag === "SRC"
+                      ? "border-border bg-secondary text-foreground/80"
+                      : "border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.1)] text-foreground/80"
+                }`}
+                title={AUDIT_TAG_LABEL[f.tag]}
+              >
+                {f.label} {f.fillPct}%
+                <span className="opacity-70">- {AUDIT_TAG_LABEL[f.tag]}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export interface SyncReport {
@@ -74,6 +140,7 @@ const SOURCE_LABEL: Record<string, string> = {
 function SyncLogHistory({ providerId, type }: { providerId: string; type: string }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
+  const [expandedAudit, setExpandedAudit] = useState<Record<string, boolean>>({});
   const { data: logs, isLoading } = useQuery<SyncLogEntry[]>({
     queryKey: ["/api/scrapers/sync-logs", providerId, type],
     queryFn: async () => {
@@ -110,6 +177,7 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
               <th className="t-helper text-left px-3 py-2 font-ui">Started</th>
               <th className="t-helper text-left px-3 py-2 font-ui">Source</th>
               <th className="t-helper text-left px-3 py-2 font-ui">Result</th>
+              <th className="t-helper text-left px-3 py-2 font-ui">Audit</th>
               <th className="t-helper text-right px-3 py-2 font-ui">Synced</th>
               <th className="t-helper text-right px-3 py-2 font-ui">Skipped</th>
               <th className="t-helper text-right px-3 py-2 font-ui">New</th>
@@ -160,6 +228,25 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
                         </span>
                       )}
                     </td>
+                    <td className="px-3 py-2">
+                      {log.audit ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedAudit((prev) => ({ ...prev, [log.id]: !prev[log.id] }))}
+                          className={`inline-flex items-center gap-1 text-xs font-heading hover:underline ${
+                            log.audit.accepted ? "text-[hsl(var(--brand-success))]" : "text-destructive"
+                          }`}
+                          title={log.audit.accepted ? "All acceptance gates pass" : log.audit.failures.join("; ")}
+                          data-testid={`audit-verdict-${log.id}`}
+                        >
+                          {log.audit.accepted ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+                          {log.audit.accepted ? "Accepted" : `Not accepted (${log.audit.failures.length})`}
+                          {expandedAudit[log.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      ) : (
+                        <span className="t-helper">-</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-xs text-right font-heading">{log.succeeded || "-"}</td>
                     <td className="t-helper px-3 py-2 text-right">{log.skipped || "-"}</td>
                     <td className="px-3 py-2 text-xs text-right text-[hsl(var(--brand-success))]">{log.newProfiles > 0 ? `+${log.newProfiles}` : "-"}</td>
@@ -181,9 +268,16 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
                       {formatDuration(log.startedAt, log.completedAt)}
                     </td>
                   </tr>
+                  {expandedAudit[log.id] && log.audit && (
+                    <tr className="bg-secondary/40">
+                      <td colSpan={10} className="px-3 py-2">
+                        <AuditDetails audit={log.audit} />
+                      </td>
+                    </tr>
+                  )}
                   {isErrorOpen && errors.length > 0 && (
                     <tr className="bg-destructive/5">
-                      <td colSpan={9} className="px-3 py-2">
+                      <td colSpan={10} className="px-3 py-2">
                         <div className="space-y-0.5">
                           {errors.map((err, i) => (
                             <div key={i} className="text-xs text-destructive/80">{err}</div>

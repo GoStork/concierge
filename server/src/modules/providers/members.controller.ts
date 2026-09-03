@@ -22,6 +22,7 @@ import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderMemberSchema } from "@shared/schema";
 import { hasProviderRole } from "@shared/roles";
 import { isClinicianMember } from "./clinician";
+import { createMemberWithSlug, ensureMemberIdentity } from "./member-identity";
 import { z } from "zod";
 import { ErrorResponseDto } from "../../dto/auth.dto";
 
@@ -96,8 +97,11 @@ export class MembersController {
       );
       const fieldSources: Record<string, string> = {};
       for (const f of editedSelf) fieldSources[f] = "self";
-      const member = await this.prisma.providerMember.create({
-        data: { ...memberData, providerId, ...(editedSelf.length > 0 ? { fieldSources } : {}) },
+      // Same slug + personKey derivation the enrichment pipeline uses. The
+      // marketplace Doctors tab and /doctors/:slug list ONLY members with a
+      // slug, so a hand-added doctor without one never shows up for parents.
+      const member = await createMemberWithSlug(this.prisma, {
+        ...(memberData as any), providerId, ...(editedSelf.length > 0 ? { fieldSources } : {}),
       });
       if (locationIds && locationIds.length > 0) {
         await this.prisma.providerMemberLocation.createMany({
@@ -161,6 +165,9 @@ export class MembersController {
         where: { id },
         data: memberData,
       });
+      // Fill a missing slug / re-sync personKey after a rename (never rewrites
+      // an existing slug - parents save doctors by it).
+      await ensureMemberIdentity(this.prisma, id);
       if (locationIds !== undefined) {
         await this.prisma.providerMemberLocation.deleteMany({ where: { memberId: id } });
         if (locationIds.length > 0) {

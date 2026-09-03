@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { createHash } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { scrapeProviderWebsite, getRootDomain, normalizeHostname } from "./scrape.service";
@@ -8,6 +7,7 @@ import { upscaleMissingDoctorPhotos } from "../../lib/upscale-doctors";
 import { US_STATES } from "./us-states";
 import { clusterPersonVariants, pickBestDisplayName } from "../../lib/doctor-name-dedup";
 import { isClinicianMember } from "./clinician";
+import { normalizeName, createMemberWithSlug } from "./member-identity";
 import { trackGemini } from "../../lib/gemini-usage";
 import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
 
@@ -207,78 +207,9 @@ interface SartResult {
   members: SartMember[];
 }
 
-export function normalizeName(name: string): string {
-  return name
-    .replace(/^\s*(?:Dr|Doctor)\b\.?\s*/i, "") // strip leading "Dr."/"Doctor" so "Dr. X" and "X" match
-    // Drop punctuation FIRST so dotted credentials collapse ("M.D." -> "MD",
-    // "Ph.D." -> "PhD") and then get stripped as whole words below. Doing this
-    // after the credential strip left "M.D." intact -> "...md", a DIFFERENT
-    // personKey from the plain name, which spawned duplicate doctor members.
-    .replace(/[.,'"]/g, "")
-    // Strip "dba ..." (everything from the dba onward).
-    .replace(/\s*\bdba\b.*/gi, "")
-    // Legal-entity + credential suffixes - matched ONLY as whole words (leading \b).
-    // Without the leading \b these eat substrings out of real words ("Colora[do]",
-    // "[Pa]cific", "Fertility [Pa]rtners", "[Sc]ience"), which silently corrupted
-    // SART clinic matching AND doctor personKeys/slugs.
-    .replace(/\s*\b(LLC|Inc|PC|PA|SC|LTD|LLP|Corporation|Corp|PLLC)\b/gi, "")
-    .replace(/\s*\b(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
-    .replace(/[\-–]/g, " ")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// Doctor profile identity: slug is the URL key, personKey links the same human
-// across clinics. Mirrors scripts/backfill-doctor-slugs.ts so re-enrichment
-// produces the same keys the backfill did.
-function slugifyName(name: string): string {
-  return normalizeName(name)
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function personKeyOf(name: string): string {
-  return createHash("sha1").update(normalizeName(name)).digest("hex").slice(0, 16);
-}
-
-// Create a ProviderMember with a globally-unique slug + personKey. Enrichment
-// deletes+recreates a clinic's members on every run, so without this the
-// backfilled slugs would be lost. Retries with a numeric suffix on slug
-// collision; falls back to no slug only for pathological (empty/colliding) names.
-async function createMemberWithSlug(
-  prisma: PrismaService,
-  data: {
-    providerId: string;
-    name: string;
-    title: string | null;
-    bio: string | null;
-    bioRaw?: string | null;
-    photoUrl: string | null;
-    isMedicalDirector: boolean;
-    sortOrder: number;
-  },
-): Promise<void> {
-  const base = slugifyName(data.name);
-  const personKey = personKeyOf(data.name);
-  if (!base) {
-    await prisma.providerMember.create({ data: { ...data, personKey } });
-    return;
-  }
-  for (let attempt = 1; attempt <= 100; attempt++) {
-    const slug = attempt === 1 ? base : `${base}-${attempt}`;
-    try {
-      await prisma.providerMember.create({ data: { ...data, slug, personKey } });
-      return;
-    } catch (e: any) {
-      if (e?.code === "P2002") continue; // slug already taken - try next suffix
-      throw e;
-    }
-  }
-  await prisma.providerMember.create({ data: { ...data, personKey } });
-}
+// Doctor identity (normalizeName / slug / personKey / createMemberWithSlug) lives
+// in member-identity.ts so the team editor derives the same keys enrichment does.
+export { normalizeName };
 
 const STATE_ABBREV_TO_FULL: Record<string, string> = {
   al: "alabama", ak: "alaska", az: "arizona", ar: "arkansas", ca: "california",

@@ -19,8 +19,14 @@ re-discovering the same problems on every new agency.
 
 "Login worked and the run says completed" is NOT success. A sync is done only
 when the imported data would satisfy a parent browsing the marketplace and Eva
-recommending from it. The gates below are the contract; the audit script checks
-them mechanically:
+recommending from it. The gates below are the contract. **The audit runs
+automatically at the end of EVERY sync run** (manual, Sync 10, nightly,
+auto-resume - `finalizeSyncLog` -> `sync-audit.ts`), scores ALL profiles of
+that provider+type (never a sample), stores the verdict on the run's `SyncLog`
+row (`audit` JSON), shows it as the **Audit** column in Run History (Accepted /
+Not accepted, expandable to the gates and field tags), and puts any
+not-accepted provider into the nightly digest email even when the run itself
+"completed". For an ad-hoc re-check, the same audit is available as a CLI:
 
 ```bash
 npx tsx -r dotenv/config scripts/audit-sync.ts "<provider name or id>" egg-donor   # or surrogate / sperm-donor

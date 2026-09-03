@@ -22,6 +22,7 @@ import { dedupeEntityPhotos } from "./photo-dedup";
 import { resolveDonorLocation } from "@shared/donor-location";
 import { trackGemini } from "../../lib/gemini-usage";
 import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
+import { auditSync } from "./sync-audit";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -5210,6 +5211,23 @@ async function finalizeSyncLog(prisma: PrismaService, job: SyncJob): Promise<voi
     job.finalized = true;
   } catch (err: any) {
     console.error(`[donor-sync] Failed to update SyncLog ${job.syncLogId}: ${err.message}`);
+    return;
+  }
+
+  // Acceptance audit - runs on EVERY finished run (manual, test, nightly,
+  // auto-resume) and stores its verdict on the run record. "Completed" and
+  // "Accepted" are different things: this is what tells an admin (and the
+  // nightly digest) that a clean-looking run still delivered thin data.
+  // Never lets an audit failure disturb the run's own terminal state.
+  try {
+    const audit = await auditSync(prisma, job.providerId, job.type, getMandatoryFieldChecks(job.type), job.syncLogId);
+    await prisma.syncLog.update({ where: { id: job.syncLogId }, data: { audit: audit as any } });
+    console.log(
+      `[sync-audit] ${job.providerId}/${job.type}: ${audit.accepted ? "ACCEPTED" : "NOT ACCEPTED - " + audit.failures.join(" | ")}` +
+        (audit.sourceLimited.length ? ` | source-limited: ${audit.sourceLimited.join(", ")}` : ""),
+    );
+  } catch (err: any) {
+    console.error(`[sync-audit] Audit failed for ${job.syncLogId}: ${err.message}`);
   }
 }
 
