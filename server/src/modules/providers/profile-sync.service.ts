@@ -5287,9 +5287,10 @@ function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; p
     if (!isFinite(eggs) || eggs <= 0 || !isFinite(price) || price <= 0) return;
     const status = String(entry.status ?? "").toLowerCase();
     const available = !(status === "so" || /sold|unavail|reserved/.test(status));
-    // e.g. Lucina's availability: "Incoming" (lot not yet in the freezer)
+    // e.g. Lucina's availability: "Frozen" (in the freezer now) vs "Incoming"
+    // (cycle scheduled, lot not yet banked). Only the latter is worth noting.
     const availability = typeof entry.availability === "string" ? entry.availability.trim() : "";
-    const note = availability && !/^(available|in stock)$/i.test(availability) ? availability : undefined;
+    const note = availability && !/^(available|in stock|frozen)$/i.test(availability) ? availability : undefined;
     lots.push({ eggs, price, available, note });
   };
   for (const val of Object.values(record)) {
@@ -5305,6 +5306,26 @@ function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; p
     }
   }
   return lots;
+}
+
+// Platform race codes -> the labels the marketplace filters and cards use.
+// Unknown values pass through title-cased so nothing is lost.
+const RACE_CODE_LABELS: Record<string, string> = {
+  cauc: "Caucasian", caucasian: "Caucasian", white: "Caucasian",
+  hisp: "Hispanic", hispanic: "Hispanic", latino: "Hispanic", latina: "Hispanic",
+  asian: "Asian", eastasian: "Asian", southasian: "South Asian",
+  aa: "African American", black: "African American", africanamerican: "African American",
+  me: "Middle Eastern", middleeastern: "Middle Eastern",
+  na: "Native American", nativeamerican: "Native American",
+  pi: "Pacific Islander", pacificislander: "Pacific Islander",
+  mixed: "Mixed", multiracial: "Mixed", other: "Other",
+};
+function humanizeRaceCode(val: any): any {
+  if (typeof val !== "string" || !val.trim()) return val;
+  const key = val.toLowerCase().replace(/[^a-z]/g, "");
+  if (RACE_CODE_LABELS[key]) return RACE_CODE_LABELS[key];
+  // Already a readable label (e.g. "Venezuelan", "White (non-Hispanic)") - keep as-is
+  return val.length <= 5 ? val.charAt(0).toUpperCase() + val.slice(1) : val;
 }
 
 // Hair TEXTURE words masquerading as a hair color (Lucina's hairColor field
@@ -5377,7 +5398,7 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
     firstName: pick("firstname", "first", "givenname"),
     lastName: pick("lastname", "last", "surname", "familyname"),
     age: num(pick("age")),
-    race: pick("race"),
+    race: humanizeRaceCode(pick("race")),
     ethnicity: pick("ethnicity", "ethnicbackground"),
     religion: pick("religion"),
     education: pick("education", "educationlevel", "highesteducation"),
@@ -5406,12 +5427,21 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
     if (lots.length > 0) {
       if (!item.donorType) item.donorType = "Frozen";
       if (!item.donationTypes) item.donationTypes = "Frozen Eggs";
+      // The representative lot is the STANDARD one, not the cheapest: a 2-egg
+      // remainder at $6,000 is not what a parent pays. Prefer available lots,
+      // then lots already banked over "Incoming", then the largest egg count,
+      // then the lowest price.
       const available = lots.filter((l) => l.available);
       const pool = available.length > 0 ? available : lots;
-      const cheapest = pool.reduce((a, b) => (a.price <= b.price ? a : b));
-      item.numberOfEggs = cheapest.eggs;
-      item.eggLotCost = cheapest.price;
-      item.totalCost = cheapest.price;
+      const representative = pool.reduce((a, b) => {
+        const aBanked = a.note ? 0 : 1, bBanked = b.note ? 0 : 1;
+        if (aBanked !== bBanked) return aBanked > bBanked ? a : b;
+        if (a.eggs !== b.eggs) return a.eggs > b.eggs ? a : b;
+        return a.price <= b.price ? a : b;
+      });
+      item.numberOfEggs = representative.eggs;
+      item.eggLotCost = representative.price;
+      item.totalCost = representative.price;
     }
   } else if (type === "sperm-donor") {
     item.compensation = num(pick("compensation", "fee"));
