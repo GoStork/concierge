@@ -1558,6 +1558,34 @@ export function maxFacetwpPageCount(html: string): number {
  * WordPress-generated small thumbnails (e.g. -150x150) are skipped in favour of
  * the full-size originals. Returns absolute, de-duplicated, valid image URLs.
  */
+/**
+ * Generic "gallery-item" galleries (WordPress themes such as Family Creations:
+ * `<div class="gallery-item ..."><a href="FULL"><img src="FULL"></a></div>`).
+ * Prefers the anchor's full-size href over the (possibly resized) img src.
+ * The audit on Sep 3 2026 showed 94/101 FC donors with a single photo while
+ * their profile pages carry ~10 - this format was simply not recognised.
+ */
+function extractGalleryItemPhotos(html: string, baseUrl: string): string[] {
+  const out: string[] = [];
+  if (!html) return out;
+  const seen = new Set<string>();
+  const itemRe = /<(?:div|li|figure)[^>]*class="[^"]*\bgallery-item\b[^"]*"[^>]*>([\s\S]*?)<\/(?:div|li|figure)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = itemRe.exec(html)) !== null) {
+    const block = m[1];
+    const href = block.match(/<a[^>]+href="([^"]+\.(?:jpe?g|png|webp|gif)(?:\?[^"]*)?)"/i)?.[1];
+    const src = block.match(/<img[^>]+src="([^"]+)"/i)?.[1];
+    let url = (href || src || "").trim();
+    if (!url) continue;
+    if (/-\d{1,3}x\d{1,3}\.(?:jpe?g|png|webp|gif)(?:$|\?)/i.test(url) && src && src !== url) url = src;
+    try { url = new URL(url, baseUrl).href; } catch {}
+    if (!isValidImageUrl(url) || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
 function extractFotoramaPhotos(html: string, baseUrl: string): string[] {
   const out: string[] = [];
   if (!html) return out;
@@ -4060,10 +4088,10 @@ export function getMandatoryFieldChecks(type: DonorType): { label: string; check
     { label: "Section: Health & Medical", check: (d) => sectionPresent(d, /medical|health|medication|blood|hiv|std/i) },
     { label: "Section: Personal Essays", check: (d) => sectionPresent(d, /why .*donor|message to|personality|goals|achievement|hobb|favou?rite|about me|essay/i) },
     { label: "Section: Lifestyle", check: (d) => sectionPresent(d, /smok|alcohol|drug|tattoo|piercing/i) },
-    { label: "Section: Psychological", check: (d) => sectionPresent(d, /psych|depression|counsel|adhd|add\b/i) },
+    { label: "Section: Psychological", check: (d) => sectionPresent(d, /psych|depression|counsel|adhd|\badd\b|mental|anxiety|antidepress/i) },
     { label: "Section: Genetic Testing", check: (d) => sectionPresent(d, /genetic test|carrier|screening/i) },
   ];
-  const fertilitySection = { label: "Section: Fertility / Donation History", check: (d: any) => sectionPresent(d, /fertility|pregnan|donation history|previous donor|eggs retrieved|embryo|cycle/i) };
+  const fertilitySection = { label: "Section: Fertility / Donation History", check: (d: any) => sectionPresent(d, /fertility|reproductive|pregnan|donation history|previous donor|eggs retrieved|embryo|cycle|menstrua|\bamh\b|birth control/i) };
   if (type === "egg-donor") {
     return [
       { label: "Age", check: (d) => has(d.age) },
@@ -6996,7 +7024,8 @@ async function runSyncJob(
               // it through profileData["All Photos"], which extractPhotosArray and
               // persistPhotoUrls already migrate to GCS and write to the photos[] column.
               if (job.type === "egg-donor") {
-                const gallery = extractFotoramaPhotos(profileHtml, item.profileUrl);
+                let gallery = extractFotoramaPhotos(profileHtml, item.profileUrl);
+                if (gallery.length <= 1) gallery = extractGalleryItemPhotos(profileHtml, item.profileUrl);
                 if (gallery.length > 1) {
                   const merged: string[] = [];
                   for (const u of [item.photoUrl, ...gallery]) {
@@ -7149,9 +7178,12 @@ async function runSyncJob(
                 } else if (typeof flatAll["Ethnicity"] === "string") {
                   item.ethnicity = dedupeOrigins(flatAll["Ethnicity"].split(/[,;]+/)) || item.ethnicity || null;
                 }
+                // "Education info" / "Major" are Family Creations' labels - the
+                // audit showed 15 donors with education in the raw sections but
+                // an empty column (Sep 3 2026).
                 item.education = pickScalar(ed["Major/Area of Study"], ed["Education"], ed["Education Level"],
                   flatAll["Major/Area of Study"], flatAll["Education"],
-                  flatGet("education level", "highest education", "degrees earned major")) || item.education || null;
+                  flatGet("education level", "highest education", "degrees earned major", "education info", "education", "degree", "major", "college")) || item.education || null;
                 item.occupation = pickScalar(ed["What is your current or most recent occupation?"],
                   ed["Occupation"], ed["Current Occupation"], ed["What is your occupation?"],
                   flatAll["Occupation"], flatAll["What is your current or most recent occupation?"]) || item.occupation || null;

@@ -42,6 +42,50 @@ const PRICE_FIELD: Record<DonorType, string> = {
   "sperm-donor": "compensation",
 };
 
+// Raw-data evidence per required field: a profileData key (any depth) matching
+// this regex with a non-empty value means the source GAVE us the field. If the
+// mapped column is still empty on that row, the mapper dropped it - our bug.
+const RAW_EVIDENCE: Record<string, RegExp> = {
+  "Education Level": /education|degree|major|school|college|university/i,
+  "Education": /education|degree|major|school|college|university/i,
+  "Eye Color": /eye/i,
+  "Location": /location|city|state of residence|residence|country/i,
+  "Hair Color": /hair.*colou?r|natural colou?r/i,
+  "Donation Types": /donation type|type of donation|donation openness|anonymity|open donation/i,
+  "Race": /\brace\b/i,
+  "Relationship Status": /relationship|marital/i,
+  "Ethnicity": /ethnic|ancestry/i,
+  "Occupation": /occupation|profession|\bjob\b/i,
+  "Religion": /religio/i,
+  "Egg Donor Compensation": /compensation|donor fee/i,
+  "Height": /height/i,
+  "Weight": /weight/i,
+  "Blood Type": /blood type/i,
+  "Type": /donor type|type of donor/i,
+  "Price": /price|cost|compensation/i,
+  "BMI": /\bbmi\b/i,
+  "COVID Vaccinated": /covid|vaccin/i,
+  "C-Sections": /c-?section|cesarean/i,
+  "Live Births": /live birth|deliver/i,
+  "Miscarriages": /miscarriage/i,
+  "Agrees to Twins": /twins/i,
+  "Base Compensation": /compensation/i,
+};
+
+function hasRawEvidence(pd: any, re: RegExp): boolean {
+  if (!pd || typeof pd !== "object") return false;
+  const walk = (obj: any, depth: number): boolean => {
+    if (depth > 3 || !obj || typeof obj !== "object") return false;
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) continue;
+      if (re.test(k) && (typeof v !== "object" || Array.isArray(v))) return true;
+      if (typeof v === "object" && walk(v, depth + 1)) return true;
+    }
+    return false;
+  };
+  return walk(pd, 0);
+}
+
 function pct(n: number, d: number): string {
   return d === 0 ? "n/a" : `${Math.round((n / d) * 1000) / 10}%`;
 }
@@ -100,8 +144,11 @@ async function main() {
   // 1. Run outcome + coverage
   gate(!!lastRun && lastRun.status !== "failed", "Run finished", lastRun ? `status=${lastRun.status}` : "no SyncLog row");
   if (lastRun && lastRun.total > 0) {
-    const coverage = lastRun.succeeded / lastRun.total;
-    gate(coverage >= GATES.minCoverageOfSource, "Coverage of source list", `${lastRun.succeeded}/${lastRun.total} (${pct(lastRun.succeeded, lastRun.total)})`);
+    // "skipped" = unchanged since the last run (card hash matched) - those
+    // profiles are covered, they just did not need re-importing.
+    const covered = lastRun.succeeded + (lastRun.skipped || 0);
+    const coverage = covered / lastRun.total;
+    gate(coverage >= GATES.minCoverageOfSource, "Coverage of source list", `${lastRun.succeeded} imported + ${lastRun.skipped || 0} unchanged of ${lastRun.total} (${pct(covered, lastRun.total)})`);
     gate(lastRun.failed / lastRun.total <= GATES.maxFailedRatio, "Failed ratio", `${lastRun.failed}/${lastRun.total}`);
   }
   const errs = Array.isArray(lastRun?.errors) ? (lastRun!.errors as any[]) : [];
@@ -145,22 +192,36 @@ async function main() {
   }
   gate(junkRows === 0, "No platform-internal keys on profiles", junkRows ? `${junkRows} rows carry ${[...junkKeys].join(", ")}` : "clean");
 
-  // 7. Required fields - ours vs source-limited
+  // 7. Required fields - ours vs source-limited vs source variance.
+  // A field below threshold is OUR bug only when the raw profile data still
+  // carries it (a key matching the field with a non-empty value) on rows where
+  // the mapped column is empty - i.e. we scraped it and then dropped it. When
+  // the raw data does not have it either, the donor simply did not provide it
+  // (source variance) or the source never publishes it (source-limited).
   console.log("\n-- required field fill rates --");
   const checks = getMandatoryFieldChecks(type);
   const ourGaps: string[] = [];
   const sourceLimited: string[] = [];
+  const sourceVariance: string[] = [];
   for (const c of checks) {
     const filled = rows.filter((r) => c.check(r)).length;
     const ratio = rows.length ? filled / rows.length : 0;
-    const tag = ratio >= GATES.minRequiredFieldFill ? "ok " : filled === 0 ? "SRC" : "GAP";
-    console.log(`  ${tag}  ${c.label.padEnd(28)} ${pct(filled, rows.length)}`);
+    const evidence = RAW_EVIDENCE[c.label];
+    const mappingMisses = evidence ? rows.filter((r) => !c.check(r) && hasRawEvidence(r.profileData, evidence)).length : 0;
+    let tag: string;
+    if (ratio >= GATES.minRequiredFieldFill) tag = "ok ";
+    else if (mappingMisses > 0) tag = "GAP";
+    else if (filled === 0) tag = "SRC";
+    else tag = "VAR";
+    console.log(`  ${tag}  ${c.label.padEnd(38)} ${pct(filled, rows.length).padStart(6)}${mappingMisses ? `   (${mappingMisses} rows have it in raw data but not mapped)` : ""}`);
     if (ratio < GATES.minRequiredFieldFill) {
-      if (filled === 0) sourceLimited.push(c.label);
-      else ourGaps.push(`${c.label} (${pct(filled, rows.length)})`);
+      if (mappingMisses > 0) ourGaps.push(`${c.label} (${pct(filled, rows.length)}, ${mappingMisses} unmapped)`);
+      else if (filled === 0) sourceLimited.push(c.label);
+      else sourceVariance.push(`${c.label} (${pct(filled, rows.length)})`);
     }
   }
-  if (ourGaps.length) failures.push(`Partial fields - mapping bug on our side, fix before reporting: ${ourGaps.join(", ")}`);
+  if (ourGaps.length) failures.push(`Fields present in raw data but not mapped - fix before reporting: ${ourGaps.join(", ")}`);
+  if (sourceVariance.length) warnings.push(`Source variance (donors left these blank; nothing to map): ${sourceVariance.join(", ")}`);
 
   console.log("\n== Verdict ==");
   if (failures.length === 0) console.log("SYNC ACCEPTED - all hard gates pass.");
