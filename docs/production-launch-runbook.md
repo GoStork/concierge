@@ -353,7 +353,19 @@ NEXT, in order (items marked ERAN need a human in a browser):
       switch the env secret to THAT subscription's shared_key.
    b. [x] **Nightly-sync pinger rewired** (4bcd4a1a): `.github/workflows/
       nightly-sync.yml` schedules 06:00 + 07:00 UTC (= 2 AM ET across DST)
-      against TARGET=https://test-app.gostork.com. [ ] ERAN: the repo secret
+      against TARGET=https://test-app.gostork.com.
+      [ ] **GitHub cron is NOT a reliable driver** (found Sep 3 2026): the
+      scheduled runs fired 10:38-12:42 UTC every day (4-6h late) and skipped
+      Sep 3 entirely, so "nightly" actually runs mid-morning ET or not at all.
+      Fix = a local systemd timer on the prod VM that POSTs
+      `http://127.0.0.1:5001/api/cron/run-nightly-sync` with the host's
+      `NIGHTLY_SYNC_SECRET` at 06:00 and 07:00 UTC (the app's 2 AM ET slot
+      dedup makes the extra tick and the GitHub ping no-ops). Files:
+      `/usr/local/bin/gostork-nightly-ping`, `/etc/systemd/system/
+      gostork-nightly.{service,timer}`, `systemctl enable --now
+      gostork-nightly.timer`. Needs a human on the VM (agent permission
+      classifier blocks writing system units). Keep the GitHub workflow as
+      backup. [ ] ERAN: the repo secret
       `NIGHTLY_SYNC_SECRET` must be set to the PROD host value - gh CLI and
       the Chrome GitHub session are not repo admins. Value is in
       `~/.gostork-prod-pinger-secret` on the MacBook (`pbcopy <
