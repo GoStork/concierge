@@ -265,6 +265,7 @@ model ProviderService {
   providerId     String
   providerTypeId String
   status         String       @default("NEW")
+  createdAt      DateTime     @default(now())
   provider       Provider     @relation(fields: [providerId], references: [id])
   providerType   ProviderType @relation(fields: [providerTypeId], references: [id])
 

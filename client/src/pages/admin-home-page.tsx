@@ -31,6 +31,7 @@ import {
   Video,
   Star,
   Building2,
+  Settings2,
 } from "lucide-react";
 import { StarDisplay } from "@/components/reviews/reviews-ui";
 import { QueueRow, SectionHeader, StatTile } from "@/components/home/home-sections";
@@ -41,6 +42,7 @@ import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { useToast } from "@/hooks/use-toast";
 
 interface AdminDashboard {
+  pendingServiceRequests: Array<{ id: string; providerId: string; providerName: string; serviceName: string; requestedAt: string; taskKey: string }>;
   escalations: Array<{ sessionId: string; parentName: string; providerName: string | null; updatedAt: string; taskKey: string }>;
   dueInvoices: Array<{ id: string; sessionId: string | null; dueAt: string; overdue: boolean; amountCents: number; serviceType: string | null; parentName: string; providerName: string | null; taskKey: string }>;
   sentAgreements: Array<{ agreementId: string; createdAt: string; documentType: string; parentName: string; providerName: string | null; signedCount: number; signerCount: number }>;
@@ -219,6 +221,7 @@ export default function AdminHomePage() {
 
   const queueCount =
     onboardingRows.length +
+    (data?.pendingServiceRequests?.length || 0) +
     (((data as any)?.signedProviderAgreements?.length as number) || 0) +
     (data?.escalations.length || 0) +
     (data?.pendingMeetings?.length || 0) +
@@ -261,6 +264,19 @@ export default function AdminHomePage() {
                 detail={`${o.percent}% of required setup steps done`}
                 cta="Continue"
                 onClick={() => navigate(`/admin/providers/${o.providerId}`)}
+              />
+            ))}
+            {/* A provider asked to add a service line - hidden from parents until approved. */}
+            {(data?.pendingServiceRequests || []).map((s) => (
+              <QueueRow
+                key={s.taskKey}
+                tone="task"
+                icon={<Settings2 className="w-4 h-4" />}
+                title={`${s.providerName} requested ${s.serviceName}`}
+                detail={`Requested ${fmtWhen(s.requestedAt)} - approve or decline to publish or hide the service`}
+                cta="Review"
+                onClick={() => navigate(`/admin/providers/${s.providerId}?tab=profile&services=1`)}
+                onDismiss={() => dismiss.mutate(s.taskKey)}
               />
             ))}
             {/* Good news first: a provider executed the GoStork agreement. */}

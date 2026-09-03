@@ -527,6 +527,41 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleServiceRequestedEvent = useCallback((data: any) => {
+    if (data.type !== "provider_service_requested") return;
+    if (data.isOwnAction) return;
+
+    const title = `${data.providerName || "A provider"} requested ${data.serviceName || "a new service"}`;
+    const description = "Approval needed - the service stays hidden from parents until you approve it.";
+
+    playNotificationChime();
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+
+    const { id: toastId } = toast({
+      title,
+      description,
+      variant: "warning",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate(`/admin/providers/${data.providerId}?tab=profile&services=1`); }}
+          data-testid="button-review-service-request-from-toast"
+        >
+          Review
+        </Button>
+      ),
+      duration: 30000,
+    });
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(title, { body: description, icon: "/favicon.ico", tag: `service-request-${data.serviceId}` });
+      } catch {}
+    }
+  }, [toast, dismiss, navigate]);
+
   useEffect(() => {
     if (!user) return;
     if ("Notification" in window && Notification.permission === "default") {
@@ -558,6 +593,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleMentionEvent(data);
 
         handleIpFormPhotocopyRequestEvent(data);
+        handleServiceRequestedEvent(data);
       } catch {}
     };
 
@@ -577,7 +613,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent, handleIpFormPhotocopyRequestEvent, handleMentionEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent, handleIpFormPhotocopyRequestEvent, handleMentionEvent, handleServiceRequestedEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);

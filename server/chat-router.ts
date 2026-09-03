@@ -4862,6 +4862,15 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       select: { id: true, completedAt: true, provider: { select: { name: true } } },
     });
 
+    // Service lines providers asked GoStork to approve (status NEW). They
+    // leave the queue on their own once an admin approves or declines.
+    const pendingServiceRequestRows = await (prisma as any).providerService.findMany({
+      where: { status: "NEW" },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { id: true, providerId: true, createdAt: true, provider: { select: { name: true } }, providerType: { select: { name: true } } },
+    });
+
     // Dismissed Needs-attention rows. The taskKey embeds the occurrence
     // timestamp, so the same invoice failing AGAIN later gets a fresh key
     // and re-surfaces despite the old dismissal.
@@ -4893,6 +4902,16 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
     }
 
     res.json({
+      pendingServiceRequests: pendingServiceRequestRows
+        .map((s: any) => ({
+          id: s.id,
+          providerId: s.providerId,
+          providerName: s.provider?.name || "Provider",
+          serviceName: s.providerType?.name || "Service",
+          requestedAt: s.createdAt,
+          taskKey: `service-request:${s.id}`,
+        }))
+        .filter((s: any) => !dismissedKeys.has(s.taskKey)),
       signedProviderAgreements: signedProviderAgreementRows
         .map((a: any) => ({
           id: a.id,

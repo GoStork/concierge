@@ -205,6 +205,15 @@ export default function AdminProviderEditPage() {
 
 
   const [manageServicesOpen, setManageServicesOpen] = useState(false);
+  // Deep link from the admin Home queue / service-request email: open the
+  // Manage Services panel directly, then drop the flag so Back does not reopen it.
+  useEffect(() => {
+    if (searchParams.get("services") !== "1" || !isGostorkAdmin) return;
+    setManageServicesOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("services");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, isGostorkAdmin, setSearchParams]);
 
   const [editName, setEditName] = useState("");
   const [editAbout, setEditAbout] = useState("");

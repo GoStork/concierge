@@ -55,6 +55,9 @@ export type NotificationChannel =
   | "provider_agreement_request"
   | "provider_agreement_completed"
   | "w9_completed"
+  // A provider requested a new service line (status NEW) - admins must
+  // review and approve it before it goes live in the marketplace.
+  | "provider_service_requested"
   // Stripe security sentry: unknown connected account, foreign payout,
   // charge-volume spike. Always to GOSTORK_ADMINs, email + in-app.
   | "security_alert"
@@ -3247,6 +3250,50 @@ export class NotificationService implements OnModuleInit {
       subject,
       body: html,
     }).catch(e => this.logger.error(`Failed to send agreement completed email to ${params.adminEmail}: ${e.message}`));
+  }
+
+  /**
+   * A provider requested a new service line (enters as NEW, goes live only on
+   * GoStork approval). Every GOSTORK_ADMIN gets a branded email deep-linked to
+   * the provider's Manage Services panel; the in-app toast/bell is emitted by
+   * the caller through AppEventsService so live and offline admins both see it.
+   */
+  async sendProviderServiceRequestedNotification(params: {
+    providerId: string;
+    providerName: string;
+    serviceName: string;
+    requestedByName?: string | null;
+  }) {
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { id: true, email: true, name: true },
+    });
+    if (admins.length === 0) return;
+    const brandData = await this.getBrandData();
+    const subject = `Service approval needed - ${params.providerName} requested ${params.serviceName}`;
+    const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=profile&services=1`;
+    const who = params.requestedByName ? ` (${this.escapeHtml(params.requestedByName)})` : "";
+
+    for (const admin of admins) {
+      if (!admin.email) continue;
+      const firstName = admin.name ? getFirstName(admin.name) : "there";
+      const html = buildBrandedEmail(brandData, {
+        title: "New Service Request",
+        greeting: `Hi ${firstName},`,
+        body: `<strong>${this.escapeHtml(params.providerName)}</strong>${who} requested to add <strong>${this.escapeHtml(params.serviceName)}</strong> as a service line. It stays hidden from parents until you approve it.`,
+        alertBox: { text: "Review the request and approve or decline it from the provider's Services panel.", type: "info" },
+        buttons: [{ label: "Review Service Request", url: reviewUrl }],
+        footer: "Approving publishes the service line to the marketplace; declining keeps it hidden.",
+      });
+      await this.dispatchNotification({
+        userId: admin.id,
+        type: "EMAIL",
+        channel: "provider_service_requested",
+        recipient: admin.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send service request email to ${admin.email}: ${e.message}`));
+    }
   }
 
   async sendW9CompletedNotification(params: {

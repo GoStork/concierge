@@ -5,7 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { trackConnect, trackDisconnect, getConnectedCount } from "../../../online-tracker";
 
 export interface AppEvent {
-  type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted" | "human_escalation" | "human_concluded" | "user_profile_updated" | "parent_ready_to_proceed";
+  type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted" | "human_escalation" | "human_concluded" | "user_profile_updated" | "parent_ready_to_proceed" | "provider_service_requested";
   payload: Record<string, any>;
   targetUserIds: string[];
   actorUserId?: string;
@@ -90,6 +90,9 @@ export class AppEventsService {
         // directly by the CRM router; surfaced here as a toast on next connect,
         // exactly like the IP-form events above (lowercased to "crm_mention").
         "CRM_MENTION",
+        // A provider asked GoStork to approve a new service line - admins get
+        // the toast on next connect if they were offline when it was requested.
+        "provider_service_requested",
       ];
 
       const unseen = await this.prisma.inAppNotification.findMany({

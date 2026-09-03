@@ -27,11 +27,56 @@ import {
   ProviderServiceDto,
 } from "../../dto/provider.dto";
 import { ErrorResponseDto } from "../../dto/auth.dto";
+import { NotificationService } from "../notifications/notification.service";
+import { AppEventsService } from "../notifications/app-events.service";
 
 @ApiTags("Provider Services")
 @Controller("api/providers/:providerId/services")
 export class ProviderServicesController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
+    @Inject(AppEventsService) private readonly appEvents: AppEventsService,
+  ) {}
+
+  /**
+   * A provider requested a new service line. Tell every GoStork admin three
+   * ways: branded email, live in-app toast (persisted for offline admins by
+   * AppEventsService), and the admin Home "Needs attention" row, which reads
+   * NEW services straight from the DB so it needs no extra write here.
+   */
+  private async notifyAdminsOfServiceRequest(service: { id: string; providerId: string; providerTypeId: string }, actor: any) {
+    try {
+      const [provider, providerType, admins] = await Promise.all([
+        this.prisma.provider.findUnique({ where: { id: service.providerId }, select: { name: true } }),
+        this.prisma.providerType.findUnique({ where: { id: service.providerTypeId }, select: { name: true } }),
+        this.prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false }, select: { id: true } }),
+      ]);
+      const providerName = provider?.name || "A provider";
+      const serviceName = providerType?.name || "a new service";
+      await this.appEvents.emit({
+        type: "provider_service_requested",
+        targetUserIds: admins.map(a => a.id),
+        actorUserId: actor?.id,
+        payload: {
+          serviceId: service.id,
+          providerId: service.providerId,
+          providerName,
+          serviceName,
+          message: `${providerName} requested ${serviceName} - approval needed`,
+        },
+      });
+      await this.notifications.sendProviderServiceRequestedNotification({
+        providerId: service.providerId,
+        providerName,
+        serviceName,
+        requestedByName: actor?.name || null,
+      });
+    } catch (err: any) {
+      // Never fail the request itself - but say loudly that admins were not told.
+      console.error(`[ProviderServices] Admin notification for service request ${service.id} failed: ${err?.message}`);
+    }
+  }
 
   @Get()
   @ApiOperation({ summary: "List services for a provider" })
@@ -72,9 +117,13 @@ export class ProviderServicesController {
       // live solely through GoStork's approval (status === APPROVED is the
       // marketplace publish switch - never self-service).
       if (!isAdmin) input.status = "NEW";
-      return await this.prisma.providerService.create({
+      const created = await this.prisma.providerService.create({
         data: { ...input, providerId },
       });
+      // Only a provider's own request needs GoStork's attention - an admin
+      // adding a line is already the approval.
+      if (!isAdmin) await this.notifyAdminsOfServiceRequest(created, user);
+      return created;
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new BadRequestException({ message: "Validation error", errors: err.errors });
