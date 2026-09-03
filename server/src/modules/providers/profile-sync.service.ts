@@ -4017,7 +4017,7 @@ async function fetchOrchidJmsProfile(
   }
 }
 
-function getMandatoryFieldChecks(type: DonorType): { label: string; check: (d: any) => boolean }[] {
+export function getMandatoryFieldChecks(type: DonorType): { label: string; check: (d: any) => boolean }[] {
   const has = (val: any) => val != null && val !== "";
   // How many distinct photos a profile actually has (gallery, not just the
   // listing-card thumbnail). The Eggspecting bug looked "successful" but had only
@@ -5314,7 +5314,7 @@ const RACE_CODE_LABELS: Record<string, string> = {
   cauc: "Caucasian", caucasian: "Caucasian", white: "Caucasian",
   hisp: "Hispanic", hispanic: "Hispanic", latino: "Hispanic", latina: "Hispanic",
   asian: "Asian", eastasian: "Asian", southasian: "South Asian",
-  aa: "African American", black: "African American", africanamerican: "African American",
+  aa: "African American", afam: "African American", black: "African American", africanamerican: "African American",
   me: "Middle Eastern", middleeastern: "Middle Eastern",
   na: "Native American", nativeamerican: "Native American",
   pi: "Pacific Islander", pacificislander: "Pacific Islander",

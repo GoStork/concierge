@@ -15,6 +15,68 @@ re-discovering the same problems on every new agency.
 
 ---
 
+## Definition of a successful sync - the acceptance contract
+
+"Login worked and the run says completed" is NOT success. A sync is done only
+when the imported data would satisfy a parent browsing the marketplace and Eva
+recommending from it. The gates below are the contract; the audit script checks
+them mechanically:
+
+```bash
+npx tsx -r dotenv/config scripts/audit-sync.ts "<provider name or id>" egg-donor   # or surrogate / sperm-donor
+```
+
+(Point `DATABASE_URL` at the DB the provider lives in - real providers are on
+PROD; see `project_scraper_env_ownership`. Exit code 1 = not accepted.)
+
+**Hard gates (all must pass):**
+
+1. **Run outcome**: last `SyncLog` row is `completed` (or `partial` with an
+   explained, source-side cause), zero entries in `errors`.
+2. **Coverage**: imported >= 98% of what the source listed (`succeeded/total`);
+   failed <= 2%. A 10-profile test run does not count - the FULL run does.
+3. **Identity**: every profile has a stable `externalId` from the source (never
+   an `auto-...` fallback); zero duplicates per provider.
+4. **Photos**: >= 95% of profiles have a photo, and the photo lives on OUR
+   storage (`storage.googleapis.com/...`), never hotlinked to the source.
+   Galleries (2+ photos) whenever the source shows more than one.
+5. **Pricing**: >= 90% of profiles carry a price the marketplace can show -
+   `totalCost` (egg donors; for frozen egg banks = the standard banked lot,
+   not the cheapest remainder), `totalCostMin/Max` (surrogates),
+   `compensation` (sperm). A sync that leaves "Total Cost: -" on every card
+   is not done.
+6. **Status**: mapped through `normalizeDonorStatus`; not everyone AVAILABLE
+   when the source shows sold-out/matched profiles, and not everyone hidden.
+7. **Required fields**: each field in `getMandatoryFieldChecks(type)` filled
+   on >= 90% of profiles - **unless the source does not publish it at all**
+   (0% filled = source-limited, see below). A field that is present on SOME
+   records and missing on others is a mapping bug on our side. Fix it.
+8. **Profile hygiene**: no platform-internal keys on `profileData` (thumb URLs,
+   view/like counters, duplicate ids, "real" flags), no texture words stored as
+   a hair color, race codes humanized (`hisp` -> Hispanic), values readable by
+   a parent.
+9. **Idempotence**: a second run right after the first imports 0 new profiles,
+   marks nothing stale, and changes nothing a human edited
+   (`manuallyEditedFields` wins).
+10. **Budget**: the run fits the source's rate limits with headroom for one
+    retry (e.g. Lucina 1,000 req/24h -> list-only, ~10 requests).
+
+**Source-limited fields** are the ONLY acceptable gap: the audit tags a field
+`SRC` when it is absent on every record, which means the source does not
+publish it. Never fabricate it (no defaults, no AI guesses). Instead, report it
+as a concrete ask to the provider listing the exact fields, and note it in the
+Platform cheat-sheet so nobody re-investigates.
+
+**Working rule for agents (this is the part Eran cares about):** after any
+scraper or API-sync change, run the FULL sync, run the audit, and fix every
+`FAIL`/`GAP` yourself - mapper, pagination, auth, photo persistence, cost
+recalc, whatever it is - re-run, re-audit, until only `SRC` items remain. Do
+not ask the human to "check the cards"; do not report mid-way. The final
+report is: what the audit says now, what was fixed, and the exact list of
+source-limited fields to request from the provider.
+
+---
+
 ## Adding a new agency - the 60-second checklist
 
 0. **Sync Method** - if the provider hands us an **API key/secret** instead of a
