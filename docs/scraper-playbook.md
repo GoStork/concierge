@@ -47,10 +47,16 @@ PROD; see `project_scraper_env_ownership`. Exit code 1 = not accepted.)
    is not done.
 6. **Status**: mapped through `normalizeDonorStatus`; not everyone AVAILABLE
    when the source shows sold-out/matched profiles, and not everyone hidden.
-7. **Required fields**: each field in `getMandatoryFieldChecks(type)` filled
-   on >= 90% of profiles - **unless the source does not publish it at all**
-   (0% filled = source-limited, see below). A field that is present on SOME
-   records and missing on others is a mapping bug on our side. Fix it.
+7. **Required fields AND sections**: each field in `getMandatoryFieldChecks(type)`
+   filled on >= 90% of profiles - **unless the source does not publish it at
+   all** (0% filled = source-limited, see below). A field that is present on
+   SOME records and missing on others is a mapping bug on our side. Fix it.
+   The checks include the profile SECTIONS a parent expects, not just card
+   attributes: Family History / Genetics, Health & Medical, Personal Essays,
+   Lifestyle, Psychological, Genetic Testing, Fertility / Donation History
+   (matched by key names anywhere in `profileData`, two levels deep). A source
+   that publishes them on its site but not in what it gives us is a
+   negotiation item, not a mapping item - it shows as `SRC`.
 8. **Profile hygiene**: no platform-internal keys on `profileData` (thumb URLs,
    view/like counters, duplicate ids, "real" flags), no texture words stored as
    a hair color, race codes humanized (`hisp` -> Hispanic), values readable by

@@ -4035,6 +4035,35 @@ export function getMandatoryFieldChecks(type: DonorType): { label: string; check
     { label: "Photo Gallery (2+ photos)", check: (d) => photoCount(d) >= 2 },
     { label: "Provider Profile Link", check: (d) => has(d.profileUrl) },
   ];
+  // Profile SECTIONS - the depth a parent expects on a full profile, not just
+  // the card attributes. A section counts as present when profileData carries
+  // any non-empty key (or nested section) whose name matches it. These are
+  // what a list-only API (e.g. Lucina today) leaves out, so the audit shows
+  // them as source-limited until the provider delivers - and as a mapping GAP
+  // if they arrive and we drop them.
+  const sectionPresent = (d: any, re: RegExp): boolean => {
+    const pd = d.profileData;
+    if (!pd || typeof pd !== "object") return false;
+    const walk = (obj: any, depth: number): boolean => {
+      if (depth > 2 || !obj || typeof obj !== "object") return false;
+      for (const [k, v] of Object.entries(obj)) {
+        if (v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) continue;
+        if (re.test(k)) return true;
+        if (typeof v === "object" && walk(v, depth + 1)) return true;
+      }
+      return false;
+    };
+    return walk(pd, 0);
+  };
+  const sectionChecks: { label: string; check: (d: any) => boolean }[] = [
+    { label: "Section: Family History / Genetics", check: (d) => sectionPresent(d, /family|genetic|mother|father|grandm|grandf|sibling/i) },
+    { label: "Section: Health & Medical", check: (d) => sectionPresent(d, /medical|health|medication|blood|hiv|std/i) },
+    { label: "Section: Personal Essays", check: (d) => sectionPresent(d, /why .*donor|message to|personality|goals|achievement|hobb|favou?rite|about me|essay/i) },
+    { label: "Section: Lifestyle", check: (d) => sectionPresent(d, /smok|alcohol|drug|tattoo|piercing/i) },
+    { label: "Section: Psychological", check: (d) => sectionPresent(d, /psych|depression|counsel|adhd|add\b/i) },
+    { label: "Section: Genetic Testing", check: (d) => sectionPresent(d, /genetic test|carrier|screening/i) },
+  ];
+  const fertilitySection = { label: "Section: Fertility / Donation History", check: (d: any) => sectionPresent(d, /fertility|pregnan|donation history|previous donor|eggs retrieved|embryo|cycle/i) };
   if (type === "egg-donor") {
     return [
       { label: "Age", check: (d) => has(d.age) },
@@ -4054,6 +4083,8 @@ export function getMandatoryFieldChecks(type: DonorType): { label: string; check
       { label: "Weight", check: (d) => has(d.weight) },
       { label: "Blood Type", check: (d) => has(d.bloodType) },
       ...qualityChecks,
+      ...sectionChecks,
+      fertilitySection,
     ];
   } else if (type === "surrogate") {
     return [
@@ -4070,6 +4101,8 @@ export function getMandatoryFieldChecks(type: DonorType): { label: string; check
       { label: "Agrees to Twins", check: (d) => d.agreesToTwins != null },
       { label: "Base Compensation", check: (d) => has(d.baseCompensation) },
       ...qualityChecks,
+      ...sectionChecks,
+      fertilitySection,
     ];
   } else {
     return [
@@ -4084,6 +4117,8 @@ export function getMandatoryFieldChecks(type: DonorType): { label: string; check
       { label: "Weight", check: (d) => has(d.weight) },
       { label: "Price", check: (d) => has(d.compensation) },
       ...qualityChecks,
+      ...sectionChecks,
+      fertilitySection,
     ];
   }
 }
