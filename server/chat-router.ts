@@ -4864,8 +4864,13 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
 
     // Service lines providers asked GoStork to approve (status NEW). They
     // leave the queue on their own once an admin approves or declines.
+    // Only providers with a real admin user count as "requested" - CDC-scraped
+    // IVF clinics are seeded with a NEW line and nobody behind them asked.
     const pendingServiceRequestRows = await (prisma as any).providerService.findMany({
-      where: { status: "NEW" },
+      where: {
+        status: "NEW",
+        provider: { users: { some: { roles: { has: "PROVIDER_ADMIN" }, isDisabled: false } } },
+      },
       orderBy: { createdAt: "desc" },
       take: 20,
       select: { id: true, providerId: true, createdAt: true, provider: { select: { name: true } }, providerType: { select: { name: true } } },
