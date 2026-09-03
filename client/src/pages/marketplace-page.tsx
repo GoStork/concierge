@@ -2146,6 +2146,9 @@ export default function MarketplacePage() {
     getNextPageParam: (last) => last.nextPage ?? undefined,
     initialPageParam: 0,
     staleTime: 30_000,
+    // Only the visible tab fetches. Without this, opening the Doctors tab also
+    // fired all three donor lists (7s / 9s / 15s each) that nobody was looking at.
+    enabled: activeTab === "egg-donors",
   });
   const eggDonors = useMemo(() => eggDonorPages?.pages.flatMap((p) => p.data) ?? [], [eggDonorPages]);
 
@@ -2167,6 +2170,9 @@ export default function MarketplacePage() {
     getNextPageParam: (last) => last.nextPage ?? undefined,
     initialPageParam: 0,
     staleTime: 30_000,
+    // Only the visible tab fetches. Without this, opening the Doctors tab also
+    // fired all three donor lists (7s / 9s / 15s each) that nobody was looking at.
+    enabled: activeTab === "surrogates",
   });
   const surrogates = useMemo(() => surrogatePages?.pages.flatMap((p) => p.data) ?? [], [surrogatePages]);
 
@@ -2188,6 +2194,9 @@ export default function MarketplacePage() {
     getNextPageParam: (last) => last.nextPage ?? undefined,
     initialPageParam: 0,
     staleTime: 30_000,
+    // Only the visible tab fetches. Without this, opening the Doctors tab also
+    // fired all three donor lists (7s / 9s / 15s each) that nobody was looking at.
+    enabled: activeTab === "sperm-donors",
   });
   const spermDonors = useMemo(() => spermDonorPages?.pages.flatMap((p) => p.data) ?? [], [spermDonorPages]);
 

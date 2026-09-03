@@ -16,9 +16,11 @@
 import { computeClinicSuccessRate, type EggSource, type AgeGroup } from "./ivf-success-rate";
 import { isClinicianMember } from "../modules/providers/clinician";
 
-// The Prisma select every caller must use so enrichDoctorRows has the fields it
-// needs (member identity + per-clinic success-rate rows).
-export const DOCTOR_MEMBER_SELECT = {
+// Member-level fields (identity, credentials, sponsorship) - everything the
+// enriched card needs from the ProviderMember row itself. `providerId` is here
+// so callers can stitch the clinic record on afterwards (see
+// fetchDoctorRowsWithClinics).
+export const DOCTOR_MEMBER_FIELDS = {
   id: true,
   slug: true,
   name: true,
@@ -51,39 +53,96 @@ export const DOCTOR_MEMBER_SELECT = {
   isMedicalDirector: true,
   sponsoredUntil: true,
   sponsorBoostSeed: true,
-  provider: {
-    select: {
-      id: true,
-      name: true,
-      logoUrl: true,
-      acceptedInsurance: true,
-      ivfAcceptingPatients: true,
-      locations: { orderBy: { sortOrder: "asc" as const }, select: { city: true, state: true } },
-      ivfSuccessRates: {
-        where: {
-          metricCode: {
-            in: [
-              "pct_new_patients_live_birth_after_1_retrieval",
-              "pct_intended_retrievals_live_births",
-              "pct_transfers_live_births_donor",
-            ],
-          },
-        },
-        select: {
-          successRate: true,
-          nationalAverage: true,
-          ageGroup: true,
-          isNewPatient: true,
-          metricCode: true,
-          submetric: true,
-          top10pct: true,
-          cycleCount: true,
-          profileType: true,
-        },
+  providerId: true,
+};
+
+// Clinic-level fields (locations + the success-rate rows the card ranks on).
+// Fetched ONCE per clinic by fetchDoctorRowsWithClinics rather than once per
+// member: a clinic with 40 doctors used to ship its ~45 success-rate rows 40
+// times through Prisma's nested select (19,560 rows for 433 clinics on DEV),
+// which was most of the wire time on the Doctors tab.
+export const DOCTOR_CLINIC_SELECT = {
+  id: true,
+  name: true,
+  logoUrl: true,
+  acceptedInsurance: true,
+  ivfAcceptingPatients: true,
+  locations: { orderBy: { sortOrder: "asc" as const }, select: { city: true, state: true } },
+  ivfSuccessRates: {
+    where: {
+      metricCode: {
+        in: [
+          "pct_new_patients_live_birth_after_1_retrieval",
+          "pct_intended_retrievals_live_births",
+          "pct_transfers_live_births_donor",
+        ],
       },
+    },
+    select: {
+      successRate: true,
+      nationalAverage: true,
+      ageGroup: true,
+      isNewPatient: true,
+      metricCode: true,
+      submetric: true,
+      top10pct: true,
+      cycleCount: true,
+      profileType: true,
     },
   },
 };
+
+// The nested Prisma select for callers that fetch a HANDFUL of rows (the MCP
+// resolve_doctor_card / search_doctors tools). enrichDoctorRows accepts rows
+// shaped either by this select or by fetchDoctorRowsWithClinics - both end up
+// as `member + provider: { ...DOCTOR_CLINIC_SELECT fields }`.
+export const DOCTOR_MEMBER_SELECT = {
+  ...DOCTOR_MEMBER_FIELDS,
+  provider: { select: DOCTOR_CLINIC_SELECT },
+};
+
+/**
+ * Directory-scale fetch: members in one query, their clinics in a second one
+ * keyed on the distinct providerIds, stitched back into the DOCTOR_MEMBER_SELECT
+ * shape. Use this whenever the row count is in the hundreds or more; use the
+ * nested select for point lookups.
+ */
+export async function fetchDoctorRowsWithClinics(
+  prisma: any,
+  args: { where: any; take?: number; orderBy?: any },
+): Promise<any[]> {
+  const members: any[] = await prisma.providerMember.findMany({
+    where: args.where,
+    take: args.take,
+    orderBy: args.orderBy,
+    select: DOCTOR_MEMBER_FIELDS,
+  });
+  if (!members.length) return [];
+  const clinicIds = [...new Set(members.map((m) => m.providerId as string))];
+  // Two flat queries in parallel beat one nested select: Prisma fetches a
+  // nested relation as its own sequential round trip anyway, and the flat
+  // shape ships each rate row once. Measured on DEV (1,634 members / 434
+  // clinics): nested 1.5-2.7s, flat pair ~1s, on a ~150ms link.
+  const { ivfSuccessRates: ratesSelect, ...clinicSelect } = DOCTOR_CLINIC_SELECT as any;
+  const [clinics, rates]: [any[], any[]] = await Promise.all([
+    prisma.provider.findMany({ where: { id: { in: clinicIds } }, select: clinicSelect }),
+    prisma.ivfSuccessRate.findMany({
+      where: { providerId: { in: clinicIds }, ...ratesSelect.where },
+      select: { providerId: true, ...ratesSelect.select },
+    }),
+  ]);
+  const ratesByClinic = new Map<string, any[]>();
+  for (const r of rates) {
+    const { providerId, ...row } = r;
+    if (!ratesByClinic.has(providerId)) ratesByClinic.set(providerId, []);
+    ratesByClinic.get(providerId)!.push(row);
+  }
+  const clinicById = new Map(clinics.map((c) => [c.id, { ...c, ivfSuccessRates: ratesByClinic.get(c.id) || [] }]));
+  return members
+    .map((m) => ({ ...m, provider: clinicById.get(m.providerId) }))
+    // A member whose clinic vanished between the two queries has nothing to render.
+    .filter((m) => m.provider);
+}
 
 export interface DoctorEnrichmentContext {
   eggSource: EggSource;

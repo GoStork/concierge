@@ -67,7 +67,7 @@ import { US_STATES, STATE_NAME_TO_ABBR } from "./us-states";
 import { searchSartForClinic, mergeTeamMembers, verifyClinicUrl } from "./clinic-enrichment.service";
 import { Prisma } from "@prisma/client";
 import { type EggSource, type AgeGroup } from "../../lib/ivf-success-rate";
-import { DOCTOR_MEMBER_SELECT, enrichDoctorRows, sortEnrichedDoctors } from "../../lib/doctor-enrichment";
+import { enrichDoctorRows, fetchDoctorRowsWithClinics, sortEnrichedDoctors } from "../../lib/doctor-enrichment";
 import { applySponsoredOrdering, SPONSORED_FIRST_ORDER } from "./sponsorship-sort";
 import { buildDonorSearchWhere } from "@shared/donor-search";
 
@@ -548,11 +548,29 @@ export class ProvidersController {
     // success rate" only ever ranked the doctors whose names sort early, which
     // is exactly the bug this replaces. ~2k rows today; the response is still
     // capped at 250.
-    const members = await this.prisma.providerMember.findMany({
+    //
+    // The whole request (pool fetch + in-memory rank + 250 cap) is memoised for
+    // CACHE_TTL_MS per filter set, like the donor lists. Every keystroke in the
+    // search box and every tab switch re-ran the full pool fetch before this.
+    // The key carries the visibility scope so a clinic user's self-scoped list
+    // can never be served to a parent. Slug-scoped (Saved / Hidden) requests are
+    // per-user by nature and skip the cache.
+    const cacheKey = savedSlugByPerson
+      ? null
+      : `marketplace:doctors:${isProviderUser && user?.providerId ? `self:${user.providerId}` : "all"}:` +
+        JSON.stringify([
+          query.providerId || "", query.location || "", query.search || "", query.specialty || "",
+          query.insurance || "", query.lgbtq || "", query.eggSource || "", query.ageGroup || "",
+          query.ivfHistory || "", query.sortBy || "",
+        ]);
+    if (cacheKey) {
+      const cached = getCached(cacheKey);
+      if (cached) return cached;
+    }
+    const members = await fetchDoctorRowsWithClinics(this.prisma, {
       where: memberWhere,
       take: 3000,
       orderBy: [SPONSORED_FIRST_ORDER, { isMedicalDirector: "desc" }, { name: "asc" }],
-      select: DOCTOR_MEMBER_SELECT,
     });
 
     // Carrier-level insurance + LGBTQ+ care filters (the doctor's clinic).
@@ -591,7 +609,11 @@ export class ProvidersController {
     // An explicit slug request is already bounded by the caller's saved list;
     // truncating it would re-create the very gap this parameter exists to close.
     const ordered = applySponsoredOrdering(sortedDoctors);
-    if (!savedSlugByPerson) return ordered.slice(0, 250);
+    if (!savedSlugByPerson) {
+      const result = ordered.slice(0, 250);
+      if (cacheKey) setCache(cacheKey, result);
+      return result;
+    }
     // Re-key each merged card to the slug the caller actually asked for (see the
     // sibling-row expansion above), and drop anything the expansion pulled in
     // that the caller never saved.
