@@ -234,7 +234,7 @@ export async function recalcAndPersistTotalCostsForProvider(
     if (donorType === "egg-donor") {
       const donors = await prisma.eggDonor.findMany({
         where: { providerId },
-        select: { id: true, donorCompensation: true, donorType: true },
+        select: { id: true, donorCompensation: true, donorType: true, eggLotCost: true, numberOfEggs: true },
       });
 
       const frozenSheetData = await getFrozenEggSheetData(prisma, providerId);
@@ -244,15 +244,25 @@ export async function recalcAndPersistTotalCostsForProvider(
         const hasFresh = donor.donorType && /fresh/i.test(donor.donorType);
         const isFrozenOnly = hasFrozen && !hasFresh;
         const isFreshAndFrozen = hasFresh && hasFrozen;
+        // Per-donor lot pricing already on the row (egg banks whose API prices
+        // per cohort, e.g. Lucina). A provider-level frozen sheet overrides it;
+        // with no sheet, the donor's own lot price IS the total - never null it.
+        const ownLotCost = donor.eggLotCost != null ? Math.round(Number(donor.eggLotCost)) : null;
+        const ownEggs = donor.numberOfEggs ?? null;
 
         if (isFrozenOnly && frozenSheetData) {
           await prisma.eggDonor.update({
             where: { id: donor.id },
             data: {
-              eggLotCost: frozenSheetData.eggLotCost != null ? Math.round(frozenSheetData.eggLotCost) : null,
-              numberOfEggs: frozenSheetData.numberOfEggs != null ? Math.round(frozenSheetData.numberOfEggs) : null,
-              totalCost: frozenSheetData.eggLotCost != null ? Math.round(frozenSheetData.eggLotCost) : null,
+              eggLotCost: frozenSheetData.eggLotCost != null ? Math.round(frozenSheetData.eggLotCost) : ownLotCost,
+              numberOfEggs: frozenSheetData.numberOfEggs != null ? Math.round(frozenSheetData.numberOfEggs) : ownEggs,
+              totalCost: frozenSheetData.eggLotCost != null ? Math.round(frozenSheetData.eggLotCost) : ownLotCost,
             },
+          });
+        } else if (isFrozenOnly) {
+          await prisma.eggDonor.update({
+            where: { id: donor.id },
+            data: { totalCost: ownLotCost },
           });
         } else {
           const { resolvedCompensation, calculatedTotalCost } = await resolveCompensationAndTotalCost(
