@@ -29,7 +29,17 @@ main() {
   cd "$REPO_DIR"
 
   export NODE_ENV=production
-  export ENABLE_NIGHTLY_SCHEDULER=true
+  # NIGHTLY SCHEDULER: OFF (disabled 2026-09-03 at Eran's request).
+  # This host's in-process node-cron used to run the 2 AM ET nightly against the
+  # DEV database. Production does NOT depend on it - prod is driven by the
+  # GitHub Actions pinger (.github/workflows/nightly-sync.yml) hitting
+  # test-app.gostork.com/api/cron/run-nightly-sync, and the prod VM keeps its
+  # in-process scheduler off. So turning this off stops ONLY the DEV nightly.
+  # Consequence: the providers configured only in DEV (Asian Egg Bank,
+  # Conceptions Center, Eggceptional Fertility, Sperm Bank California) no longer
+  # refresh on a schedule - sync them from the admin UI when you need fresh data.
+  # To re-enable, uncomment the line below and restart this daemon.
+  # export ENABLE_NIGHTLY_SCHEDULER=true
 
   # Pull latest, install any NEW dependencies, then rebuild, so the iMac always
   # runs current code. `npm install` is NOT optional: a pull that introduces a new

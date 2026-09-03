@@ -11,10 +11,26 @@ runs for well over an hour, so Autoscale reaped the container mid-run - that is
 what produced the Jun 21 "Interrupted - server restarted while sync was running"
 failures. A long-lived host fixes this at the root.
 
-The GitHub Actions pinger (`.github/workflows/nightly-sync.yml`) is now
-**disabled** as the driver (manual `workflow_dispatch` only, kept as an emergency
-trigger). The in-process `node-cron` scheduler (2 AM ET) drives the run instead,
-enabled on the iMac via `ENABLE_NIGHTLY_SCHEDULER=true`.
+## STATUS: this host's nightly is OFF (2026-09-03)
+
+`ENABLE_NIGHTLY_SCHEDULER=true` is **commented out** in `run-server.sh`, so the
+iMac no longer runs a nightly at all. It only ever synced the **DEV** database,
+and production is unaffected: since 2026-08-19 prod is driven by the GitHub
+Actions pinger (`.github/workflows/nightly-sync.yml`) hitting
+`test-app.gostork.com/api/cron/run-nightly-sync`, with the prod VM's in-process
+scheduler off.
+
+Consequence: the providers configured **only** in DEV - Asian Egg Bank,
+Conceptions Center, Eggceptional Fertility, Sperm Bank California - no longer
+refresh automatically. Sync them from the admin UI when you want fresh test data.
+To re-enable, uncomment the export in `run-server.sh` and restart the daemon.
+
+The rest of this document describes the setup as it stands, and stays accurate
+for re-enabling.
+
+Historically: the in-process `node-cron` scheduler (2 AM ET) drove the run on
+this host, enabled via `ENABLE_NIGHTLY_SCHEDULER=true`, after the pinger was
+retired from driving Replit.
 
 The atomic `NightlySyncLock` row remains the cross-host safety net, so even if a
 stray trigger fires elsewhere it cannot double-run.
@@ -60,7 +76,8 @@ Then follow the install steps below.
    restart, which needs a clean tree, so keep this clone tidy.)
    The iMac's `.env` must have `DATABASE_URL` (prod), GCS creds, and scraper
    settings. **Do NOT** add `ENABLE_NIGHTLY_SCHEDULER` to `.env` or the shell -
-   the launchd wrapper sets it, so this one launchd process is the sole scheduler.
+   the launchd wrapper owns that flag (currently commented out), so there is
+   exactly one place that can turn a scheduler on for this host.
 
 2. **Grant Full Disk Access to `/bin/bash`** (System Settings -> Privacy &
    Security -> Full Disk Access). launchd jobs are blocked by macOS TCC from

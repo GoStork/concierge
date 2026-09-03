@@ -1030,9 +1030,23 @@ negotiated.
   scraper config in the dev DB.** Never leave the same agency configured live
   in both environments. This is the actual mitigation; there is no lock that
   will do it for you.
-- [ ] Confirm `ENABLE_NIGHTLY_SCHEDULER=true` on exactly ONE host globally
-  (the prod VM), and that the iMac's `com.gostork.nightly-sync` launchd
-  wrapper - today the only host setting it - is switched off at cutover.
+- [x] **DONE 2026-09-03: the iMac's nightly is OFF.**
+  `ENABLE_NIGHTLY_SCHEDULER=true` is commented out in
+  `ops/imac-nightly-sync/run-server.sh`, so **no host anywhere sets the flag**
+  now. Production does not need it: prod is driven by the GitHub Actions pinger
+  (`.github/workflows/nightly-sync.yml` -> `test-app.gostork.com`
+  `/api/cron/run-nightly-sync`) with the VM's in-process scheduler off.
+  Side effect to remember: the DEV-only providers (Asian Egg Bank, Conceptions
+  Center, Eggceptional Fertility, Sperm Bank California) no longer refresh on a
+  schedule - sync them from the admin UI on demand.
+  Follow-up now that the pinger is the sole prod driver: **GitHub Actions
+  scheduled crons are delayed, badly.** Observed prod nightly starts (UTC) over
+  Aug 25 - Sep 3 2026: 06:42, 06:43, 17:19, 18:11, 12:17, 11:15, 12:42, 11:06,
+  10:38, 10:40 - against a `0 6 * * *` schedule, i.e. up to ~12 hours late and
+  never on the 2 AM ET slot the agencies were told to expect. Before launch,
+  replace the pinger with a driver that actually fires on time (Cloud Scheduler
+  in the same GCP project hitting the same endpoint is the obvious swap, ~free),
+  or re-enable the in-process scheduler on the prod VM.
 - [ ] Dev keeps the machinery testable WITHOUT real agency traffic: point dev
   sync configs at local HTML fixtures, and exercise the scheduler on demand
   via `/api/cron/run-nightly-sync` rather than waiting for the 2 AM cron.
