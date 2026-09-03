@@ -30,28 +30,9 @@ const prisma = new PrismaClient({ adapter });
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
-function normalizeName(name: string): string {
-  return name
-    .replace(/,?\s*(LLC|Inc\.?|PC|PA|SC|LTD|LLP|Corporation|Corp\.?|PLLC|dba\b.*)/gi, "")
-    .replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP|Dr)\b\.?/gi, "")
-    .replace(/[.,'"]/g, "")
-    .replace(/[\-–]/g, " ")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function slugify(name: string): string {
-  return normalizeName(name)
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function personKeyOf(name: string): string {
-  return crypto.createHash("sha1").update(normalizeName(name)).digest("hex").slice(0, 16);
-}
+// Shared with the server (enrichment pipeline + team editor) so a backfilled
+// slug/personKey is byte-identical to what the app would have generated.
+import { slugifyName as slugify, personKeyOf } from "../server/src/modules/providers/member-identity";
 
 async function main() {
   console.log(`[backfill] doctor slug/personKey backfill ${DRY_RUN ? "(DRY RUN)" : ""} starting`);
