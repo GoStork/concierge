@@ -1,0 +1,26 @@
+#!/bin/bash
+# Local driver for the 2 AM ET nightly donor/surrogate sync on the production
+# host. The GitHub Actions pinger (.github/workflows/nightly-sync.yml) stays as
+# a backup, but GitHub cron is routinely 4-6h late and sometimes skips a day
+# (Sep 3 2026), so the host fires the same endpoint itself. The app dedups per
+# 2 AM ET slot (NightlySyncLock + lastNightlySlotStart), so the 06:00 and 07:00
+# UTC ticks (EDT/EST) and the GitHub ping are all no-ops once one succeeds.
+#
+# Installed by ops/prod/install-nightly-timer.sh to /usr/local/bin.
+set -u
+ENV_FILE=/srv/gostork/app/.env
+SECRET=$(grep -E '^NIGHTLY_SYNC_SECRET=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
+if [ -z "$SECRET" ]; then
+  echo "NIGHTLY_SYNC_SECRET missing in $ENV_FILE" >&2
+  exit 1
+fi
+for i in 1 2 3; do
+  code=$(curl -sS --max-time 30 -o /tmp/gostork-nightly-ping.out -w '%{http_code}' \
+    -X POST -H "x-cron-secret: $SECRET" http://127.0.0.1:5001/api/cron/run-nightly-sync)
+  echo "attempt $i: HTTP $code $(cat /tmp/gostork-nightly-ping.out)"
+  if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then exit 0; fi
+  # 503 = app still starting (mid auto-deploy). Anything else is terminal.
+  if [ "$code" != "503" ]; then exit 1; fi
+  sleep 30
+done
+exit 1

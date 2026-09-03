@@ -1,0 +1,10 @@
+[Unit]
+Description=Fire the nightly donor sync at 2 AM ET (06:00 UTC EDT / 07:00 UTC EST)
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 UTC
+OnCalendar=*-*-* 07:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

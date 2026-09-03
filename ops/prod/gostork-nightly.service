@@ -1,0 +1,7 @@
+[Unit]
+Description=GoStork 2.0 nightly donor sync trigger (local driver)
+After=gostork.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gostork-nightly-ping
