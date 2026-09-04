@@ -724,7 +724,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      {showConfig && isAdminOrProvider && <div className={`border rounded-[var(--radius)] p-4 space-y-4 ${!isAdmin ? "opacity-60" : ""}`}>
+      {showConfig && isAdminOrProvider && <div className={`border rounded-[var(--radius)] p-4 space-y-4 bg-card ${!isAdmin ? "opacity-60" : ""}`}>
         <h4
           className="font-heading text-sm flex items-center gap-2"
           data-testid="sync-config-title"
@@ -1479,7 +1479,7 @@ export default function ProfileDatabasePanel({
           page renders the same component in "config" mode, so only "full"
           mode mounts it here to avoid showing it twice. */}
       {mode === "full" && isAdminOrProvider && (
-        <div className="border rounded-[var(--radius)] p-4 space-y-3" data-testid={`run-history-${type}`}>
+        <div className="border rounded-[var(--radius)] p-4 space-y-3 bg-card" data-testid={`run-history-${type}`}>
           <h4 className="font-heading text-sm flex items-center gap-2">
             <HistoryIcon className="w-4 h-4" />
             Run History
