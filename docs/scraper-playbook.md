@@ -679,7 +679,15 @@ path - API payloads are already structured JSON.
     Rate limit was raised to **5,000/day per endpoint**, so 933 detail calls +
     10 list calls per nightly fit with retry headroom. Never in the API:
     legal name, relationship status, donation openness, video, siblings table
-    (family history = parents + grandparents), genetic test results.
+    (family history = parents + grandparents), genetic test results, location.
+  - **Profile Link Template** (config field, API method): Lucina's parent deep
+    link is `https://donors.lucinaeggbank.com/gallery?donor={donorId}&ref=gostork`
+    (parents log in / create a free account, then that donor opens). The
+    engine fills `{field}` placeholders from the record (top level or one
+    section down) and only writes `profileUrl` when every placeholder
+    resolved and the source gave no URL of its own.
+  - Full pull with photos: 933 donors in ~85 min (Sep 4 2026); nightly reuses
+    the persisted photos and takes minutes.
   - The website's own `/api/donors` + `/api/donors/{id}/full` routes are
     internal/unversioned - Lucina asked us not to build against them (the
     Sep 2 setup did, briefly).
