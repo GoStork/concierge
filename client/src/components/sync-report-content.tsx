@@ -41,11 +41,12 @@ export interface SyncAuditVerdict {
   statusCounts: Record<string, number>;
 }
 
+// Read as "<label> <pct>% filled - <what explains the rest>".
 const AUDIT_TAG_LABEL: Record<string, string> = {
   ok: "ok",
-  GAP: "not mapped (our bug)",
-  VAR: "left blank by donors",
-  SRC: "source does not publish",
+  GAP: "rest is in the raw data but not mapped (our bug)",
+  VAR: "rest left blank by donors",
+  SRC: "source does not publish it",
 };
 
 function AuditDetails({ audit }: { audit: SyncAuditVerdict }) {
@@ -81,7 +82,7 @@ function AuditDetails({ audit }: { audit: SyncAuditVerdict }) {
                 }`}
                 title={AUDIT_TAG_LABEL[f.tag]}
               >
-                {f.label} {f.fillPct}%
+                {f.label} {f.fillPct}% filled
                 <span className="opacity-70">- {AUDIT_TAG_LABEL[f.tag]}</span>
               </span>
             ))}

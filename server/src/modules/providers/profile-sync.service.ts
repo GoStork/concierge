@@ -5708,13 +5708,17 @@ export function mapApiRecordToItem(record: Record<string, any>, type: DonorType,
     if (lots.length > 0) {
       if (!item.donorType) item.donorType = "Frozen";
       if (!item.donationTypes) item.donationTypes = "Frozen Eggs";
-      // The representative lot is the STANDARD one, not the cheapest: a 2-egg
-      // remainder at $6,000 is not what a parent pays. Prefer available lots,
-      // then lots already banked over "Incoming", then the largest egg count,
-      // then the lowest price.
+      // The representative lot is the STANDARD 6-egg lot so banks compare
+      // apples to apples (a 2-egg remainder at $6,000 is not what a parent
+      // pays, and an 18-egg full lot is not the comparable unit). Prefer
+      // available lots, then 6-egg lots, then banked over "Incoming", then the
+      // largest egg count, then the lowest price.
+      const STANDARD_LOT_EGGS = 6;
       const available = lots.filter((l) => l.available);
       const pool = available.length > 0 ? available : lots;
       const representative = pool.reduce((a, b) => {
+        const aStd = a.eggs === STANDARD_LOT_EGGS ? 1 : 0, bStd = b.eggs === STANDARD_LOT_EGGS ? 1 : 0;
+        if (aStd !== bStd) return aStd > bStd ? a : b;
         const aBanked = a.note ? 0 : 1, bBanked = b.note ? 0 : 1;
         if (aBanked !== bBanked) return aBanked > bBanked ? a : b;
         if (a.eggs !== b.eggs) return a.eggs > b.eggs ? a : b;

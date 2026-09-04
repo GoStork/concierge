@@ -197,10 +197,19 @@ export async function auditSync(
   const statusCounts: Record<string, number> = {};
   for (const r of rows) statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
 
-  // 5. Pricing present
-  const priceField = PRICE_FIELD[type];
-  const priced = rows.filter((r) => r[priceField] != null).length;
-  gate(priced / Math.max(n, 1) >= 0.9, `Price present (${priceField})`, `${pct(priced, n)}%`);
+  // 5. Pricing present. Frozen egg banks are priced per LOT: the comparable
+  // unit across banks is the 6-egg lot, so the gate is eggLotCost and the
+  // detail says how many donors carry a 6-egg lot price.
+  const frozenBankPricing = type === "egg-donor" && isFrozenEggBank(rows);
+  if (frozenBankPricing) {
+    const priced = rows.filter((r) => r.eggLotCost != null).length;
+    const sixEgg = rows.filter((r) => r.eggLotCost != null && Number(r.numberOfEggs) === 6).length;
+    gate(priced / Math.max(n, 1) >= 0.9, "Egg lot price present (eggLotCost)", `${pct(priced, n)}% priced, ${pct(sixEgg, n)}% on a 6-egg lot`);
+  } else {
+    const priceField = PRICE_FIELD[type];
+    const priced = rows.filter((r) => r[priceField] != null).length;
+    gate(priced / Math.max(n, 1) >= 0.9, `Price present (${priceField})`, `${pct(priced, n)}%`);
+  }
 
   // 6. Profile hygiene
   let junkRows = 0;

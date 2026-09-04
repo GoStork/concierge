@@ -3,7 +3,10 @@
  * sync-audit.ts). The same audit runs automatically when every sync finishes
  * and is stored on the SyncLog row; use this for an ad-hoc re-check.
  *
- * Run:  npx tsx -r dotenv/config scripts/audit-sync.ts <providerId|name> <egg-donor|surrogate|sperm-donor>
+ * Run:  npx tsx -r dotenv/config scripts/audit-sync.ts <providerId|name> <egg-donor|surrogate|sperm-donor> [--store]
+ * --store re-scores the provider's LATEST run and writes the verdict onto its
+ * SyncLog row, so Run History reflects the current audit rules after a rule
+ * change (verdicts are otherwise computed once, when the run finishes).
  * Exit code 1 when the sync is not accepted.
  */
 import { PrismaClient } from "@prisma/client";
@@ -32,6 +35,13 @@ async function main() {
   }
   const audit = await auditSync(prisma as any, provider.id, type, getMandatoryFieldChecks(type));
   console.log(formatAuditReport(provider.name, type, audit));
+  if (process.argv.includes("--store")) {
+    const latest = await prisma.syncLog.findFirst({ where: { providerId: provider.id, type }, orderBy: { startedAt: "desc" }, select: { id: true } });
+    if (latest) {
+      await prisma.syncLog.update({ where: { id: latest.id }, data: { audit: audit as any } });
+      console.log(`\nStored verdict on run ${latest.id}`);
+    }
+  }
   process.exitCode = audit.accepted ? 0 : 1;
 }
 
