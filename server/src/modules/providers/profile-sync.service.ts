@@ -5441,8 +5441,11 @@ function looksLikeImageValue(val: any): boolean {
  * `available` follows the platform's status codes ("av" = available,
  * "so" = sold out on Lucina; generic sold/unavailable words otherwise).
  */
-function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; price: number; available: boolean; note?: string }> {
-  const lots: Array<{ eggs: number; price: number; available: boolean; note?: string }> = [];
+function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; price: number; available: boolean; note?: string; location?: string }> {
+  const lots: Array<{ eggs: number; price: number; available: boolean; note?: string; location?: string }> = [];
+  // The same cohort can appear twice (Lucina lists it under journeys[].cohorts
+  // AND the flat availability.cohorts) - key on id + shape so it counts once.
+  const seen = new Set<string>();
   const consider = (entry: any) => {
     if (!entry || typeof entry !== "object") return;
     const eggs = Number(entry.eggs ?? entry.numberOfEggs ?? entry.count);
@@ -5454,18 +5457,30 @@ function collectApiEggLots(record: Record<string, any>): Array<{ eggs: number; p
     // (cycle scheduled, lot not yet banked). Only the latter is worth noting.
     const availability = typeof entry.availability === "string" ? entry.availability.trim() : "";
     const note = availability && !/^(available|in stock|frozen)$/i.test(availability) ? availability : undefined;
-    lots.push({ eggs, price, available, note });
+    const location = typeof entry.location === "string" && entry.location.trim() ? entry.location.trim() : undefined;
+    // journeys[].cohorts carry no journey label (it sits on the parent) while
+    // availability.cohorts do - so the key must not include it.
+    const key = `${entry.cohortId ?? entry.id ?? ""}|${eggs}|${price}|${status}|${availability}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    lots.push({ eggs, price, available, note, location });
   };
-  for (const val of Object.values(record)) {
-    if (!Array.isArray(val)) continue;
-    for (const entry of val) {
+  const walkArray = (arr: any[]) => {
+    for (const entry of arr) {
       consider(entry);
       // one level of nesting: journeys[].cohorts[]
-      if (entry && typeof entry === "object") {
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
         for (const inner of Object.values(entry)) {
           if (Array.isArray(inner)) inner.forEach(consider);
         }
       }
+    }
+  };
+  for (const val of Object.values(record)) {
+    if (Array.isArray(val)) walkArray(val);
+    // arrays one level down inside an object: availability.cohorts[]
+    else if (isPlainObject(val)) {
+      for (const inner of Object.values(val)) if (Array.isArray(inner)) walkArray(inner);
     }
   }
   return lots;
@@ -5611,8 +5626,9 @@ function apiSectionsFromRecord(record: Record<string, any>): Record<string, Reco
 
   for (const [key, val] of Object.entries(record)) {
     if (isScalar(val) || isApiInternalKey(normalizeApiKeyName(key))) continue;
-    // ids/tier/archived flags - already on the card, noise as a section
-    if (/^identity$/i.test(key)) continue;
+    // ids/tier/archived flags - already on the card, noise as a section;
+    // availability is summarised as "Egg Lots" + "Frozen Egg Availability".
+    if (/^(identity|availability)$/i.test(key)) continue;
     const name = titleizeApiKey(key);
     if (Array.isArray(val)) {
       if (val.every(isScalar)) continue; // photo lists etc. are handled elsewhere
@@ -5748,8 +5764,22 @@ export function mapApiRecordToItem(record: Record<string, any>, type: DonorType,
     if (ldy && ldy > 1900) item.lastDeliveryYear = ldy;
   }
 
+  // A boolean `available` flag (Lucina's availability.available - true only
+  // while at least one cohort can still be sold) is authoritative over the
+  // status TEXT: Palash confirmed the donor-level status was a stale snapshot
+  // on 7 donors (Sep 4 2026).
+  const availableFlag = byKey["available"];
   const statusRaw = pick("status", "availability", "available");
-  if (statusRaw !== undefined) item.status = normalizeDonorStatus(String(statusRaw));
+  if (typeof availableFlag === "boolean") item.status = availableFlag ? "AVAILABLE" : "SOLD_OUT";
+  else if (statusRaw !== undefined) item.status = normalizeDonorStatus(String(statusRaw));
+
+  // Frozen banks: the eggs live at the bank, and the cohorts say where
+  // ("Lucina Egg Bank, San Diego, CA"). That IS the donor's location for
+  // marketplace purposes when the source gives no other.
+  if (!item.location && type === "egg-donor") {
+    const cohortLocation = collectApiEggLots(record).find((l) => l.location)?.location;
+    if (cohortLocation) item.location = cohortLocation;
+  }
 
   // Deep link from the config template - {donorId}, {caseId}, {externalId}
   // ... filled from the record (top-level or one section down). Only when the

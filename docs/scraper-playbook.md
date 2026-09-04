@@ -686,6 +686,16 @@ path - API payloads are already structured JSON.
     10 list calls per nightly fit with retry headroom. Never in the API:
     legal name, relationship status, donation openness, video, siblings table
     (family history = parents + grandparents), genetic test results, location.
+  - **Availability (Sep 4 2026, after we reported 7 "Sold Out" donors with
+    available cohorts)**: the LIST record now carries
+    `availability: {available: bool, availableCohorts, availableEggs,
+    cohorts[]}` - the flat cohort list adds `location` ("Lucina Egg Bank,
+    San Diego, CA") and `storage` ("in-storage" | "incoming"). Palash:
+    "`available` is the field to trust"; the status text is a snapshot. The
+    mapper maps a boolean `available` straight to AVAILABLE / SOLD_OUT,
+    dedupes cohorts that appear under both journeys[] and
+    availability.cohorts[], and takes the donor's location from the cohorts.
+    `hairColor` is a real color since the same day (`hairType` = texture).
   - **Profile Link Template** (config field, API method): Lucina's parent deep
     link is `https://donors.lucinaeggbank.com/gallery?donor={donorId}&ref=gostork`
     (parents log in / create a free account, then that donor opens). The
