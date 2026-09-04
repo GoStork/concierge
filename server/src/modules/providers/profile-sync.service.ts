@@ -22,7 +22,7 @@ import { dedupeEntityPhotos } from "./photo-dedup";
 import { resolveDonorLocation } from "@shared/donor-location";
 import { trackGemini } from "../../lib/gemini-usage";
 import { GEMINI_BATCH_MODEL } from "../../lib/gemini-models";
-import { auditSync } from "./sync-audit";
+import { auditSync, isFrozenEggBank, FROZEN_BANK_NOT_APPLICABLE } from "./sync-audit";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -4245,7 +4245,10 @@ export async function analyzeMissingFields(
     donors = await prisma.spermDonor.findMany({ where: { providerId } });
   }
 
-  const checks = getMandatoryFieldChecks(type);
+  // Same rule as the acceptance audit: a frozen egg bank owes no location,
+  // relationship status, or per-donor compensation.
+  const frozenBank = type === "egg-donor" && isFrozenEggBank(donors);
+  const checks = getMandatoryFieldChecks(type).filter((c) => !frozenBank || !FROZEN_BANK_NOT_APPLICABLE.includes(c.label));
   const results: MissingFieldSummary[] = [];
 
   for (const { label, check } of checks) {

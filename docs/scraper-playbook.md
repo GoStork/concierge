@@ -73,6 +73,12 @@ PROD; see `project_scraper_env_ownership`. Exit code 1 = not accepted.)
 10. **Budget**: the run fits the source's rate limits with headroom for one
     retry (e.g. Lucina 1,000 req/24h -> list-only, ~10 requests).
 
+**Not-applicable fields:** a frozen egg bank (>= 90% of donors frozen-only,
+e.g. Lucina) owes no **Location** (eggs ship), **Relationship Status**, or
+per-donor **Egg Donor Compensation** (pricing is per lot). The audit and the
+sync report drop those checks for such providers (`FROZEN_BANK_NOT_APPLICABLE`
+in `sync-audit.ts`) - never ask a bank for them.
+
 **Source-limited fields** are the ONLY acceptable gap: the audit tags a field
 `SRC` when it is absent on every record, which means the source does not
 publish it. Never fabricate it (no defaults, no AI guesses). Instead, report it

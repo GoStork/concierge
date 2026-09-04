@@ -45,6 +45,24 @@ export interface SyncAuditResult {
   statusCounts: Record<string, number>;
 }
 
+/**
+ * Frozen egg banks ship eggs, so the donor's location and relationship status
+ * are not part of the offer, and pricing is per lot rather than a per-donor
+ * compensation figure. Those fields are NOT required for such providers -
+ * neither a gap nor a provider ask. A provider counts as a frozen bank when
+ * >= 90% of its donors are frozen-only.
+ */
+export const FROZEN_BANK_NOT_APPLICABLE = ["Location", "Relationship Status", "Egg Donor Compensation"];
+
+export function isFrozenEggBank(rows: Array<{ donorType?: string | null }>): boolean {
+  if (rows.length === 0) return false;
+  const frozenOnly = rows.filter((r) => {
+    const t = String(r.donorType || "").toLowerCase();
+    return t.includes("frozen") && !t.includes("fresh");
+  }).length;
+  return frozenOnly / rows.length >= 0.9;
+}
+
 export const AUDIT_GATES = {
   minCoverageOfSource: 0.98,
   maxFailedRatio: 0.02,
@@ -201,7 +219,9 @@ export async function auditSync(
   const mappingGaps: string[] = [];
   const sourceLimited: string[] = [];
   const sourceVariance: string[] = [];
-  for (const c of checks) {
+  const frozenBank = type === "egg-donor" && isFrozenEggBank(rows);
+  const applicableChecks = frozenBank ? checks.filter((c) => !FROZEN_BANK_NOT_APPLICABLE.includes(c.label)) : checks;
+  for (const c of applicableChecks) {
     const filled = rows.filter((r) => c.check(r)).length;
     const ratio = n ? filled / n : 0;
     const evidence = RAW_EVIDENCE[c.label];
