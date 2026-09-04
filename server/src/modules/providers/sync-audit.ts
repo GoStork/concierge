@@ -63,14 +63,18 @@ const PRICE_FIELD: Record<AuditDonorType, string> = {
 // Raw-data evidence per required field: a profileData key (any depth) matching
 // this regex with a non-empty value means the source GAVE us the field.
 const RAW_EVIDENCE: Record<string, RegExp> = {
-  "Education Level": /education|degree|major|school|college|university/i,
-  Education: /education|degree|major|school|college|university/i,
+  // "major(?!\s*city)": FC's "Closest Major City" is a location, not education -
+  // it made 18 clean rows read as unmapped (Sep 4 2026).
+  "Education Level": /education|degree|school|college|university|major(?!\s*city)/i,
+  Education: /education|degree|school|college|university|major(?!\s*city)/i,
   "Eye Color": /eye/i,
   Location: /location|city|state of residence|residence|country/i,
   "Hair Color": /hair.*colou?r|natural colou?r/i,
   "Donation Types": /donation type|type of donation|donation openness|anonymity|open donation/i,
   Race: /\brace\b/i,
-  "Relationship Status": /relationship|marital/i,
+  // "relationship status|marital": bare /relationship/ matched the family-health
+  // matrix key "Condition Relationship".
+  "Relationship Status": /relationship status|marital/i,
   Ethnicity: /ethnic|ancestry/i,
   Occupation: /occupation|profession|\bjob\b/i,
   Religion: /religio/i,

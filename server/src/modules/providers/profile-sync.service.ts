@@ -6359,7 +6359,7 @@ async function runSyncJob(
       const existingProfilesQuery = job.type === "surrogate"
         ? prisma.surrogate.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true, profileData: true },
           })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({
@@ -6371,9 +6371,18 @@ async function runSyncJob(
             select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           });
       const existingDonors = await existingProfilesQuery;
+      // Surrogates missing top-level Height in profileData must re-fetch even on
+      // a hash match - the promotion from section data (added Sep 4 2026) only
+      // runs on a full profile fetch, and a hash-skip would defer the backfill
+      // until the 14-day pricing re-check.
+      const missingPhysicalStats = new Set<string>();
       for (const d of existingDonors) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
         if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
+        if (job.type === "surrogate" && d.externalId) {
+          const pd = (d as any).profileData;
+          if (!pd || typeof pd !== "object" || !(pd as any)["Height"]) missingPhysicalStats.add(d.externalId);
+        }
       }
 
       // Re-check pricing/compensation every 14 days even if card hash matches
@@ -6393,7 +6402,8 @@ async function runSyncJob(
           const oldHash = item.externalId ? existingHashes.get(item.externalId) : null;
           const lastFull = item.externalId ? existingLastFullSyncAt.get(item.externalId) : null;
           const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
-          if (oldHash && oldHash === item.cardHash && !pricingStale) {
+          const needsPhysical = !!item.externalId && missingPhysicalStats.has(item.externalId);
+          if (oldHash && oldHash === item.cardHash && !pricingStale && !needsPhysical) {
             skippedUnchanged++;
             job.processed++;
             return;
@@ -6445,6 +6455,27 @@ async function runSyncJob(
               if (!item.relationshipStatus) item.relationshipStatus = fullProfile["Relationship Status"] || bi["Relationship Status"] || pi["Relationship Status"] || so["Relationship Status"] || null;
               if (!item.height) item.height = fullProfile["Height"] || pt["Height"] || bi["Height"] || null;
               if (!item.weight) item.weight = fullProfile["Weight"] || pt["Weight"] || bi["Weight"] || null;
+              // Section names vary by theme (Family Creations: "General
+              // Background Information") and labels can carry a trailing "?"
+              // ("Weight?"). Search EVERY section for the physical stats
+              // instead of only the known section names.
+              if (!item.height || !item.weight) {
+                for (const sec of Object.values(sections || {})) {
+                  if (!sec || typeof sec !== "object") continue;
+                  for (const [k, v] of Object.entries(sec)) {
+                    if (v === null || v === undefined || v === "" || typeof v === "object") continue;
+                    const key = k.trim();
+                    if (!item.height && /^height\s*\??$/i.test(key)) item.height = String(v);
+                    else if (!item.weight && /^weight\s*\??$/i.test(key)) item.weight = String(v);
+                  }
+                }
+              }
+              // Surrogate has no height/weight COLUMNS - the profile page and
+              // the audit read top-level profileData. Promote so they render.
+              if (job.type === "surrogate") {
+                if (item.height && !item.profileData["Height"]) item.profileData["Height"] = item.height;
+                if (item.weight && !item.profileData["Weight"]) item.profileData["Weight"] = item.weight;
+              }
 
               if (job.type === "surrogate") {
                 if (!item.bmi) {
