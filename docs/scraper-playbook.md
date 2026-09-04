@@ -344,9 +344,11 @@ source-limited fields to request from the provider.
 - **Profile-page galleries come in more than one format.** The engine tries
   Fotorama first, then generic `gallery-item` blocks
   (`<div class="gallery-item"><a href="FULL"><img src></a></div>` - Family
-  Creations' theme). A donor with `photos.length <= 1` is re-fetched on every
+  Creations' theme). Applies to egg donors AND surrogates (FC surrogate pages
+  carry the same markup - enabling it took them from 1 to ~10 photos each,
+  Sep 4 2026). A profile with `photos.length <= 1` is re-fetched on every
   run (`needsEggGallery`), so adding a new gallery format back-fills existing
-  donors on the next sync without a delete. Audit symptom that finds this:
+  profiles on the next sync without a delete. Audit symptom that finds this:
   "Photo Gallery (2+ photos)" far below 100% for a site whose profile pages
   visibly have galleries. To inspect the real markup from the prod host (dev
   IPs get Cloudflare-blocked after a few probes): install tsx in /tmp on the VM
