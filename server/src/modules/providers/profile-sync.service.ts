@@ -2890,6 +2890,7 @@ export async function saveSyncConfig(
     apiKey?: string;
     apiSecret?: string;
     apiDetailUrl?: string;
+    profileUrlTemplate?: string;
     loginUrl?: string;
   },
 ) {
@@ -2911,6 +2912,7 @@ export async function saveSyncConfig(
     ...(validMethod ? { syncMethod: validMethod } : {}),
     // Not a secret - saved (and clearable) on every save like the URL itself.
     ...(data.apiDetailUrl !== undefined ? { apiDetailUrl: data.apiDetailUrl.trim() || null } : {}),
+    ...(data.profileUrlTemplate !== undefined ? { profileUrlTemplate: data.profileUrlTemplate.trim() || null } : {}),
     // Where the scraper signs in. Clearing it deliberately hands the engine back
     // to the learned-URL/guess path, so treat "" as null exactly like the above.
     ...(data.loginUrl !== undefined ? { loginUrl: data.loginUrl.trim() || null } : {}),
@@ -3217,6 +3219,7 @@ export async function startSync(
         (config as any).apiDetailUrl || null,
         profileLimit,
         storageService || null,
+        (config as any).profileUrlTemplate || null,
       )
     : runSyncJob(prisma, job, config.databaseUrl, credentials, profileLimit, storageService || null);
 
@@ -5629,7 +5632,7 @@ function apiSectionsFromRecord(record: Record<string, any>): Record<string, Reco
   return sections;
 }
 
-export function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Record<string, any> {
+export function mapApiRecordToItem(record: Record<string, any>, type: DonorType, profileUrlTemplate?: string | null): Record<string, any> {
   const byKey: Record<string, any> = {};
   for (const [key, val] of Object.entries(record)) byKey[normalizeApiKeyName(key)] = val;
   // Sectioned profiles keep the card attributes one level down
@@ -5740,6 +5743,24 @@ export function mapApiRecordToItem(record: Record<string, any>, type: DonorType)
 
   const statusRaw = pick("status", "availability", "available");
   if (statusRaw !== undefined) item.status = normalizeDonorStatus(String(statusRaw));
+
+  // Deep link from the config template - {donorId}, {caseId}, {externalId}
+  // ... filled from the record (top-level or one section down). Only when the
+  // source did not already hand us a profile URL, and only if every
+  // placeholder resolved (a half-filled link is worse than none).
+  if (!item.profileUrl && profileUrlTemplate && profileUrlTemplate.trim()) {
+    let unresolved = false;
+    const url = profileUrlTemplate.trim().replace(/\{([A-Za-z0-9_]+)\}/g, (_m, field: string) => {
+      let v = record[field] ?? byKey[normalizeApiKeyName(field)];
+      if (field.toLowerCase() === "externalid") v = item.externalId;
+      if (v === undefined || v === null || v === "" || typeof v === "object") {
+        unresolved = true;
+        return "";
+      }
+      return encodeURIComponent(String(v));
+    });
+    if (!unresolved) item.profileUrl = url;
+  }
 
   const photos = collectApiPhotos(record);
   if (photos.length > 0) {
@@ -5864,6 +5885,7 @@ async function runApiSyncJob(
   detailApiUrl?: string | null,
   profileLimit?: number,
   storageService?: StorageService | null,
+  profileUrlTemplate?: string | null,
 ): Promise<void> {
   try {
     console.log(`[donor-sync] Starting ${job.type} API sync for provider ${job.providerId} from ${apiUrl}${detailApiUrl ? ` (detail: ${detailApiUrl})` : ""}`);
@@ -6066,7 +6088,7 @@ async function runApiSyncJob(
       fullRecords = merged;
     }
 
-    const items = fullRecords.map((r) => mapApiRecordToItem(r, job.type));
+    const items = fullRecords.map((r) => mapApiRecordToItem(r, job.type, profileUrlTemplate));
 
     // De-dupe by externalId (an API page overlap must not double-import)
     const seen = new Set<string>();

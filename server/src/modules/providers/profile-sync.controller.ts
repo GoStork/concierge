@@ -111,6 +111,7 @@ export class ProfileSyncController {
       username: config.username,
       syncMethod: (config as any).syncMethod || "SOURCE_URL",
       apiDetailUrl: (config as any).apiDetailUrl || null,
+      profileUrlTemplate: (config as any).profileUrlTemplate || null,
       loginUrl: (config as any).loginUrl || null,
       // Read-only: the login page the engine last authenticated against. Shown
       // as a hint so an admin can promote it into loginUrl with one click.
@@ -137,6 +138,7 @@ export class ProfileSyncController {
       apiKey?: string;
       apiSecret?: string;
       apiDetailUrl?: string;
+      profileUrlTemplate?: string;
       loginUrl?: string;
     },
   ) {
@@ -180,6 +182,7 @@ export class ProfileSyncController {
       username: config.username,
       syncMethod: (config as any).syncMethod || "SOURCE_URL",
       apiDetailUrl: (config as any).apiDetailUrl || null,
+      profileUrlTemplate: (config as any).profileUrlTemplate || null,
       loginUrl: (config as any).loginUrl || null,
       lastGoodLoginUrl: (config as any).lastGoodLoginUrl || null,
       hasApiKey: !!(config as any).encryptedApiKey,

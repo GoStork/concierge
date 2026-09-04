@@ -67,8 +67,9 @@ const RAW_EVIDENCE: Record<string, RegExp> = {
   // it made 18 clean rows read as unmapped (Sep 4 2026).
   "Education Level": /education|degree|school|college|university|major(?!\s*city)/i,
   Education: /education|degree|school|college|university|major(?!\s*city)/i,
-  "Eye Color": /eye/i,
-  Location: /location|city|state of residence|residence|country/i,
+  "Eye Color": /\beye/i,
+  // word boundaries: bare /city/ matched "Ethnicity" (933 Lucina rows, Sep 4 2026)
+  Location: /\blocation\b|\bcity\b|state of residence|\bresidence\b|\bcountry\b/i,
   "Hair Color": /hair.*colou?r|natural colou?r/i,
   "Donation Types": /donation type|type of donation|donation openness|anonymity|open donation/i,
   Race: /\brace\b/i,
@@ -93,13 +94,23 @@ const RAW_EVIDENCE: Record<string, RegExp> = {
   "Base Compensation": /compensation/i,
 };
 
-function hasRawEvidence(pd: any, re: RegExp): boolean {
+// Values that match a field's key but are NOT usable evidence: a hair
+// TEXTURE stored under "Hair Color" (Lucina sends "Straight") is exactly what
+// the mapper is right to drop, so it must not count as "unmapped".
+const RAW_VALUE_EXCLUDE: Record<string, RegExp> = {
+  "Hair Color": /^(straight|wavy|curly|coily|kinky|fine|thick|medium|thin)$/i,
+};
+
+function hasRawEvidence(pd: any, re: RegExp, valueExclude?: RegExp): boolean {
   if (!pd || typeof pd !== "object") return false;
   const walk = (obj: any, depth: number): boolean => {
     if (depth > 3 || !obj || typeof obj !== "object") return false;
     for (const [k, v] of Object.entries(obj)) {
       if (v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) continue;
-      if (re.test(k) && (typeof v !== "object" || Array.isArray(v))) return true;
+      if (re.test(k) && (typeof v !== "object" || Array.isArray(v))) {
+        if (valueExclude && typeof v === "string" && valueExclude.test(v.trim())) continue;
+        return true;
+      }
       if (typeof v === "object" && walk(v, depth + 1)) return true;
     }
     return false;
@@ -194,7 +205,7 @@ export async function auditSync(
     const filled = rows.filter((r) => c.check(r)).length;
     const ratio = n ? filled / n : 0;
     const evidence = RAW_EVIDENCE[c.label];
-    const unmapped = evidence ? rows.filter((r) => !c.check(r) && hasRawEvidence(r.profileData, evidence)).length : 0;
+    const unmapped = evidence ? rows.filter((r) => !c.check(r) && hasRawEvidence(r.profileData, evidence, RAW_VALUE_EXCLUDE[c.label])).length : 0;
     let tag: AuditField["tag"];
     if (ratio >= AUDIT_GATES.minRequiredFieldFill) tag = "ok";
     else if (unmapped > 0) tag = "GAP";

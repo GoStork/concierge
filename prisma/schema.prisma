@@ -1203,6 +1203,10 @@ model EggDonorSyncConfig {
   // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
   // this endpoint gives the full profile; called per record and merged).
   apiDetailUrl       String?
+  // Optional deep-link template for API-synced profiles, e.g.
+  // https://provider.com/gallery?donor={donorId}&ref=gostork - {field} placeholders
+  // are filled from the record (donorId, caseId, id, externalId ...).
+  profileUrlTemplate String?
   // Where the scraper signs in. OPTIONAL. When set, it is the ONLY login page
   // tried - no guessing, no extra requests against a Cloudflare-fronted origin.
   // Leave blank and the engine falls back to lastGoodLoginUrl, then to guessed
@@ -1315,6 +1319,10 @@ model SurrogateSyncConfig {
   // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
   // this endpoint gives the full profile; called per record and merged).
   apiDetailUrl       String?
+  // Optional deep-link template for API-synced profiles, e.g.
+  // https://provider.com/gallery?donor={donorId}&ref=gostork - {field} placeholders
+  // are filled from the record (donorId, caseId, id, externalId ...).
+  profileUrlTemplate String?
   // Where the scraper signs in. OPTIONAL. When set, it is the ONLY login page
   // tried - no guessing, no extra requests against a Cloudflare-fronted origin.
   // Leave blank and the engine falls back to lastGoodLoginUrl, then to guessed
@@ -1408,6 +1416,10 @@ model SpermDonorSyncConfig {
   // Optional per-profile detail endpoint for list+detail APIs (list gives IDs,
   // this endpoint gives the full profile; called per record and merged).
   apiDetailUrl       String?
+  // Optional deep-link template for API-synced profiles, e.g.
+  // https://provider.com/gallery?donor={donorId}&ref=gostork - {field} placeholders
+  // are filled from the record (donorId, caseId, id, externalId ...).
+  profileUrlTemplate String?
   // Where the scraper signs in. OPTIONAL. When set, it is the ONLY login page
   // tried - no guessing, no extra requests against a Cloudflare-fronted origin.
   // Leave blank and the engine falls back to lastGoodLoginUrl, then to guessed

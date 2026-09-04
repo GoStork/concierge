@@ -178,6 +178,7 @@ export default function ProfileDatabasePanel({
   const [configApiKey, setConfigApiKey] = useState("");
   const [configApiSecret, setConfigApiSecret] = useState("");
   const [configApiDetailUrl, setConfigApiDetailUrl] = useState("");
+  const [configProfileUrlTemplate, setConfigProfileUrlTemplate] = useState("");
   // Where the scraper signs in. Blank = let the engine use the last known-good
   // URL, then guess. See the Login URL field below for why this exists.
   const [configLoginUrl, setConfigLoginUrl] = useState("");
@@ -251,6 +252,7 @@ export default function ProfileDatabasePanel({
           : "SOURCE_URL",
       );
       setConfigApiDetailUrl(configQuery.data.apiDetailUrl || "");
+      setConfigProfileUrlTemplate(configQuery.data.profileUrlTemplate || "");
       setConfigLoginUrl(configQuery.data.loginUrl || "");
     }
   }, [configQuery.data]);
@@ -324,6 +326,7 @@ export default function ProfileDatabasePanel({
     apiKey: configApiKey || undefined,
     apiSecret: configApiSecret || undefined,
     apiDetailUrl: configApiDetailUrl,
+    profileUrlTemplate: configProfileUrlTemplate,
     loginUrl: configLoginUrl,
   });
 
@@ -817,6 +820,19 @@ export default function ProfileDatabasePanel({
                   placeholder="https://api.provider.com/v1/donors/full_profile"
                   value={configApiDetailUrl}
                   onChange={(e) => setConfigApiDetailUrl(e.target.value)}
+                  disabled={!isAdmin || isRunning}
+                />
+              </div>
+              <div>
+                <Label htmlFor={`profile-url-template-${type}`} className="t-form-label-sm">
+                  Profile Link Template (optional)
+                </Label>
+                <Input
+                  id={`profile-url-template-${type}`}
+                  data-testid={`input-sync-profile-url-template-${type}`}
+                  placeholder="https://provider.com/gallery?donor={donorId}&ref=gostork"
+                  value={configProfileUrlTemplate}
+                  onChange={(e) => setConfigProfileUrlTemplate(e.target.value)}
                   disabled={!isAdmin || isRunning}
                 />
               </div>
