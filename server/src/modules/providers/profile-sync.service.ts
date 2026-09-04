@@ -7135,7 +7135,7 @@ async function runSyncJob(
     const externalIds = uniqueItems.map((d: any) => d.externalId).filter(Boolean);
     if (externalIds.length > 0) {
       const dbTable = job.type === "surrogate"
-        ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, profileData: true } })
+        ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, profileData: true, photos: true } })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true, profileData: true } })
         : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, photos: true, profileData: true } });
@@ -7186,7 +7186,7 @@ async function runSyncJob(
         // donor-view page. Force a profile fetch when a donor has a profile URL
         // but <=1 stored photo. No-ops on non-gallery pages (extractor returns []).
         const needsEggGallery =
-          job.type === "egg-donor" &&
+          (job.type === "egg-donor" || job.type === "surrogate") &&
           !!item.profileUrl &&
           (existingPhotoCount.get(item.externalId || "") ?? 0) <= 1;
         const needsPhysical =
@@ -7216,7 +7216,9 @@ async function runSyncJob(
               // Listing cards expose only one photo; the gallery lives here. Feed
               // it through profileData["All Photos"], which extractPhotosArray and
               // persistPhotoUrls already migrate to GCS and write to the photos[] column.
-              if (job.type === "egg-donor") {
+              // Surrogate profile pages on the same themes carry the same gallery
+              // markup; both extractors return [] when a page has none.
+              if (job.type === "egg-donor" || job.type === "surrogate") {
                 let gallery = extractFotoramaPhotos(profileHtml, item.profileUrl);
                 if (gallery.length <= 1) gallery = extractGalleryItemPhotos(profileHtml, item.profileUrl);
                 if (gallery.length > 1) {
