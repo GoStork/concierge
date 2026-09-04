@@ -796,6 +796,16 @@ goes LIVE now (not sandbox) - see docs/go-live-checklist.md for the recipe.
 State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
 - [x] Live account activated (Account status: no tasks; Payments, Payouts,
   Transfers, ACH all Active). Payout schedule already **Manual**.
+- [x] Sandbox (acct_1TYZ1kC5oC6HdQow) webhook hygiene 2026-09-04: Stripe emailed
+  "webhook delivery issues" because the two legacy `go-stork.replit.app`
+  destinations (`Replit Prod` and `Replit Prod - Connect`) 404 - Replit is
+  decommissioned. Both were DISABLED (not deleted) in Workbench > Webhooks;
+  the live sandbox destinations are the MacBook ngrok pair (`GoStork` ->
+  gostork.ngrok.app/api/webhooks/stripe, `GoStork Dev - Connect` ->
+  .../stripe-connect). Delete the Replit rows whenever convenient; never
+  re-enable them. Same rule at launch: after cutover, disable or delete any
+  destination that points at a retired host so Stripe does not auto-disable
+  and email about it.
 - [x] Live webhook destinations created (API 2026-04-22.dahlia):
   `gostork-2-main-billing` we_1U67fGCGqwxDjN6VLCLn2AqY -> 
   https://test-app.gostork.com/api/webhooks/stripe (Your account, 8
