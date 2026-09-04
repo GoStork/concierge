@@ -2552,6 +2552,35 @@ async function upsertSurrogate(
   // See the egg-donor upsert: keep the city the extraction dropped.
   const resolvedLocation = resolveDonorLocation(surrogate.location, mergedProfile);
 
+  // Surrogate has no height/weight COLUMNS; the profile page, cards, and the
+  // sync audit all read top-level profileData["Height"/"Weight"]. Sources bury
+  // them in sections under theme-specific names (Family Creations: "General
+  // Background Information" with a trailing "?" - "Weight?"), so promote them
+  // here, in the ONE function every sync path funnels through - never in a
+  // single path's enrichment.
+  if (mergedProfile && typeof mergedProfile === "object" && !mf.includes("profileData")) {
+    const promotePhysicalStat = (label: "Height" | "Weight", fromItem: any) => {
+      if ((mergedProfile as any)[label]) return;
+      let val = fromItem !== undefined && fromItem !== null && fromItem !== "" ? fromItem : null;
+      if (!val) {
+        const keyRe = new RegExp(`^${label}\\s*\\??$`, "i");
+        const secs = (mergedProfile as any)._sections;
+        outer: for (const sec of Object.values((secs && typeof secs === "object" ? secs : {}) as Record<string, any>)) {
+          if (!sec || typeof sec !== "object") continue;
+          for (const [k, v] of Object.entries(sec)) {
+            if (v !== null && v !== undefined && v !== "" && typeof v !== "object" && keyRe.test(k.trim())) {
+              val = v;
+              break outer;
+            }
+          }
+        }
+      }
+      if (val) (mergedProfile as any)[label] = String(val);
+    };
+    promotePhysicalStat("Height", surrogate.height);
+    promotePhysicalStat("Weight", surrogate.weight);
+  }
+
   const phStats = calcPregnancyHistoryStats(mergedProfile);
   const resolvedLiveBirths = surrogate.liveBirths != null ? parseInt(String(surrogate.liveBirths)) || 0 : (phStats?.liveBirths ?? 0);
   const resolvedCSections = surrogate.cSections != null ? parseInt(String(surrogate.cSections)) || 0 : (phStats?.cSections ?? 0);
@@ -7102,10 +7131,11 @@ async function runSyncJob(
     const existingVialTypes = new Map<string, string[]>();
     const existingHasSections = new Set<string>(); // tracks which donors already have rich section data
     const existingPhotoCount = new Map<string, number>(); // egg-donor: existing photo count, to force gallery backfill when <=1
+    const missingPhysicalStats = new Set<string>(); // surrogate: no promoted Height yet -> one-time re-fetch
     const externalIds = uniqueItems.map((d: any) => d.externalId).filter(Boolean);
     if (externalIds.length > 0) {
       const dbTable = job.type === "surrogate"
-        ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
+        ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, profileData: true } })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true, profileData: true } })
         : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, photos: true, profileData: true } });
@@ -7119,6 +7149,11 @@ async function runSyncJob(
         const pd = (d as any).profileData;
         if (d.externalId && pd && typeof pd === "object" && pd._sections && Object.keys(pd._sections).length > 0) {
           existingHasSections.add(d.externalId);
+        }
+        // Surrogates missing the promoted top-level Height re-fetch once even on
+        // a hash match (see promotePhysicalStat in upsertSurrogate, Sep 4 2026).
+        if (job.type === "surrogate" && d.externalId && (!pd || typeof pd !== "object" || !(pd as any)["Height"])) {
+          missingPhysicalStats.add(d.externalId);
         }
       }
     }
@@ -7154,7 +7189,9 @@ async function runSyncJob(
           job.type === "egg-donor" &&
           !!item.profileUrl &&
           (existingPhotoCount.get(item.externalId || "") ?? 0) <= 1;
-        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes && !needsSections && !needsEggGallery) {
+        const needsPhysical =
+          job.type === "surrogate" && !!item.externalId && missingPhysicalStats.has(item.externalId);
+        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes && !needsSections && !needsEggGallery && !needsPhysical) {
           // Even on hash-skip, save vialTypes from listing page if DB doesn't have them yet
           if (job.type === "sperm-donor" && item.vialTypes?.length > 0) {
             const dbVt = item.externalId ? existingVialTypes.get(item.externalId) : null;
