@@ -663,16 +663,26 @@ path - API payloads are already structured JSON.
     Records: `caseId`, `donorId` (= externalId, e.g. BD2874), `tier`, `photo`,
     ethnicity, race, age, height, education, `status`, `journeys[].cohorts[]`
     (`cohortId`, `eggs`, `price`, `status`, `availability` e.g. "Incoming").
-  - `.../get-individual-donor?caseId=<caseId>` returns the SAME fields as the
-    list record (Palash: it "IS the complete partner-facing profile"). Do NOT
-    configure it as the Profile Detail Endpoint - 935 calls/run against a
-    **1,000 requests per rolling 24h per endpoint** rate limit buys nothing.
-    Leave the detail field empty; the list is the full partner profile.
-  - The gated full profile on their website (essays, medical detail, full
-    photo set) is currently NOT exposed by `get-individual-donor` - it mirrors
-    the list record. The website's own `/api/donors` + `/api/donors/{id}/full`
-    routes are internal/unversioned - Lucina asked us not to build against
-    them (the earlier Sep 2 setup did).
+  - `.../get-individual-donor?caseId=<caseId>` = the summary record only
+    (same fields as the list). Not used.
+  - **Profile Detail Endpoint (Sep 4 2026):**
+    `.../get-donor-full-profile?donorId={donorId}` (`?caseId=` also works) -
+    GET, same headers, body `{ok, code, message, donor:{...}}` with SECTIONS:
+    identity, photos (all, absolute URLs), about (essays), physical, heritage,
+    education, talents, screening [{question, answer}], donorMedical
+    [{label, value}], familyHistory {health[], physicalTraits[] (one row per
+    family member), medical {columns, rows:[{label, cells}]}}, fertility,
+    pricing, journeys[].cohorts[]. `apiSectionsFromRecord` turns those into
+    `profileData._sections` (titled sections on the profile page, incl. the
+    family matrix rendered one line per condition), nested scalars map to the
+    card columns (eye color, blood type, weight, occupation, religion ...).
+    Rate limit was raised to **5,000/day per endpoint**, so 933 detail calls +
+    10 list calls per nightly fit with retry headroom. Never in the API:
+    legal name, relationship status, donation openness, video, siblings table
+    (family history = parents + grandparents), genetic test results.
+  - The website's own `/api/donors` + `/api/donors/{id}/full` routes are
+    internal/unversioned - Lucina asked us not to build against them (the
+    Sep 2 setup did, briefly).
   - **The contracted field list** (what the full-profile endpoint is supposed
     to return) is GoStork's May 2023 spreadsheet, agreed with Lucina and
     delivered by their 2023 endpoint (Itai confirmed Jul 2023):

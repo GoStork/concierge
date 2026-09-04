@@ -5525,13 +5525,131 @@ function collectApiPhotos(record: Record<string, any>): string[] {
  * are already structured, so key-name matching is exact enough, and the full
  * record is preserved verbatim in profileData for the profile page.
  */
-function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Record<string, any> {
+const isPlainObject = (v: any): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
+const isScalar = (v: any): boolean => v === null || v === undefined || typeof v !== "object";
+
+/**
+ * Sectioned API profiles (Lucina's get-donor-full-profile: identity, about,
+ * physical, heritage, education, talents, screening, donorMedical,
+ * familyHistory, fertility, pricing) -> the `_sections` shape the profile page
+ * renders as titled sections: { "Section": { "Label": "value" } }. Handles the
+ * common table encodings: [{question, answer}], [{label, value}],
+ * [{member, ...traits}] (one line per family member), and the
+ * {columns, rows:[{label, cells}]} matrix. Nested objects one level down
+ * become "Parent - Child" labels; everything else is stringified faithfully.
+ */
+function apiSectionsFromRecord(record: Record<string, any>): Record<string, Record<string, any>> {
+  const sections: Record<string, Record<string, any>> = {};
+  const fmt = (v: any): string => (isScalar(v) ? String(v) : JSON.stringify(v));
+  const addPairs = (name: string, obj: Record<string, any>, prefix = "") => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === null || v === undefined || v === "") continue;
+      const label = (prefix ? `${prefix} - ` : "") + titleizeApiKey(k);
+      if (isScalar(v)) {
+        sections[name] ??= {};
+        sections[name][label] = String(v);
+      } else if (isPlainObject(v)) {
+        addPairs(name, v, label);
+      } else if (Array.isArray(v)) {
+        const text = arrayToLines(v);
+        if (text) {
+          sections[name] ??= {};
+          sections[name][label] = text;
+        }
+      }
+    }
+  };
+  const rowToLine = (row: Record<string, any>, keyField?: string): string =>
+    Object.entries(row)
+      .filter(([k, v]) => k !== keyField && v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => `${titleizeApiKey(k)}: ${fmt(v)}`)
+      .join(", ");
+  const arrayToLines = (arr: any[]): string => {
+    if (arr.every(isScalar)) return arr.map(String).join(", ");
+    return arr
+      .filter(isPlainObject)
+      .map((row) => (row.member ? `${row.member}: ${rowToLine(row, "member")}` : rowToLine(row)))
+      .join("\n");
+  };
+  const addTable = (name: string, arr: any[]) => {
+    for (const row of arr) {
+      if (!isPlainObject(row)) continue;
+      const q = row.question ?? row.label ?? row.name ?? row.key;
+      const a = row.answer ?? row.value ?? row.response;
+      if (q !== undefined && a !== undefined && a !== null && a !== "") {
+        sections[name] ??= {};
+        sections[name][String(q)] = fmt(a);
+      } else if (row.member) {
+        sections[name] ??= {};
+        sections[name][String(row.member)] = rowToLine(row, "member");
+      }
+    }
+  };
+  const addMatrix = (name: string, m: Record<string, any>) => {
+    const cols: any[] = Array.isArray(m.columns) ? m.columns : [];
+    for (const row of Array.isArray(m.rows) ? m.rows : []) {
+      if (!isPlainObject(row) || !row.label) continue;
+      const cells: any[] = Array.isArray(row.cells) ? row.cells : [];
+      const line = cells.map((c, i) => `${cols[i] ?? "#" + (i + 1)}: ${fmt(c)}`).join("; ");
+      sections[name] ??= {};
+      sections[name][String(row.label)] = line;
+    }
+    for (const [k, v] of Object.entries(m)) {
+      if (k === "columns" || k === "rows" || v === null || v === undefined || v === "") continue;
+      if (isScalar(v)) {
+        sections[name] ??= {};
+        sections[name][titleizeApiKey(k)] = String(v);
+      }
+    }
+  };
+
+  for (const [key, val] of Object.entries(record)) {
+    if (isScalar(val) || isApiInternalKey(normalizeApiKeyName(key))) continue;
+    // ids/tier/archived flags - already on the card, noise as a section
+    if (/^identity$/i.test(key)) continue;
+    const name = titleizeApiKey(key);
+    if (Array.isArray(val)) {
+      if (val.every(isScalar)) continue; // photo lists etc. are handled elsewhere
+      if (val.some((r) => isPlainObject(r) && (r.question !== undefined || r.label !== undefined || r.member !== undefined))) addTable(name, val);
+      continue; // cohorts/journeys are summarised as Egg Lots
+    }
+    if (isPlainObject(val)) {
+      if (Array.isArray(val.columns) && Array.isArray(val.rows)) {
+        addMatrix(name, val);
+        continue;
+      }
+      for (const [k, v] of Object.entries(val)) {
+        if (v === null || v === undefined || v === "") continue;
+        if (isPlainObject(v) && Array.isArray(v.columns) && Array.isArray(v.rows)) addMatrix(`${name} - ${titleizeApiKey(k)}`, v);
+        else if (Array.isArray(v) && v.some((r) => isPlainObject(r) && (r.question !== undefined || r.label !== undefined || r.member !== undefined))) addTable(`${name} - ${titleizeApiKey(k)}`, v);
+        else addPairs(name, { [k]: v });
+      }
+    }
+  }
+  return sections;
+}
+
+export function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Record<string, any> {
   const byKey: Record<string, any> = {};
   for (const [key, val] of Object.entries(record)) byKey[normalizeApiKeyName(key)] = val;
+  // Sectioned profiles keep the card attributes one level down
+  // (physical.eyeColor, heritage.race, education.occupation ...). Index those
+  // scalars too; a top-level key of the same name always wins.
+  for (const val of Object.values(record)) {
+    if (!isPlainObject(val)) continue;
+    for (const [k, v] of Object.entries(val)) {
+      const nk = normalizeApiKeyName(k);
+      if (!isScalar(v) || v === null || v === "") continue;
+      // A nested scalar fills an empty slot, and also beats a top-level SECTION
+      // object of the same name ("education": {...} vs education.education).
+      if (byKey[nk] === undefined || !isScalar(byKey[nk])) byKey[nk] = v;
+    }
+  }
   const pick = (...names: string[]): any => {
     for (const n of names) {
       const v = byKey[n];
-      if (v !== undefined && v !== null && v !== "") return v;
+      // A section object named like a field ("education": {...}) is not a value.
+      if (v !== undefined && v !== null && v !== "" && isScalar(v)) return v;
     }
     return undefined;
   };
@@ -5639,8 +5757,15 @@ function mapApiRecordToItem(record: Record<string, any>, type: DonorType): Recor
   for (const [key, val] of Object.entries(record)) {
     if (val === null || val === undefined || val === "") continue;
     if (isApiInternalKey(normalizeApiKeyName(key))) continue;
+    if (!isScalar(val)) continue; // nested sections/tables are rendered via _sections below
     profileData[titleizeApiKey(key)] = val;
   }
+  // Sectioned full profiles (Lucina get-donor-full-profile and the like) become
+  // titled sections on the profile page - the same `_sections` shape the
+  // scraper paths produce, so Family History, Medical, Essays etc. render and
+  // the audit's section checks see them.
+  const sections = apiSectionsFromRecord(record);
+  if (Object.keys(sections).length > 0) profileData["_sections"] = sections;
   const allLots = type === "egg-donor" ? collectApiEggLots(record) : [];
   if (allLots.length > 0) {
     delete profileData["Journeys"];
