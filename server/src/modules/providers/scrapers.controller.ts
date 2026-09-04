@@ -1200,14 +1200,20 @@ export class ScrapersController {
   }
 
   @Get("sync-logs/:providerId/:type")
-  @ApiOperation({ summary: "Get sync log history for a specific provider and type (admin only)" })
+  @ApiOperation({ summary: "Get sync log history for a specific provider and type (GoStork admin, or the provider's own staff)" })
   async getSyncLogsForProvider(
     @Req() req: any,
     @Param("providerId") providerId: string,
     @Param("type") type: string,
     @Query("limit") limitStr?: string,
   ) {
-    requireAdmin(req);
+    // Providers see their OWN run history + audit verdicts on their profile
+    // tabs; GoStork admins see everyone's.
+    const user = req.user;
+    const isGostorkAdmin = user?.roles?.includes("GOSTORK_ADMIN") || user?.roles?.includes("GOSTORK_DEVELOPER");
+    if (!isGostorkAdmin && user?.providerId !== providerId) {
+      throw new ForbiddenException("You can only view sync history for your own provider");
+    }
     const validTypes = ["egg-donor", "surrogate", "sperm-donor"];
     if (!validTypes.includes(type)) {
       throw new BadRequestException("Invalid sync type");

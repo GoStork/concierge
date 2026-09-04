@@ -38,7 +38,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-bar";
 import { useAuth } from "@/hooks/use-auth";
-import { SyncReportFetcher } from "@/components/sync-report-content";
+import { SyncReportFetcher, SyncLogHistory } from "@/components/sync-report-content";
+import { History as HistoryIcon } from "lucide-react";
 import { ProfileCard } from "@/components/profile-card";
 import { BoostProfilesCard } from "@/components/sponsorship/sponsorship-wizard";
 import { typeToUrlSlug } from "@/lib/profile-utils";
@@ -1470,6 +1471,20 @@ export default function ProfileDatabasePanel({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Run History + acceptance audit on the provider's own tab (providers see
+          their own runs; GoStork admins see everyone's). The admin Sync Report
+          page renders the same component in "config" mode, so only "full"
+          mode mounts it here to avoid showing it twice. */}
+      {mode === "full" && isAdminOrProvider && (
+        <div className="border rounded-[var(--radius)] p-4 space-y-3" data-testid={`run-history-${type}`}>
+          <h4 className="font-heading text-sm flex items-center gap-2">
+            <HistoryIcon className="w-4 h-4" />
+            Run History
+          </h4>
+          <SyncLogHistory providerId={providerId} type={type} />
         </div>
       )}
 

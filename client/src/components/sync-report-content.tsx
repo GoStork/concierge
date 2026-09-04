@@ -138,7 +138,12 @@ const SOURCE_LABEL: Record<string, string> = {
   "auto-resume": "Auto-resumed",
 };
 
-function SyncLogHistory({ providerId, type }: { providerId: string; type: string }) {
+/**
+ * Run History with the acceptance-audit column. Shared by the admin Sync
+ * Report page and the provider-facing profile tabs (ProfileDatabasePanel) -
+ * one renderer, never fork it.
+ */
+export function SyncLogHistory({ providerId, type }: { providerId: string; type: string }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
   const [expandedAudit, setExpandedAudit] = useState<Record<string, boolean>>({});
