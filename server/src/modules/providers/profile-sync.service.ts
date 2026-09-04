@@ -6053,6 +6053,11 @@ async function runApiSyncJob(
     // The detail response is merged over the list record; a failed detail fetch
     // keeps the list record and logs the error instead of dropping the profile.
     let fullRecords = limited.filter((r) => r && typeof r === "object");
+    // Records whose full profile could not be fetched this run. They are NOT
+    // upserted (a list-only record would blank the columns the last full
+    // profile filled) but still count as "seen" for stale detection.
+    const detailFailedIdx = new Set<number>();
+    let detailRateLimited = false;
     if (detailApiUrl && detailApiUrl.trim()) {
       job.currentStep = `Fetching full profiles... (0/${fullRecords.length})`;
       // Member-session login for detail endpoints gated behind a normal login
@@ -6085,12 +6090,29 @@ async function runApiSyncJob(
             return;
           }
           const { url, params } = buildDetailRequest(detailApiUrl.trim(), record);
+          // Once the detail endpoint rate-limits us, every further call is a
+          // wasted request against the same quota. Stop fetching, keep the
+          // records we have, and say so loudly.
+          if (detailRateLimited) {
+            merged[idx] = record;
+            detailFailedIdx.add(idx);
+            return;
+          }
           try {
-            // Same auth as the list; try the list's request shape first, then the other.
+            // Same auth as the list; try the list's request shape first. Only a
+            // 404/405 justifies retrying with the other HTTP method (wrong
+            // shape) - a 429/401/403/5xx is a real answer, and retrying it as
+            // POST just produced a misleading 404 (Lucina, Sep 4 2026).
             let resp = await fetchApiPage(url, workingStrategy!, 30000, workingMethod, workingMethod === "POST" ? params : undefined, sessionCookies);
-            if (resp.status < 200 || resp.status >= 300 || resp.body === null) {
+            const firstStatus = resp.status;
+            const firstDetail = apiErrorDetail(resp.body);
+            if ((resp.status === 404 || resp.status === 405) && resp.body === null) {
               const altMethod = workingMethod === "POST" ? "GET" : "POST";
               resp = await fetchApiPage(url, workingStrategy!, 30000, altMethod, altMethod === "POST" ? params : undefined, sessionCookies);
+            }
+            if (resp.status === 429 || firstStatus === 429) {
+              detailRateLimited = true;
+              job.errors.push(`Detail endpoint rate-limited after ${detailDone} profiles (HTTP 429${firstDetail || apiErrorDetail(resp.body)}) - remaining profiles kept their existing data`);
             }
             const detail = resp.status >= 200 && resp.status < 300 ? unwrapDetail(resp.body) : null;
             if (detail) {
@@ -6106,11 +6128,13 @@ async function runApiSyncJob(
               merged[idx] = combined;
             } else {
               merged[idx] = record;
+              detailFailedIdx.add(idx);
               detailFailed++;
-              if (detailFailed <= 10) job.errors.push(`Detail fetch failed for ${params.case_id || params.id || "record " + idx}: HTTP ${resp.status}`);
+              if (!detailRateLimited && detailFailed <= 10) job.errors.push(`Detail fetch failed for ${params.case_id || params.id || "record " + idx}: HTTP ${firstStatus}${firstDetail}`);
             }
           } catch (err: any) {
             merged[idx] = record;
+            detailFailedIdx.add(idx);
             detailFailed++;
             if (detailFailed <= 10) job.errors.push(`Detail fetch failed for ${params.case_id || params.id || "record " + idx}: ${err.message}`);
           }
@@ -6126,6 +6150,10 @@ async function runApiSyncJob(
     }
 
     const items = fullRecords.map((r) => mapApiRecordToItem(r, job.type, profileUrlTemplate));
+    // items[i] corresponds to fullRecords[i] (merged keeps the list order)
+    const detailFailedExternalIds = new Set<string>(
+      items.filter((_, i) => detailFailedIdx.has(i)).map((it) => it.externalId).filter(Boolean),
+    );
 
     // De-dupe by externalId (an API page overlap must not double-import)
     const seen = new Set<string>();
@@ -6140,6 +6168,7 @@ async function runApiSyncJob(
     job.currentStep = `Importing ${uniqueItems.length} profiles...`;
 
     const BATCH_SIZE = 5;
+    let detailSkipped = 0;
     for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
       if (isJobCancelled(job.id)) {
         job.status = "failed";
@@ -6150,6 +6179,13 @@ async function runApiSyncJob(
       const batch = uniqueItems.slice(i, i + BATCH_SIZE);
       await Promise.all(
         batch.map(async (item) => {
+          if (detailApiUrl && item.externalId && detailFailedExternalIds.has(item.externalId)) {
+            // Keep last run's full profile rather than overwrite it with the
+            // thin list record. Counted as skipped, not failed.
+            detailSkipped++;
+            job.processed++;
+            return;
+          }
           try {
             const result =
               job.type === "surrogate"
@@ -6168,9 +6204,13 @@ async function runApiSyncJob(
       );
       persistJobProgress(prisma, job);
     }
+    if (detailSkipped > 0) {
+      job.errors.push(`${detailSkipped} profile(s) kept their previous full profile - the detail endpoint did not return them this run`);
+    }
 
     if (!isJobCancelled(job.id)) {
       try {
+        // Detail-failed records count as seen (they are still on the source list).
         const importedIds = new Set(uniqueItems.map((d: any) => d.externalId).filter(Boolean));
         job.staleProfilesMarked = await markStaleProfiles(prisma, job.providerId, job.type, importedIds);
       } catch (e: any) {
