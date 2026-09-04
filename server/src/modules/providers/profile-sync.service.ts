@@ -2296,6 +2296,23 @@ function detectExperienced(profileData: any, type: "egg-donor" | "surrogate" | "
   return false;
 }
 
+// "City, ST" of the provider's first listed location - the fallback location
+// for frozen-only donors whose feed carries none (the eggs ship from the bank).
+// Cached per process: a sync calls this once per donor.
+const providerBankLocationCache = new Map<string, { value: string | null; at: number }>();
+async function getProviderBankLocation(prisma: PrismaService, providerId: string): Promise<string | null> {
+  const cached = providerBankLocationCache.get(providerId);
+  if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.value;
+  const loc = await prisma.providerLocation.findFirst({
+    where: { providerId },
+    orderBy: { sortOrder: "asc" },
+    select: { city: true, state: true },
+  });
+  const value = loc && (loc.city || loc.state) ? [loc.city, loc.state].filter(Boolean).join(", ") : null;
+  providerBankLocationCache.set(providerId, { value, at: Date.now() });
+  return value;
+}
+
 async function upsertEggDonor(
   prisma: PrismaService,
   providerId: string,
@@ -2356,13 +2373,21 @@ async function upsertEggDonor(
   // Persist the RICHEST location the profile carries. Extraction routinely
   // returns only the state ("FL") while the raw profile keeps "Ocala, FL" - and
   // a state-only scalar makes the donor unfindable by her own city filter.
-  const resolvedLocation = resolveDonorLocation(donor.location, mergedProfile);
+  let resolvedLocation = resolveDonorLocation(donor.location, mergedProfile);
 
   const donorTypeStr = (donor.donorType || "").toLowerCase();
   const hasFrozenOffering = donorTypeStr.includes("frozen");
   const computedFrozenLotStatus = hasFrozenOffering
     ? normalizeFrozenLotStatus(frozenAvailRaw)
     : null;
+
+  // Frozen-only donors with no location of their own take the BANK's location:
+  // the eggs sit in the bank's freezer and ship from there, so that is where a
+  // parent's "location" filter should find them. Applies to every frozen egg
+  // bank whose feed carries no location (decided with Eran, Sep 4 2026).
+  if (!resolvedLocation && hasFrozenOffering && !donorTypeStr.includes("fresh")) {
+    resolvedLocation = await getProviderBankLocation(prisma, providerId);
+  }
 
   const upsertedDonor = await prisma.eggDonor.upsert({
     where: {

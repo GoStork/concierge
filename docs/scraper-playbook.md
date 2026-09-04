@@ -77,7 +77,11 @@ PROD; see `project_scraper_env_ownership`. Exit code 1 = not accepted.)
 e.g. Lucina) owes no **Location** (eggs ship), **Relationship Status**, or
 per-donor **Egg Donor Compensation** (pricing is per lot). The audit and the
 sync report drop those checks for such providers (`FROZEN_BANK_NOT_APPLICABLE`
-in `sync-audit.ts`) - never ask a bank for them.
+in `sync-audit.ts`) - never ask a bank for them. Location is filled anyway:
+a frozen-only donor with no location of her own gets the **bank's** location
+(`getProviderBankLocation` in `upsertEggDonor` - the provider's first listed
+City, ST) so the parent's location filter still finds her. Lucina's feed
+carries it per cohort; the fallback covers banks whose feed does not.
 
 **Source-limited fields** are the ONLY acceptable gap: the audit tags a field
 `SRC` when it is absent on every record, which means the source does not
