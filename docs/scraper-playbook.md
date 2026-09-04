@@ -704,6 +704,16 @@ path - API payloads are already structured JSON.
     resolved and the source gave no URL of its own.
   - Full pull with photos: 933 donors in ~85 min (Sep 4 2026); nightly reuses
     the persisted photos and takes minutes.
+  - **429 trap (Sep 4 2026):** `get-donor-full-profile` returned
+    `429 ERR_SERVER_OVERLOAD` after ~1,000 calls in a day despite the
+    announced 5,000 limit (asked Palash). Engine rules that came out of it:
+    the GET->POST method fallback only fires on a body-less 404/405 (a 429
+    retried as POST read as a misleading 404); the FIRST status + API code
+    is what the run reports; a 429 halts further detail calls for the run;
+    and a record whose detail fetch failed is NOT upserted (a list-only
+    record would blank the columns the last full profile filled) - it is
+    skipped, still counted as seen for stale marking, and the run says so.
+    Never run a second full pull on the same day "just to refresh".
   - The website's own `/api/donors` + `/api/donors/{id}/full` routes are
     internal/unversioned - Lucina asked us not to build against them (the
     Sep 2 setup did, briefly).
