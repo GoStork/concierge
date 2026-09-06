@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Upload, FileText, Globe, Trash2, Loader2, CheckCircle, Brain, MessageCircleQuestion, Send, RefreshCw } from "lucide-react";
+import { Upload, FileText, Globe, Trash2, Loader2, CheckCircle, Brain, MessageCircleQuestion, Send, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -122,6 +122,28 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
   }, [uploadMutation]);
 
   const docs = documentsQuery.data || [];
+
+  // "What the AI Knows" must be REVIEWABLE, not a trust-me summary row:
+  // expanding a source lazy-loads the actual ingested text Eva answers from.
+  const [expandedDoc, setExpandedDoc] = useState<number | null>(null);
+  const expanded = expandedDoc != null ? docs[expandedDoc] : null;
+  const contentQuery = useQuery<any[]>({
+    queryKey: [
+      "/api/knowledge/documents/content",
+      providerId || "me",
+      expanded?.sourceType,
+      expanded?.sourceFileName || "",
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams({ sourceType: expanded.sourceType });
+      if (expanded.sourceFileName) params.set("sourceFileName", expanded.sourceFileName);
+      const res = await fetch(withOrg(`/api/knowledge/documents/content?${params}`), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load content");
+      return res.json();
+    },
+    enabled: !!expanded,
+    staleTime: 60_000,
+  });
   const whispers = whispersQuery.data || [];
   const pendingWhispers = whispers.filter((w: any) => w.status === "PENDING");
   const answeredWhispers = whispers.filter((w: any) => w.status === "ANSWERED");
@@ -298,54 +320,91 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
               </Card>
             )}
             {docs.map((doc: any, i: number) => (
-              <Card key={i} className="p-3 flex items-center justify-between" data-testid={`card-document-${i}`}>
-                <div className="flex items-center gap-3">
-                  {doc.sourceType === "WEBSITE" ? (
-                    <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
-                  ) : (
-                    <FileText className="w-4 h-4 text-primary shrink-0" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium">
-                      {doc.sourceType === "WEBSITE" ? "Website content" : doc.sourceFileName || "Document"}
-                    </p>
-                    <p className="t-helper">
-                      {doc.sourceType === "WEBSITE"
-                        ? `The AI read ${doc.sourceUrl || "the website"}${doc.createdAt ? ` on ${new Date(doc.createdAt).toLocaleDateString()}` : ""} and can answer from it`
-                        : `Uploaded document${doc.createdAt ? `, added ${new Date(doc.createdAt).toLocaleDateString()}` : ""} - the AI answers from its content`}
-                    </p>
+              <Card key={i} className="p-3" data-testid={`card-document-${i}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {doc.sourceType === "WEBSITE" ? (
+                      <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-primary shrink-0" />
+                    )}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {doc.sourceType === "WEBSITE" ? "Website content" : doc.sourceFileName || "Document"}
+                      </p>
+                      <p className="t-helper">
+                        {doc.sourceType === "WEBSITE"
+                          ? `The AI read ${doc.sourceUrl || "the website"}${doc.createdAt ? ` on ${new Date(doc.createdAt).toLocaleDateString()}` : ""} and can answer from it`
+                          : `Uploaded document${doc.createdAt ? `, added ${new Date(doc.createdAt).toLocaleDateString()}` : ""} - the AI answers from its content`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setExpandedDoc(expandedDoc === i ? null : i)}
+                      title="Read the actual content the AI learned from this source"
+                      data-testid={`button-view-content-${i}`}
+                    >
+                      {expandedDoc === i ? (
+                        <><ChevronUp className="w-3.5 h-3.5 mr-1.5" /> Hide content</>
+                      ) : (
+                        <><ChevronDown className="w-3.5 h-3.5 mr-1.5" /> View content</>
+                      )}
+                    </Button>
+                    {doc.sourceType === "WEBSITE" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => { e.stopPropagation(); syncMutation.mutate(); }}
+                        disabled={syncMutation.isPending}
+                        title="Re-read the website (use after the site changes)"
+                        data-testid="button-sync-website"
+                      >
+                        {syncMutation.isPending ? (
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> Re-reading...</>
+                        ) : (
+                          <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Re-sync</>
+                        )}
+                      </Button>
+                    )}
+                    {doc.sourceFileName && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMutation.mutate(doc.sourceFileName);
+                        }}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`button-delete-doc-${i}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-                {doc.sourceType === "WEBSITE" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={(e) => { e.stopPropagation(); syncMutation.mutate(); }}
-                    disabled={syncMutation.isPending}
-                    title="Re-read the website (use after the site changes)"
-                    data-testid="button-sync-website"
-                  >
-                    {syncMutation.isPending ? (
-                      <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> Re-reading...</>
+                {/* The reviewable part: the exact text Eva answers from. */}
+                {expandedDoc === i && (
+                  <div className="mt-3 border-t border-border/50 pt-3" data-testid={`content-document-${i}`}>
+                    {contentQuery.isLoading ? (
+                      <div className="t-helper flex items-center gap-2 py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Loading what the AI learned...
+                      </div>
+                    ) : (contentQuery.data || []).length === 0 ? (
+                      <p className="t-helper py-2">Nothing stored for this source yet.</p>
                     ) : (
-                      <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Re-sync</>
+                      <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
+                        {(contentQuery.data || []).map((chunk: any, ci: number) => (
+                          <div key={chunk.id || ci} className="rounded-[var(--radius)] bg-secondary/40 p-3 text-sm whitespace-pre-wrap leading-relaxed">
+                            {chunk.content}
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </Button>
-                )}
-                {doc.sourceFileName && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteMutation.mutate(doc.sourceFileName);
-                    }}
-                    disabled={deleteMutation.isPending}
-                    data-testid={`button-delete-doc-${i}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                  </div>
                 )}
               </Card>
             ))}

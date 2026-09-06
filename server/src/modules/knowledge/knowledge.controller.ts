@@ -205,6 +205,29 @@ export class KnowledgeController {
     return docs;
   }
 
+  @Get("documents/content")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Read the actual text a knowledge source taught the AI" })
+  async documentContent(
+    @Req() req: Request,
+    @Query("sourceType") sourceType: string,
+    @Query("sourceFileName") sourceFileName?: string,
+    @Query("providerId") queryProviderId?: string,
+  ) {
+    const user = req.user as any;
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_DEVELOPER");
+    if (!user.providerId && !isAdmin) {
+      throw new ForbiddenException("Only providers or admins can view documents");
+    }
+    return this.knowledgeService.getDocumentChunks(
+      this.effectiveProviderId(user, queryProviderId),
+      sourceType || "WEBSITE",
+      sourceFileName ? decodeURIComponent(sourceFileName) : null,
+    );
+  }
+
   @Delete("documents/:fileName")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()

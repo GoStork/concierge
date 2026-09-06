@@ -323,6 +323,25 @@ export class KnowledgeService {
     return docs;
   }
 
+  /** The actual text a source taught the AI - so admins/providers can READ
+   *  what Eva knows instead of trusting a one-line summary row. */
+  async getDocumentChunks(
+    providerId: string | null,
+    sourceType: string,
+    sourceFileName?: string | null,
+  ) {
+    return this.prisma.knowledgeChunk.findMany({
+      where: {
+        providerId: providerId ?? null,
+        sourceType,
+        ...(sourceFileName ? { sourceFileName } : {}),
+      },
+      select: { id: true, content: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+    });
+  }
+
   async deleteProviderDocument(
     providerId: string | null,
     sourceFileName: string,

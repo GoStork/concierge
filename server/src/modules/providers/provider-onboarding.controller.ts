@@ -493,7 +493,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   providerStep("fees_review", "onbfees", "GoStork fees reviewed", false, "The provider reviewed their GoStork referral fees.", "Waiting for the provider to review their GoStork fees.", "billing", true);
   providerStep("team", "onbteam", "Team added & roles assigned", (users as any[]).length >= 2, `${(users as any[]).length} team account(s).`, "Waiting for the provider to invite their team.", "users");
   providerStep("ai", "onbai", "AI Concierge set up", false, "Marked done by the provider.", "Waiting for the provider to review AI Concierge settings.", "ai-concierge");
-  providerStep("knowledge_review", "onbknow", "Eva's knowledge reviewed by provider", false, "The provider reviewed what Eva knows about them.", "Waiting for the provider to review Eva's knowledge about their organization.", "knowledge", true);
+  providerStep("knowledge_review", "onbknow", "Knowledge Base Reviewed", false, "The provider reviewed what Eva knows about them.", "Waiting for the provider to review Eva's knowledge about their organization.", "knowledge", true);
   // IVF clinics: scraped/enriched doctor profiles exist - the clinic should
   // look them over. Only shown once there ARE doctors to review.
   if (hasIvf && (doctorCount as number) > 0) {
@@ -506,7 +506,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
       isOptional: true, recordCount: doctorCount as number,
     });
   }
-  providerStep("parent_form_provider", "onbform", "Parent Form reviewed by provider", false, "The provider reviewed their Parent Form.", "Waiting for the provider to review their Parent Form.", "parent-form", true);
+  providerStep("parent_form_provider", "onbform", "Parent Form Reviewed", false, "The provider reviewed their Parent Form.", "Waiting for the provider to review their Parent Form.", "parent-form", true);
   providerStep("playbooks", "onbplaybooks", "Playbooks configured", playbookCount > 0, `${playbookCount} playbook(s).`, "Waiting for the provider to configure playbooks.", "playbooks", true);
   providerStep("automation", "onbauto", "Automations reviewed", autoReplyCount > 0, "Automation customized.", "Waiting for the provider to review automations.", "automation", true);
   providerStep("branding", "onbbrand", "Branding reviewed", false, "Marked done by the provider.", "Waiting for the provider to confirm branding.", "branding", true);
