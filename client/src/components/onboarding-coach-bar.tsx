@@ -149,7 +149,16 @@ export function OnboardingCoachBar() {
         if (list.some((x) => x.anchor === s.anchor)) continue;
         if (document.getElementById(s.anchor) || document.querySelector(`[data-testid="${s.anchor}"]`)) list.push(s);
       }
-      if (list.length) setDiscovered(list);
+      if (list.length) {
+        setDiscovered(list);
+        // Start the tour at the CURRENT step's own section, not the page's
+        // first anchor: on the Legal page the open W-9 step must land on the
+        // W-9 section, with the (already-done) agreement reachable via Back.
+        const startIdx = declared.length
+          ? list.findIndex((s) => declared.some((d) => d.anchor === s.anchor))
+          : -1;
+        if (startIdx > 0) setSectionIdx(startIdx);
+      }
       else if (--tries > 0) setTimeout(attempt, 300);
     };
     attempt();
