@@ -342,6 +342,66 @@ export class KnowledgeService {
     });
   }
 
+  /** Human-readable digest of ONE knowledge source: Gemini distills the raw
+   *  chunks (scraped nav junk, entities, duplicates and all) into organized
+   *  facts, cached in KnowledgeDigest and regenerated whenever the source's
+   *  chunks change. This is what "what Eva knows" shows - the raw text stays
+   *  available separately as the source view. */
+  async getDocumentDigest(
+    providerId: string | null,
+    sourceType: string,
+    sourceFileName?: string | null,
+  ): Promise<{ digest: string | null; chunkCount: number }> {
+    const chunks = await this.getDocumentChunks(providerId, sourceType, sourceFileName);
+    if (!chunks.length) return { digest: null, chunkCount: 0 };
+
+    const digestKey = `${providerId || "global"}:${sourceType}:${sourceFileName || ""}`;
+    const newestChunk = chunks.reduce(
+      (m, c: any) => (c.createdAt > m ? c.createdAt : m),
+      new Date(0),
+    );
+    const cached = await this.prisma.knowledgeDigest.findUnique({ where: { digestKey } });
+    if (cached && cached.chunkCount === chunks.length && cached.updatedAt >= newestChunk) {
+      return { digest: cached.content, chunkCount: chunks.length };
+    }
+
+    const raw = chunks.map((c: any) => c.content).join("\n\n").slice(0, 100_000);
+    const { GEMINI_BATCH_MODEL } = await import("../../lib/gemini-models");
+    const { trackGemini } = await import("../../lib/gemini-usage");
+    const model = genAI.getGenerativeModel({ model: GEMINI_BATCH_MODEL });
+    const result = await model.generateContent(
+      `You are summarizing what an AI concierge KNOWS about a fertility provider, from raw ingested text (scraped website pages and/or uploaded documents). The raw text is messy: navigation menus mashed into sentences, HTML entities (&amp;, &#8217;), duplicated overlapping fragments.
+
+Write clean, well-organized knowledge notes a business owner can review at a glance:
+- Use "## " section headings and "- " bullet facts. No other formatting.
+- Decode HTML entities, drop navigation/menu junk and boilerplate, merge duplicates.
+- ONLY include facts present in the text. Never invent, guess, or embellish.
+- Prefer specifics (amounts, timelines, requirements, locations, phone numbers) over marketing fluff.
+- Use these sections when the text supports them (skip empty ones): About, Programs & Services, Compensation & Fees, Requirements & Eligibility, Process & Timelines, Locations & Contact, Memberships & Compliance, Testimonials, FAQ Highlights.
+
+RAW TEXT:
+${raw}`,
+    );
+    trackGemini("knowledge-digest", GEMINI_BATCH_MODEL, result);
+    const text = (result.response.text() || "").trim();
+    if (!text) throw new Error("Digest generation returned empty output");
+
+    await this.prisma.knowledgeDigest.upsert({
+      where: { digestKey },
+      create: {
+        id: randomUUID(),
+        digestKey,
+        providerId: providerId ?? null,
+        sourceType,
+        sourceFileName: sourceFileName ?? null,
+        content: text,
+        chunkCount: chunks.length,
+      },
+      update: { content: text, chunkCount: chunks.length },
+    });
+    return { digest: text, chunkCount: chunks.length };
+  }
+
   async deleteProviderDocument(
     providerId: string | null,
     sourceFileName: string,
@@ -349,6 +409,10 @@ export class KnowledgeService {
     const result = await this.prisma.knowledgeChunk.deleteMany({
       where: { providerId: providerId ?? null, sourceFileName },
     });
+    // Its cached digest is meaningless without the chunks.
+    await this.prisma.knowledgeDigest.deleteMany({
+      where: { providerId: providerId ?? null, sourceFileName },
+    }).catch(() => {});
     return result.count;
   }
 

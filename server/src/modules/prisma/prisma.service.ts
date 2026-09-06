@@ -217,6 +217,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.knowledgeChunk;
   }
 
+  get knowledgeDigest() {
+    return prisma.knowledgeDigest;
+  }
+
   get expertGuidanceRule() {
     return prisma.expertGuidanceRule;
   }

@@ -123,10 +123,34 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
 
   const docs = documentsQuery.data || [];
 
-  // "What the AI Knows" must be REVIEWABLE, not a trust-me summary row:
-  // expanding a source lazy-loads the actual ingested text Eva answers from.
+  // "What the AI Knows" must be REVIEWABLE, not a trust-me summary row.
+  // Expanding a source shows a Gemini-distilled DIGEST of the knowledge
+  // (organized facts, no scraped nav junk); the raw ingested text stays one
+  // click away behind "View raw source text".
   const [expandedDoc, setExpandedDoc] = useState<number | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
   const expanded = expandedDoc != null ? docs[expandedDoc] : null;
+  const sourceParams = (d: any) => {
+    const params = new URLSearchParams({ sourceType: d.sourceType });
+    if (d.sourceFileName) params.set("sourceFileName", d.sourceFileName);
+    return params;
+  };
+  const digestQuery = useQuery<{ digest: string | null; chunkCount: number }>({
+    queryKey: [
+      "/api/knowledge/documents/digest",
+      providerId || "me",
+      expanded?.sourceType,
+      expanded?.sourceFileName || "",
+    ],
+    queryFn: async () => {
+      const res = await fetch(withOrg(`/api/knowledge/documents/digest?${sourceParams(expanded)}`), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load digest");
+      return res.json();
+    },
+    enabled: !!expanded,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
   const contentQuery = useQuery<any[]>({
     queryKey: [
       "/api/knowledge/documents/content",
@@ -135,15 +159,39 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
       expanded?.sourceFileName || "",
     ],
     queryFn: async () => {
-      const params = new URLSearchParams({ sourceType: expanded.sourceType });
-      if (expanded.sourceFileName) params.set("sourceFileName", expanded.sourceFileName);
-      const res = await fetch(withOrg(`/api/knowledge/documents/content?${params}`), { credentials: "include" });
+      const res = await fetch(withOrg(`/api/knowledge/documents/content?${sourceParams(expanded)}`), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load content");
       return res.json();
     },
-    enabled: !!expanded,
+    enabled: !!expanded && showRaw,
     staleTime: 60_000,
   });
+
+  /** Digest lines -> styled blocks: "## " = heading, "- " = bullet. */
+  const renderDigest = (text: string) =>
+    text.split("\n").map((line, li) => {
+      const l = line.trim();
+      if (!l) return null;
+      if (l.startsWith("## ")) {
+        return (
+          <p key={li} className="text-sm font-heading text-primary mt-3 first:mt-0">
+            {l.slice(3)}
+          </p>
+        );
+      }
+      if (l.startsWith("- ")) {
+        return (
+          <p key={li} className="text-sm leading-relaxed pl-4 relative before:content-['•'] before:absolute before:left-1 before:text-muted-foreground">
+            {l.slice(2)}
+          </p>
+        );
+      }
+      return (
+        <p key={li} className="text-sm leading-relaxed">
+          {l}
+        </p>
+      );
+    });
   const whispers = whispersQuery.data || [];
   const pendingWhispers = whispers.filter((w: any) => w.status === "PENDING");
   const answeredWhispers = whispers.filter((w: any) => w.status === "ANSWERED");
@@ -343,7 +391,7 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setExpandedDoc(expandedDoc === i ? null : i)}
+                      onClick={() => { setExpandedDoc(expandedDoc === i ? null : i); setShowRaw(false); }}
                       title="Read the actual content the AI learned from this source"
                       data-testid={`button-view-content-${i}`}
                     >
@@ -386,23 +434,45 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
                     )}
                   </div>
                 </div>
-                {/* The reviewable part: the exact text Eva answers from. */}
+                {/* The reviewable part: an organized digest of what Eva
+                    KNOWS (not the raw text she read - that hides below). */}
                 {expandedDoc === i && (
                   <div className="mt-3 border-t border-border/50 pt-3" data-testid={`content-document-${i}`}>
-                    {contentQuery.isLoading ? (
+                    {digestQuery.isLoading ? (
                       <div className="t-helper flex items-center gap-2 py-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Loading what the AI learned...
+                        <Loader2 className="w-4 h-4 animate-spin" /> Distilling what the AI knows... (first open takes a few seconds)
                       </div>
-                    ) : (contentQuery.data || []).length === 0 ? (
+                    ) : digestQuery.isError ? (
+                      <p className="t-helper py-2 text-destructive">Couldn't build the knowledge summary just now - try again in a moment.</p>
+                    ) : !digestQuery.data?.digest ? (
                       <p className="t-helper py-2">Nothing stored for this source yet.</p>
                     ) : (
-                      <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
-                        {(contentQuery.data || []).map((chunk: any, ci: number) => (
-                          <div key={chunk.id || ci} className="rounded-[var(--radius)] bg-secondary/40 p-3 text-sm whitespace-pre-wrap leading-relaxed">
-                            {chunk.content}
-                          </div>
-                        ))}
+                      <div className="max-h-96 overflow-y-auto space-y-1 pr-1" data-testid={`digest-document-${i}`}>
+                        {renderDigest(digestQuery.data.digest)}
                       </div>
+                    )}
+                    <button
+                      type="button"
+                      className="mt-3 t-helper underline underline-offset-2 hover:text-foreground"
+                      onClick={() => setShowRaw(!showRaw)}
+                      data-testid={`button-toggle-raw-${i}`}
+                    >
+                      {showRaw ? "Hide raw source text" : "View raw source text"}
+                    </button>
+                    {showRaw && (
+                      contentQuery.isLoading ? (
+                        <div className="t-helper flex items-center gap-2 py-2">
+                          <Loader2 className="w-4 h-4 animate-spin" /> Loading raw text...
+                        </div>
+                      ) : (
+                        <div className="mt-2 max-h-72 overflow-y-auto space-y-2 pr-1">
+                          {(contentQuery.data || []).map((chunk: any, ci: number) => (
+                            <div key={chunk.id || ci} className="rounded-[var(--radius)] bg-secondary/40 p-3 text-xs whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                              {chunk.content}
+                            </div>
+                          ))}
+                        </div>
+                      )
                     )}
                   </div>
                 )}
