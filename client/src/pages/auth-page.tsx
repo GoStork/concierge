@@ -11,15 +11,14 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { useEffect, useRef, useCallback } from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
-// Generic pages are never worth returning to after login - the role-based
-// landing (/dashboard -> chat) wins. Only multi-segment deep links (a specific
-// agreement, chat session, pay link, or profile) are honored via returnTo,
-// minus the role home pages, which are single destinations, not deep links.
-const GENERIC_RETURN_PATHS = new Set(["/provider/home", "/admin/home"]);
+// A clicked link WINS after login: multi-segment paths (a specific
+// agreement, chat session, pay link, profile - and the role home pages,
+// which email CTAs like the task digest's "Open your queue" point at) are
+// honored via returnTo. Only bare single-segment paths fall through to the
+// role-based landing (/dashboard -> chat).
 function isDeepLinkReturn(returnTo: string | undefined): boolean {
   if (!returnTo) return false;
   const path = returnTo.split("?")[0].replace(/\/+$/, "");
-  if (GENERIC_RETURN_PATHS.has(path)) return false;
   return path.split("/").filter(Boolean).length >= 2;
 }
 
