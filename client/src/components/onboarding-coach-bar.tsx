@@ -26,10 +26,14 @@ import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-o
  * ?focus deep link. Retries while the page is still rendering; the returned
  * cleanup removes the ring when the tour moves on.
  */
-function paintAnchor(anchor: string, onFound: (el: HTMLElement | null) => void): () => void {
+function paintAnchor(
+  anchor: string,
+  onFound: (el: HTMLElement | null) => void,
+  onMissing?: () => void,
+): () => void {
   let cancelled = false;
   let el: HTMLElement | null = null;
-  let tries = 15;
+  let tries = 8;
   const attempt = () => {
     if (cancelled) return;
     // Anchor resolution: explicit data-onb-anchor first, then an element id
@@ -46,6 +50,11 @@ function paintAnchor(anchor: string, onFound: (el: HTMLElement | null) => void):
       onFound(el);
     } else if (--tries > 0) {
       setTimeout(attempt, 300);
+    } else {
+      // The section left the DOM after discovery (a conditional card whose
+      // data changed). Without this, the tour dead-ends here: no ring, no
+      // flag, no way to reach the sections after it.
+      onMissing?.();
     }
   };
   attempt();
@@ -177,7 +186,17 @@ export function OnboardingCoachBar() {
       setAnchorEl(null);
       return;
     }
-    return paintAnchor(section.anchor, setAnchorEl);
+    const missingAnchor = section.anchor;
+    return paintAnchor(section.anchor, setAnchorEl, () => {
+      // Self-heal: drop the vanished section from the tour. Removing at the
+      // current index makes sectionIdx point at the next section naturally;
+      // clamp when the removed one was last.
+      setDiscovered((prev) => {
+        const next = prev.filter((s) => s.anchor !== missingAnchor);
+        setSectionIdx((i) => Math.min(i, Math.max(0, next.length - 1)));
+        return next;
+      });
+    });
   }, [currentKey, section?.anchor]);
 
   // The flag rides the highlighted section: track its viewport rect through
