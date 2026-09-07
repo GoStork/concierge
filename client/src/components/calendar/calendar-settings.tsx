@@ -819,7 +819,7 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
         )}
       </Card>
 
-      <Card className="p-6" data-testid="scheduling-rules-section">
+      <Card className="p-6" data-testid="scheduling-rules-section" data-onb-anchor="scheduling-rules">
         <div className="flex items-center gap-2 mb-4">
           <Clock className="w-5 h-5 text-primary" />
           <h2 className="t-micro-label font-heading">Scheduling Rules</h2>
@@ -1052,7 +1052,7 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
         </div>
       </Card>
 
-      <Card className="p-6" data-testid="date-overrides-section">
+      <Card className="p-6" data-testid="date-overrides-section" data-onb-anchor="date-overrides">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <CalendarCheck className="w-5 h-5 text-primary" />
