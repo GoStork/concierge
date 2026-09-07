@@ -58,6 +58,9 @@ export type NotificationChannel =
   // A provider requested a new service line (status NEW) - admins must
   // review and approve it before it goes live in the marketplace.
   | "provider_service_requested"
+  // A provider retired one of its APPROVED service lines - FYI to admins,
+  // nothing to approve (the line is already unpublished).
+  | "provider_service_removed"
   // Stripe security sentry: unknown connected account, foreign payout,
   // charge-volume spike. Always to GOSTORK_ADMINs, email + in-app.
   | "security_alert"
@@ -3320,6 +3323,43 @@ export class NotificationService implements OnModuleInit {
         subject,
         body: html,
       }).catch(e => this.logger.error(`Failed to send service request email to ${admin.email}: ${e.message}`));
+    }
+  }
+
+  async sendProviderServiceRemovedNotification(params: {
+    providerId: string;
+    providerName: string;
+    serviceName: string;
+    removedByName?: string | null;
+  }) {
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { id: true, email: true, name: true },
+    });
+    if (admins.length === 0) return;
+    const brandData = await this.getBrandData();
+    const subject = `${params.providerName} removed ${params.serviceName} from its services`;
+    const providerUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=profile&services=1`;
+    const who = params.removedByName ? ` (${this.escapeHtml(params.removedByName)})` : "";
+
+    for (const admin of admins) {
+      if (!admin.email) continue;
+      const firstName = admin.name ? getFirstName(admin.name) : "there";
+      const html = buildBrandedEmail(brandData, {
+        title: "Service Line Removed",
+        greeting: `Hi ${firstName},`,
+        body: `<strong>${this.escapeHtml(params.providerName)}</strong>${who} removed <strong>${this.escapeHtml(params.serviceName)}</strong> from its approved services. The line is no longer shown to parents. No action is needed - this is for your records.`,
+        buttons: [{ label: "View Provider", url: providerUrl }],
+        footer: "If this was a mistake, the provider can request the service again from its Company profile.",
+      });
+      await this.dispatchNotification({
+        userId: admin.id,
+        type: "EMAIL",
+        channel: "provider_service_removed",
+        recipient: admin.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send service removed email to ${admin.email}: ${e.message}`));
     }
   }
 

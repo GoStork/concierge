@@ -78,6 +78,28 @@ export class ProviderServicesController {
     }
   }
 
+  /**
+   * A provider removed one of its APPROVED service lines. Email-only FYI to
+   * GoStork admins - there is no decision to make, the line is already gone
+   * from the marketplace.
+   */
+  private async notifyAdminsOfServiceRemoved(service: { id: string; providerId: string; providerTypeId: string }, actor: any) {
+    try {
+      const [provider, providerType] = await Promise.all([
+        this.prisma.provider.findUnique({ where: { id: service.providerId }, select: { name: true } }),
+        this.prisma.providerType.findUnique({ where: { id: service.providerTypeId }, select: { name: true } }),
+      ]);
+      await this.notifications.sendProviderServiceRemovedNotification({
+        providerId: service.providerId,
+        providerName: provider?.name || "A provider",
+        serviceName: providerType?.name || "a service",
+        removedByName: actor?.name || null,
+      });
+    } catch (err: any) {
+      console.error(`[ProviderServices] Admin notification for service removal ${service.id} failed: ${err?.message}`);
+    }
+  }
+
   @Get()
   @ApiOperation({ summary: "List services for a provider" })
   @ApiParam({ name: "providerId", description: "Provider UUID" })
@@ -157,12 +179,14 @@ export class ProviderServicesController {
     if (!existing) {
       throw new NotFoundException("Service not found");
     }
-    // Removing an APPROVED line unpublishes live inventory - GoStork only.
-    // Providers may withdraw their own unapproved requests.
-    if (!isAdmin && existing.status === "APPROVED") {
-      throw new ForbiddenException("Approved services can only be removed by GoStork - contact us to retire a service line.");
-    }
     await this.prisma.providerService.delete({ where: { id } });
+    // A provider retiring one of its own APPROVED lines unpublishes live
+    // inventory. That is the provider's call - GoStork is told by email
+    // (FYI only, nothing to approve). Withdrawing an unapproved request
+    // needs no notice: admins never acted on it.
+    if (!isAdmin && existing.status === "APPROVED") {
+      await this.notifyAdminsOfServiceRemoved(existing, user);
+    }
     return { success: true };
   }
 

@@ -772,20 +772,26 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                 data-testid={`badge-service-${service.id}`}
               >
                 {service.providerType?.name || "Service"}: {service.status?.replace("_", " ")}
-                {/* Providers can withdraw their own not-yet-approved requests;
-                    approved lines are GoStork's to retire. */}
-                {isProviderAdmin && !isGostorkAdmin && service.status !== "APPROVED" && (
+                {/* Providers can withdraw their own pending requests AND
+                    retire approved lines - GoStork is emailed on the latter
+                    (FYI, not an approval). */}
+                {isProviderAdmin && !isGostorkAdmin && (
                   <button
                     type="button"
                     className="ml-1.5 rounded-full hover:bg-foreground/10 p-0.5"
-                    title="Withdraw this service request"
+                    title={service.status === "APPROVED" ? "Remove this service" : "Withdraw this service request"}
                     onClick={async () => {
-                      if (!window.confirm(`Withdraw the ${service.providerType?.name || "service"} request?`)) return;
+                      const name = service.providerType?.name || "service";
+                      const msg = service.status === "APPROVED"
+                        ? `Remove ${name} from your services? Parents will no longer see you for ${name}, and GoStork will be notified.`
+                        : `Withdraw the ${name} request?`;
+                      if (!window.confirm(msg)) return;
                       try {
                         await apiRequest("POST", `/api/providers/${providerId}/services/${service.id}/delete`);
                         queryClient.invalidateQueries({ queryKey: [api.providers.get.path, providerId] });
+                        toast({ title: service.status === "APPROVED" ? "Service removed" : "Request withdrawn", variant: "success" });
                       } catch (e: any) {
-                        toast({ title: "Couldn't withdraw the request", description: e?.message, variant: "destructive" });
+                        toast({ title: "Couldn't remove the service", description: e?.message, variant: "destructive" });
                       }
                     }}
                     data-testid={`btn-withdraw-service-${service.id}`}
