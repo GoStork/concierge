@@ -114,7 +114,23 @@ export function OnboardingCoachBar() {
   const onPage = steps.filter((s) => s.link === location.pathname);
   // Several steps can share a page (/account/documents holds both the
   // GoStork agreement and parent templates) - coach the first open one.
-  const current = (!hidden && (onPage.find((s) => s.status === "pending") || onPage.find((s) => s.status === "optional"))) || null;
+  const openStep = (!hidden && (onPage.find((s) => s.status === "pending") || onPage.find((s) => s.status === "optional"))) || null;
+
+  // ── Tour resume across reloads (OAuth redirects!) ──
+  // Progress is persisted per page in sessionStorage. Connecting a calendar
+  // bounces through Google and can complete the whole step - without this,
+  // the return found no OPEN step and the wizard vanished mid-walkthrough.
+  // A saved tour whose step is now DONE resumes anyway, at the NEXT section.
+  const tourStorageKey = `onbtour:${location.pathname}`;
+  let savedTour: { key: string; idx: number } | null = null;
+  try {
+    savedTour = JSON.parse(sessionStorage.getItem(tourStorageKey) || "null");
+  } catch {}
+  const resumedStep =
+    !hidden && !openStep && savedTour
+      ? steps.find((s) => s.key === savedTour!.key && s.link === location.pathname && s.status === "done") || null
+      : null;
+  const current = openStep || resumedStep;
   const celebrated = celebrateKey ? steps.find((s) => s.key === celebrateKey) : null;
 
   // ── Section tour: walk the step's page sections wizard-style ──
@@ -160,13 +176,21 @@ export function OnboardingCoachBar() {
       }
       if (list.length) {
         setDiscovered(list);
-        // Start the tour at the CURRENT step's own section, not the page's
-        // first anchor: on the Legal page the open W-9 step must land on the
-        // W-9 section, with the (already-done) agreement reachable via Back.
-        const startIdx = declared.length
-          ? list.findIndex((s) => declared.some((d) => d.anchor === s.anchor))
-          : -1;
-        if (startIdx > 0) setSectionIdx(startIdx);
+        // Resuming a saved tour (reload / OAuth return) wins over the
+        // default start. A step that completed while away resumes at the
+        // NEXT section - the one they left is what they just finished.
+        if (savedTour && savedTour.key === current.key) {
+          const resumeIdx = current.status === "done" ? savedTour.idx + 1 : savedTour.idx;
+          setSectionIdx(Math.min(Math.max(0, resumeIdx), list.length - 1));
+        } else {
+          // Start the tour at the CURRENT step's own section, not the page's
+          // first anchor: on the Legal page the open W-9 step must land on
+          // the W-9 section, with the agreement reachable via Back.
+          const startIdx = declared.length
+            ? list.findIndex((s) => declared.some((d) => d.anchor === s.anchor))
+            : -1;
+          if (startIdx > 0) setSectionIdx(startIdx);
+        }
       }
       else if (--tries > 0) setTimeout(attempt, 300);
     };
@@ -180,6 +204,17 @@ export function OnboardingCoachBar() {
   // sectionIdx === sections.length means the tour was finished ("Done" on
   // the last flag) - ring and flag retire until the step changes.
   const section = sections.length && sectionIdx < sections.length ? sections[sectionIdx] : null;
+
+  // Persist tour progress so a reload (or an OAuth bounce) resumes instead
+  // of vanishing; a finished tour clears its slot.
+  useEffect(() => {
+    if (!current || !sections.length) return;
+    try {
+      if (sectionIdx >= sections.length) sessionStorage.removeItem(tourStorageKey);
+      else sessionStorage.setItem(tourStorageKey, JSON.stringify({ key: current.key, idx: sectionIdx }));
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey, sectionIdx, sections.length]);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!section) {
@@ -251,9 +286,12 @@ export function OnboardingCoachBar() {
               onClick={() => {
                 if (!isLastSection) {
                   setSectionIdx((i) => Math.min(sections.length - 1, i + 1));
-                } else if (current.selfMarkable) {
-                  markDone.mutate(current.key);
                 } else {
+                  // Done on the last section: a still-open review step gets
+                  // marked complete; an already-done (resumed) step just
+                  // finishes its walkthrough.
+                  if (current.selfMarkable && current.status !== "done") markDone.mutate(current.key);
+                  try { sessionStorage.removeItem(tourStorageKey); } catch {}
                   setSectionIdx(sections.length); // end the tour
                 }
               }}
@@ -335,7 +373,7 @@ export function OnboardingCoachBar() {
             </div>
           )}
         </div>
-        {current.selfMarkable && (
+        {current.selfMarkable && current.status !== "done" && (
           <Button
             className="shrink-0 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-primary-foreground shadow-md font-medium"
             disabled={markDone.isPending}
