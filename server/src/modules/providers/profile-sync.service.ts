@@ -515,7 +515,23 @@ type AuthResult =
   | {
       ok: false;
       reason: string;
-      wafBlocked?: boolean;
+      /**
+       * True when the whole origin is closed to us, so the remaining login
+       * candidates are the same shut door and must not be probed. Set for an
+       * edge block AND for a bare 403 - both mean "stop", but they mean very
+       * different things to whoever has to fix it, so read blockSource before
+       * reporting a cause.
+       */
+      stopProbingOrigin?: boolean;
+      /**
+       * Who actually rejected us. "edge" is only ever set on positive evidence
+       * (a Cloudflare block page, or the cf-mitigated header). "origin" means
+       * the site itself returned the status - typically a WordPress security or
+       * login-protection plugin. Never guess "edge" from cf-ray or
+       * `server: cloudflare`: both ride on EVERY Cloudflare-proxied response,
+       * including 403s the origin generated, so neither can attribute a block.
+       */
+      blockSource?: "edge" | "origin";
       /**
        * True when this candidate URL served a genuine login form, so the failure
        * is about captcha/credentials/edge rather than a wrong path. The caller
@@ -799,15 +815,22 @@ export async function authenticateAndGetCookies(
     // check a marker-less block page gets parsed like a real login form, and the
     // reCAPTCHA script Cloudflare embeds in it sends us to the PAID solver for a
     // page we were never allowed to reach.
-    const loginGetBlock =
-      detectWafBlock(loginHtml) ||
-      (loginResp.status === 403 && /cloudflare/i.test(loginResp.headers.get("server") || "")
-        ? `Cloudflare block (403 at the edge; cf-ray: ${loginResp.headers.get("cf-ray") || "none"})`
-        : null);
-    if (loginGetBlock) {
-      const reason = `${loginGetBlock} on the login page (status=${loginResp.status}) - the request never reached the site's login form`;
-      console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
-      return { ok: false, reason, wafBlocked: true };
+    const loginGetBodyBlock = detectWafBlock(loginHtml);
+    const loginGetMitigated = loginResp.headers.get("cf-mitigated");
+    const loginGetSource: "edge" | "origin" | null = loginGetBodyBlock || loginGetMitigated
+      ? "edge"
+      : loginResp.status === 403
+        ? "origin"
+        : null;
+    if (loginGetSource) {
+      const detail =
+        loginGetBodyBlock ||
+        (loginGetMitigated
+          ? `Cloudflare block (cf-mitigated: ${loginGetMitigated})`
+          : `403 with no Cloudflare block page and no cf-mitigated header, so the ORIGIN refused it - suspect a security/login-protection plugin on the site, not the CDN`);
+      const reason = `${detail} on the login page (status=${loginResp.status}; cf-ray: ${loginResp.headers.get("cf-ray") || "none"}) - the request never reached the site's login form`;
+      console.error(`[donor-sync] Login blocked at the ${loginGetSource} - ${reason}`);
+      return { ok: false, reason, stopProbingOrigin: true, blockSource: loginGetSource };
     }
     // A 404 with no login form means this candidate path simply does not exist
     // on the site (e.g. WordPress installs that hide wp-login.php, like
@@ -962,7 +985,7 @@ export async function authenticateAndGetCookies(
       if (postBlock) {
         const reason = `${postBlock} on the login POST (status=200)`;
         console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
-        return { ok: false, reason, wafBlocked: true, reachedLoginForm: foundRealLoginForm };
+        return { ok: false, reason, stopProbingOrigin: true, blockSource: "edge", reachedLoginForm: foundRealLoginForm };
       }
       const captcha = detectCaptcha(responseText);
       if (captcha) {
@@ -993,8 +1016,18 @@ export async function authenticateAndGetCookies(
     } else {
       // Capture rate-limit and other HTTP errors with as much detail as possible
       const retryAfter = authResp.headers.get("retry-after");
+      const cfRay = authResp.headers.get("cf-ray") || "none";
+      // cf-mitigated is the ONLY header Cloudflare sets when its own edge stopped
+      // the request. cf-ray and `server: cloudflare` are present on every
+      // proxied response, including 403s the ORIGIN generated - so attributing a
+      // block from them is guessing. We guessed for 9 nights on Eggspecting
+      // (Aug 29 - Sep 7 2026): the body was the site's own reCAPTCHA login page
+      // returned 403 by a WordPress login-protection plugin, but the error read
+      // "403 from a Cloudflare edge", which sent a week of tickets to the CDN
+      // host while the real fix sat in a plugin setting.
+      const cfMitigated = authResp.headers.get("cf-mitigated");
       let bodySnippet = "";
-      let wafBlocked = false;
+      let blockSource: "edge" | "origin" | undefined;
       try {
         const body = await authResp.text();
         // WAF first: a Cloudflare block page carries the origin's reCAPTCHA
@@ -1002,20 +1035,23 @@ export async function authenticateAndGetCookies(
         const block = detectWafBlock(body);
         const captcha = detectCaptcha(body);
         if (block) {
-          wafBlocked = true;
-          bodySnippet = ` (${block}; cf-ray: ${authResp.headers.get("cf-ray") || "none"})`;
+          blockSource = "edge";
+          bodySnippet = ` (${block}; cf-ray: ${cfRay})`;
         } else if (captcha) bodySnippet = ` (${captcha} page)`;
         else bodySnippet = ` (body: ${body.slice(0, 200).replace(/\s+/g, " ").trim()}...)`;
       } catch { /* ignore */ }
-      // A bare 403 from a Cloudflare-fronted origin is a block even when the body
-      // is empty or non-standard.
-      if (!wafBlocked && authResp.status === 403 && /cloudflare/i.test(authResp.headers.get("server") || "")) {
-        wafBlocked = true;
-        bodySnippet += ` (403 from a Cloudflare edge; cf-ray: ${authResp.headers.get("cf-ray") || "none"})`;
+      if (!blockSource && cfMitigated) {
+        blockSource = "edge";
+        bodySnippet += ` (blocked at the Cloudflare edge; cf-mitigated: ${cfMitigated}; cf-ray: ${cfRay})`;
+      } else if (!blockSource && authResp.status === 403) {
+        // Still stop probing - a 403 closes this origin however it was produced -
+        // but say plainly that nothing here implicates the CDN.
+        blockSource = "origin";
+        bodySnippet += ` (403 with no Cloudflare block page and no cf-mitigated header, so this is the ORIGIN refusing the sign-in - suspect a security/login-protection plugin, an account lockout, or bad credentials, NOT the CDN; cf-ray ${cfRay} only shows the response passed through Cloudflare)`;
       }
       const reason = `unexpected HTTP status ${authResp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}${bodySnippet}`;
       console.error(`[donor-sync] Login failed - ${reason}`);
-      return { ok: false, reason, wafBlocked, reachedLoginForm: foundRealLoginForm };
+      return { ok: false, reason, stopProbingOrigin: Boolean(blockSource), blockSource, reachedLoginForm: foundRealLoginForm };
     }
 
     const cookieMap = new Map<string, string>();
@@ -6405,9 +6441,13 @@ async function runSyncJob(
         // buys another captcha solve and pushes our IP further up the WAF's
         // threat score - which is how one Eggspecting block turned into 9 paid
         // solves across 3 retries. Stop at the first block.
-        if (result.wafBlocked) {
+        if (result.stopProbingOrigin) {
           console.error(
-            `[donor-sync] Edge block detected at ${candidate} - skipping the remaining ${
+            `[donor-sync] ${
+              result.blockSource === "edge"
+                ? "Edge block"
+                : "Origin refusal (403 - NOT an edge block; check the site's own login protection before blaming the CDN)"
+            } detected at ${candidate} - skipping the remaining ${
               loginCandidates.length - loginCandidates.indexOf(candidate) - 1
             } login candidate(s) on this origin`,
           );
