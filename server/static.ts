@@ -25,7 +25,12 @@ export function serveStatic(app: Express) {
   // fall through to index.html if the file doesn't exist
   app.use("/{*path}", (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    if (isNoIndexPath(req.path)) res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    // originalUrl, not req.path: inside app.use() Express strips the matched
+    // mount prefix, so req.path here is always "/" and every route would look
+    // indexable. Split off the query string before matching.
+    if (isNoIndexPath(req.originalUrl.split("?")[0])) {
+      res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
