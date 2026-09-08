@@ -381,6 +381,39 @@ NEXT, in order (items marked ERAN need a human in a browser):
          that route means the Chrome-driven dashboard flow used in item g.
       Re-run validation in GSC only AFTER fix 1 is live, otherwise it fails
       a third time.
+   i. [x] **2026-09-08: both live rules patched, validation restarted.** Eran
+      ran the PATCH; rules 0, 1 and 2 now all carry `not cf.client.bot`.
+      Rule 3 ("GoStork signup API bot challenge") is deliberately NOT
+      exempted - it matches POST to /api/user/* only, and Googlebot never
+      POSTs, so it cannot cause a GSC 403; exempting it would only weaken
+      the direct-to-API signup guard. **Do not "fix" rule 3.**
+      The drilldown named the 7 remaining URLs, which settle the diagnosis:
+      the 3 that actually FAILED were `/login?r=/concierge` (Sep 4), `/`
+      (Sep 4) and `/our-story` (Sep 2) - and `/` and `/our-story` are not
+      matched by rule 2 at all, so only the country rules could have 403d
+      them. The other 4 pending were /register, /surrogacy, /ivf and
+      dev2/policies/terms-and-conditions. Note /surrogacy and /ivf are real
+      content pages that were being blocked - this was costing real SEO, not
+      just auth-page noise.
+      Verified with GSC URL Inspection live tests (real Googlebot, Sep 8
+      09:55-09:59): /login, /register, /questionnaire/start and /login/forgot
+      all "URL is available to Google", crawl allowed + fetch successful.
+      CAVEAT: the inspection tool crawls from US IPs, which were never
+      blocked, so the live test proves reachability and no regression but
+      does NOT exercise the geo path; the real proof is the rule expressions
+      themselves. New validation started 9/8/26 (7 pending, 0 failed).
+   j. [ ] **AFTER validation passes: noindex the 1.0 auth pages.** The
+      X-Robots-Tag shipped in `server/static.ts` covers 2.0 ONLY;
+      app.gostork.com is still served by 1.0 (GKE, separate codebase), so
+      /login, /register, /questionnaire/start and /login/forgot are still
+      indexable in production. Deliberately DEFERRED until the running
+      validation completes: a noindex landing mid-validation risks muddying
+      the result and costing another ~2-week cycle for no real gain. When it
+      passes, add a Response Header Transform Rule scoped BY PATH (the API
+      token lacks Transform Rules scope, so use the Chrome-driven dashboard
+      flow from item g). **Scope it to the auth paths only** - never to
+      hostname app.gostork.com alone, which would delist the whole app, and
+      never by adding app.gostork.com to the existing test-host rule.
 5. Step 5 (2026-08-19):
    a. [x] **PandaDoc staging subscription created**: "GoStork - Staging
       Agreements (test-app)" uuid `3a53a683-64e0-49f2-b932-7817dd816241`,
