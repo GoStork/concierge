@@ -176,12 +176,22 @@ export async function syncBlockedCountriesToCloudflare(): Promise<SyncResult> {
 }
 
 function ruleBody(codes: string[]) {
+  const countries = codes.length
+    ? `(ip.src.country in {${codes.map((c) => `"${c}"`).join(" ")}})`
+    : `(ip.src.country in {"XX"})`;
   return {
     description: RULE_MARKER,
     // ip.src.country is the visitor's GeoIP country at the edge.
-    expression: codes.length
-      ? `(ip.src.country in {${codes.map((c) => `"${c}"`).join(" ")}})`
-      : `(ip.src.country in {"XX"})`,
+    //
+    // The `not cf.client.bot` guard exempts Cloudflare-VERIFIED crawlers
+    // (Googlebot, Bingbot, ...) - identity proven by reverse-DNS, not by a
+    // spoofable User-Agent, so it is not a hole a bot can walk through. It is
+    // load-bearing for SEO: without it this rule 403s Googlebot whenever it
+    // crawls from a blocked country, which is exactly what put 12 URLs into
+    // Search Console's "Blocked due to access forbidden (403)" report and
+    // failed the 2026-09-06 fix validation. Keep it on every rule that can
+    // block or challenge a public page.
+    expression: `(not cf.client.bot) and ${countries}`,
     action: "block",
     enabled: codes.length > 0,
   };

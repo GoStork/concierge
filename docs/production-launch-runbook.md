@@ -339,6 +339,48 @@ NEXT, in order (items marked ERAN need a human in a browser):
       to index; the rule covers it if revived). app + www deliberately NOT
       matched. **At Phase B launch: app.gostork.com must NEVER be added to
       this rule** - and when test-app is retired, the rule can go with it.
+   h. [ ] **2026-09-06: the 403 fix validation FAILED - two country rules
+      were never exempted.** GSC emailed "Some fixes failed for Page
+      indexing issues on site gostork.com" (WNC-10031170) 15 days after the
+      8/22 validation started. Rule 7a96bdb4... was verified still intact
+      (`not cf.client.bot` present, enabled, managed_challenge), so item f
+      did not regress. Root cause: custom rules evaluate IN ORDER and the
+      FIRST match wins, and two rules sit ABOVE the fixed one with no bot
+      exemption at all -
+        - `4966640583bf4f2b88c8a3bfdf6da5ee` "GoStork blocked countries -
+          managed by /admin/security", action **block**, ~170 countries;
+        - `d603de4e33844030b3c75b9e5370ddba` "challenge visitors from
+          countries", managed_challenge on CN/IN/NE/NG/PK/XX **and the
+          entire African continent** (`ip.src.continent in {"AF"}`).
+      Googlebot crawling from any of those geos (or from `XX`, unknown geo)
+      is blocked before it ever reaches the exempted rule. Curl-as-Googlebot
+      on 2026-09-07 confirmed the shape: homepage, /our-story, both policy
+      pages and dev2 all 200; only the four challenged auth paths 403.
+      Two fixes, both required:
+      1. **Prepend `(not cf.client.bot)` to BOTH rules above.** The
+         generator `server/cloudflare-sync.ts` now emits it for the
+         country-block rule, so an /admin/security save no longer strips it
+         - but the LIVE rules still need one manual API PATCH each (blocked
+         by the local permission classifier on 2026-09-07; commands are in
+         the session notes). The "challenge visitors from countries" rule is
+         hand-made in the dashboard, NOT code-managed - it has no generator
+         to keep it fixed, so re-check it after any dashboard edit.
+      2. **Noindex the auth screens.** They are forms with zero search
+         value, and they are exactly the endpoints the bot challenge exists
+         to protect, so the right answer is to stop asking Google to index
+         them rather than to loosen the WAF. `server/static.ts` now sets
+         `X-Robots-Tag: noindex, nofollow` on /login, /auth, /register,
+         /questionnaire, /onboarding, /forgot-password, /check-email,
+         /reset-password and /complete-profile (prefix match; the app root
+         "/" is deliberately excluded). CAVEAT: **that header only covers
+         2.0.** app.gostork.com is still served by 1.0 (GKE, separate
+         codebase), which is what GSC is crawling today, so until Phase B
+         cutover the live pages need either the same header added in the 1.0
+         codebase or a Response Header Transform Rule scoped to those paths
+         - and the API token lacks Transform Rules scope (see item f), so
+         that route means the Chrome-driven dashboard flow used in item g.
+      Re-run validation in GSC only AFTER fix 1 is live, otherwise it fails
+      a third time.
 5. Step 5 (2026-08-19):
    a. [x] **PandaDoc staging subscription created**: "GoStork - Staging
       Agreements (test-app)" uuid `3a53a683-64e0-49f2-b932-7817dd816241`,
