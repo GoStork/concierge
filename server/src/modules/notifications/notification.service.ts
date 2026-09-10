@@ -3333,7 +3333,10 @@ export class NotificationService implements OnModuleInit {
   async sendProviderOnboardingCompleteNotification(params: {
     providerId: string;
     providerName: string;
-    /** Required and optional both done, vs required only. */
+    /** Which milestone this is: required steps done, or the optional pages
+     *  finished afterwards. */
+    stage: "required" | "all";
+    /** Required and optional both done (at the time of sending). */
     allDone: boolean;
     openOptionalCount: number;
   }) {
@@ -3343,8 +3346,11 @@ export class NotificationService implements OnModuleInit {
     });
     if (admins.length === 0) return;
     const brandData = await this.getBrandData();
-    const scopeShort = params.allDone ? "required and optional steps" : "required steps";
-    const subject = `${params.providerName} finished their ${scopeShort} - ready to go live`;
+    const isAllStage = params.stage === "all";
+    const scopeShort = isAllStage ? "optional pages too" : params.allDone ? "required and optional steps" : "required steps";
+    const subject = isAllStage
+      ? `${params.providerName} finished their optional onboarding pages - every page reviewed`
+      : `${params.providerName} finished their ${scopeShort} - ready to go live`;
     const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=profile`;
     const optionalLine = params.allDone
       ? "Optional pages (sponsorship, automation, playbooks, AI concierge, branding): all reviewed too."
@@ -3353,14 +3359,22 @@ export class NotificationService implements OnModuleInit {
     for (const admin of admins) {
       if (!admin.email) continue;
       const firstName = admin.name ? getFirstName(admin.name) : "there";
-      const html = buildBrandedEmail(brandData, {
-        title: "Provider Onboarding Complete",
-        greeting: `Hi ${firstName},`,
-        body: `<strong>${this.escapeHtml(params.providerName)}</strong> completed every required step of their onboarding - agreement, W-9, profile, calendar, cost sheets, agreement templates, billing basis, and payouts.<br/><br/>${this.escapeHtml(optionalLine)}`,
-        alertBox: { text: "The last step is yours: review their profile and approve their services to publish them in the marketplace and to Eva.", type: "info" },
-        buttons: [{ label: "Review and Go Live", url: reviewUrl }],
-        footer: "Approving the services is the publish switch - nothing is visible to parents until you do.",
-      });
+      const html = isAllStage
+        ? buildBrandedEmail(brandData, {
+            title: "Provider Walked Every Onboarding Page",
+            greeting: `Hi ${firstName},`,
+            body: `<strong>${this.escapeHtml(params.providerName)}</strong> finished the optional onboarding pages too - sponsorship, automation, playbooks, AI concierge, and branding are all reviewed. Their required steps were already done.`,
+            alertBox: { text: "Nothing is required from you. If their services are not approved yet, this is a good moment to go live.", type: "info" },
+            buttons: [{ label: "Open Provider", url: reviewUrl }],
+          })
+        : buildBrandedEmail(brandData, {
+            title: "Provider Onboarding Complete",
+            greeting: `Hi ${firstName},`,
+            body: `<strong>${this.escapeHtml(params.providerName)}</strong> completed every required step of their onboarding - agreement, W-9, profile, calendar, cost sheets, agreement templates, billing basis, and payouts.<br/><br/>${this.escapeHtml(optionalLine)}`,
+            alertBox: { text: "The last step is yours: review their profile and approve their services to publish them in the marketplace and to Eva.", type: "info" },
+            buttons: [{ label: "Review and Go Live", url: reviewUrl }],
+            footer: "Approving the services is the publish switch - nothing is visible to parents until you do.",
+          });
       await this.dispatchNotification({
         userId: admin.id,
         type: "EMAIL",

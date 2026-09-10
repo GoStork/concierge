@@ -567,10 +567,15 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const handleProviderOnboardedEvent = useCallback((data: any) => {
     if (data.type !== "provider_onboarding_complete") return;
 
-    const title = `${data.providerName || "A provider"} finished onboarding - ${data.allDone ? "required and optional steps" : "required steps"}`;
-    const description = data.allDone
-      ? "Every page reviewed - approve their services to go live."
-      : `All required steps are done, ${data.openOptionalCount ?? 0} optional page${(data.openOptionalCount ?? 0) === 1 ? "" : "s"} still open - approve their services to go live.`;
+    const name = data.providerName || "A provider";
+    const title = data.stage === "all"
+      ? `${name} finished their optional onboarding pages too`
+      : `${name} finished onboarding - ${data.allDone ? "required and optional steps" : "required steps"}`;
+    const description = data.stage === "all"
+      ? "Every page reviewed - sponsorship, automation, playbooks, AI concierge, and branding."
+      : data.allDone
+        ? "Every page reviewed - approve their services to go live."
+        : `All required steps are done, ${data.openOptionalCount ?? 0} optional page${(data.openOptionalCount ?? 0) === 1 ? "" : "s"} still open - approve their services to go live.`;
 
     playNotificationChime();
     queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
@@ -596,7 +601,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
     if ("Notification" in window && Notification.permission === "granted") {
       try {
-        new Notification(title, { body: description, icon: "/favicon.ico", tag: `provider-onboarded-${data.providerId}` });
+        new Notification(title, { body: description, icon: "/favicon.ico", tag: `provider-onboarded-${data.providerId}-${data.stage || "required"}` });
       } catch {}
     }
   }, [toast, dismiss, navigate]);

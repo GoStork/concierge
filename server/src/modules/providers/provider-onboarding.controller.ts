@@ -17,6 +17,7 @@ import {
   Post,
   Delete,
   Param,
+  Body,
   Req,
   ForbiddenException,
   NotFoundException,
@@ -222,7 +223,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     const k = String(t.systemKey || "");
     // Markers, not handoff tasks: manual check-offs, the welcome-email flag,
     // and the "admins were told it is complete" flag.
-    return !k.startsWith("onbmark:") && !k.startsWith("onbwelcome:") && !k.startsWith("onbcomplete:");
+    return !k.startsWith("onbmark:") && !k.startsWith("onbwelcome:") && !k.startsWith("onbcomplete:") && !k.startsWith("onbcompleteall:");
   });
   const tasksSentAt: string | null = handoffTasks.length
     ? new Date(Math.min(...handoffTasks.map((t) => new Date(t.createdAt).getTime()))).toISOString()
@@ -1021,67 +1022,88 @@ export class ProviderOnboardingController {
     return view;
   }
 
-  /** The moment a provider's required steps all read done, tell every
-   *  GoStork admin once - live toast (persisted for offline admins) plus a
-   *  branded email. Idempotent via the onbcomplete:<providerId> DONE marker
-   *  task, so polling never re-fires it. Never throws into the caller. */
+  /** Two milestones, each told to every GoStork admin exactly once - live
+   *  toast (persisted for offline admins), branded email, Home row:
+   *    "required"  - every required step reads done (onbcomplete marker)
+   *    "all"       - the optional pages are walked too (onbcompleteall marker)
+   *  A provider who walks the optional pages BEFORE the last required step
+   *  gets one notice ("required and optional"), not two. Idempotent through
+   *  the unique marker systemKeys, so polling never re-fires. Never throws. */
   private async maybeNotifyOnboardingComplete(summary: OnboardingSummary, view: ReturnType<typeof buildProviderOnboardingView>, actorUserId: string) {
     if (view.percent < 100) return;
     const db = prisma as any;
-    const systemKey = `onbcomplete:${summary.providerId}`;
-    try {
-      const existing = await db.parentTask.findUnique({ where: { systemKey }, select: { id: true } });
-      if (existing) return;
-      const now = new Date();
-      await db.parentTask.create({
-        data: {
-          parentAccountId: summary.providerId,
-          scope: "PROVIDER",
-          providerId: summary.providerId,
-          title: "Provider finished onboarding - GoStork admins notified",
-          type: "TODO",
-          priority: "LOW",
-          source: "SYSTEM",
-          systemKey,
-          status: "DONE",
-          dueAt: now,
-          completedAt: now,
-          createdByUserId: actorUserId,
-          completedByUserId: actorUserId,
-        },
-      });
-    } catch (e: any) {
-      // A concurrent poll won the race on the unique systemKey - it sends.
-      console.warn(`[onboarding] completion marker for ${summary.providerId} not written: ${e?.message}`);
-      return;
+    const claim = async (prefix: string, title: string): Promise<boolean> => {
+      const systemKey = `${prefix}:${summary.providerId}`;
+      try {
+        const existing = await db.parentTask.findUnique({ where: { systemKey }, select: { id: true } });
+        if (existing) return false;
+        const now = new Date();
+        await db.parentTask.create({
+          data: {
+            parentAccountId: summary.providerId,
+            scope: "PROVIDER",
+            providerId: summary.providerId,
+            title,
+            type: "TODO",
+            priority: "LOW",
+            source: "SYSTEM",
+            systemKey,
+            status: "DONE",
+            dueAt: now,
+            completedAt: now,
+            createdByUserId: actorUserId,
+            completedByUserId: actorUserId,
+          },
+        });
+        return true;
+      } catch (e: any) {
+        // A concurrent poll won the race on the unique systemKey - it sends.
+        console.warn(`[onboarding] marker ${systemKey} not written: ${e?.message}`);
+        return false;
+      }
+    };
+
+    let stage: "required" | "all" | null = null;
+    if (await claim("onbcomplete", "Provider finished required onboarding steps - GoStork admins notified")) {
+      stage = "required";
+      // Optional already walked too: claim the second marker silently so
+      // the "all" notice never follows as a duplicate.
+      if (view.allDone) await claim("onbcompleteall", "Provider finished optional onboarding pages - covered by the required notice");
+    } else if (view.allDone && await claim("onbcompleteall", "Provider finished optional onboarding pages - GoStork admins notified")) {
+      stage = "all";
     }
+    if (!stage) return;
+
     try {
       const admins = await db.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false }, select: { id: true } });
-      // Say exactly what was finished: the required steps only (with how
-      // many optional pages are still open), or required and optional both.
-      const scope = view.allDone
-        ? "required and optional steps"
-        : `required steps (${view.openOptionalCount} optional page${view.openOptionalCount === 1 ? "" : "s"} still open)`;
+      const optionalNote = `${view.openOptionalCount} optional page${view.openOptionalCount === 1 ? "" : "s"} still open`;
+      const message = stage === "all"
+        ? `${summary.providerName} finished their optional onboarding pages too - every page reviewed`
+        : view.allDone
+          ? `${summary.providerName} finished their required and optional onboarding steps - review and approve their services to go live`
+          : `${summary.providerName} finished their required onboarding steps (${optionalNote}) - review and approve their services to go live`;
       await this.appEvents.emit({
         type: "provider_onboarding_complete",
         targetUserIds: admins.map((a: any) => a.id),
         payload: {
           providerId: summary.providerId,
           providerName: summary.providerName,
+          stage,
           allDone: view.allDone,
           openOptionalCount: view.openOptionalCount,
-          message: `${summary.providerName} finished their ${scope} - review and approve their services to go live`,
+          message,
         },
       });
       await this.notificationService.sendProviderOnboardingCompleteNotification({
         providerId: summary.providerId,
         providerName: summary.providerName,
+        stage,
         allDone: view.allDone,
         openOptionalCount: view.openOptionalCount,
       });
-      console.log(`[onboarding] ${summary.providerName} finished onboarding - ${admins.length} admin(s) notified`);
+      console.log(`[onboarding] ${summary.providerName} finished onboarding (${stage}) - ${admins.length} admin(s) notified`);
     } catch (e: any) {
-      console.error(`[onboarding] completion notification failed for ${summary.providerId}: ${e?.message}`);
+      console.error(`[onboarding] completion notification (${stage}) failed for ${summary.providerId}: ${e?.message}`);
     }
   }
 
@@ -1211,35 +1233,47 @@ export class ProviderOnboardingController {
     // row until an admin dismisses it (onbmark:complete_ack) - regardless of
     // the 90-day window, because the admin's move (approve services) is what
     // publishes them.
+    // Two milestones, each with its own dismiss: "required" (onbcomplete /
+    // onbmark:complete_ack) and "all" (onbcompleteall / onbmark:completeall_ack).
+    // The row shows the newest un-dismissed one, so a row dismissed after
+    // the required steps comes back when the optional pages are done.
     const [markers, acks] = await Promise.all([
       db.parentTask.findMany({
-        where: { source: "SYSTEM", systemKey: { startsWith: "onbcomplete:" } },
-        select: { providerId: true, completedAt: true },
+        where: { source: "SYSTEM", OR: [{ systemKey: { startsWith: "onbcomplete:" } }, { systemKey: { startsWith: "onbcompleteall:" } }] },
+        select: { providerId: true, completedAt: true, systemKey: true },
       }),
       db.parentTask.findMany({
-        where: { source: "SYSTEM", systemKey: { startsWith: "onbmark:complete_ack:" } },
-        select: { providerId: true },
+        where: { source: "SYSTEM", OR: [{ systemKey: { startsWith: "onbmark:complete_ack:" } }, { systemKey: { startsWith: "onbmark:completeall_ack:" } }] },
+        select: { providerId: true, systemKey: true },
       }),
     ]);
-    const acked = new Set((acks as any[]).map((a) => a.providerId));
-    const finished = new Map<string, Date>();
-    for (const m of markers as any[]) if (m.providerId && !acked.has(m.providerId)) finished.set(m.providerId, m.completedAt);
+    const ackedReq = new Set((acks as any[]).filter((a) => String(a.systemKey).startsWith("onbmark:complete_ack:")).map((a) => a.providerId));
+    const ackedAll = new Set((acks as any[]).filter((a) => String(a.systemKey).startsWith("onbmark:completeall_ack:")).map((a) => a.providerId));
+    const finished = new Map<string, { at: Date; stage: "required" | "all" }>();
+    for (const m of markers as any[]) {
+      if (!m.providerId) continue;
+      const isAll = String(m.systemKey).startsWith("onbcompleteall:");
+      if (isAll ? ackedAll.has(m.providerId) : ackedReq.has(m.providerId)) continue;
+      const prev = finished.get(m.providerId);
+      // "all" outranks "required" when both are still un-dismissed.
+      if (!prev || (isAll && prev.stage === "required")) finished.set(m.providerId, { at: m.completedAt, stage: isAll ? "all" : "required" });
+    }
 
     const ids = Array.from(new Set([...(recent as any[]).map((p) => p.id), ...finished.keys()]));
     const summaries = await Promise.all(ids.map((id) => computeOnboarding(id)));
     const rows: Array<Record<string, unknown>> = [];
     for (const s of summaries) {
       if (!s) continue;
-      const finishedAt = finished.get(s.providerId);
-      if (finishedAt) {
+      const fin = finished.get(s.providerId);
+      if (fin) {
         const live = s.steps.find((st) => st.key === "go_live")?.status === "done";
         const view = buildProviderOnboardingView(s);
         rows.push({
           stage: "finished", providerId: s.providerId, providerName: s.providerName,
           doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent,
-          live, finishedAt: finishedAt.toISOString(),
-          // Scope of what they finished - read live, so the row upgrades to
-          // "required and optional" on its own when they walk the rest.
+          live, finishedAt: fin.at.toISOString(),
+          // Which milestone this row announces, plus the live scope.
+          milestone: fin.stage,
           allDone: view.allDone, openOptionalCount: view.openOptionalCount,
         });
       } else if (s.percent < 100) {
@@ -1258,15 +1292,20 @@ export class ProviderOnboardingController {
    *  check-offs, so the queue stays fully derived. */
   @Post("api/admin/onboarding/:id/complete/dismiss")
   @UseGuards(SessionOrJwtGuard)
-  async dismissComplete(@Req() req: Request, @Param("id") id: string) {
+  async dismissComplete(@Req() req: Request, @Param("id") id: string, @Body() body: { milestone?: string }) {
     requireAdmin(req);
     const db = prisma as any;
     const provider = await db.provider.findUnique({ where: { id }, select: { id: true } });
     if (!provider) throw new NotFoundException("Provider not found");
     const userId = (req.user as any)?.id;
     const now = new Date();
-    await db.parentTask.upsert({
-      where: { systemKey: `onbmark:complete_ack:${id}` },
+    // Dismissing the "all" notice also settles the "required" one - there is
+    // nothing older left to announce.
+    const keys = body?.milestone === "all"
+      ? [`onbmark:completeall_ack:${id}`, `onbmark:complete_ack:${id}`]
+      : [`onbmark:complete_ack:${id}`];
+    for (const systemKey of keys) await db.parentTask.upsert({
+      where: { systemKey },
       create: {
         parentAccountId: id,
         scope: "PROVIDER",
@@ -1275,7 +1314,7 @@ export class ProviderOnboardingController {
         type: "TODO",
         priority: "LOW",
         source: "SYSTEM",
-        systemKey: `onbmark:complete_ack:${id}`,
+        systemKey,
         status: "DONE",
         dueAt: now,
         completedAt: now,
