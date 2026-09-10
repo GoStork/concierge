@@ -203,7 +203,7 @@ export default function AdminHomePage() {
   };
 
   // Providers still onboarding (checklist < 100%) - one aggregate row each.
-  const onboardingQ = useQuery<Array<{ providerId: string; providerName: string; doneCount: number; requiredCount: number; percent: number }>>({
+  const onboardingQ = useQuery<Array<{ stage: "in_progress" | "finished"; providerId: string; providerName: string; doneCount: number; requiredCount: number; percent: number; live?: boolean; finishedAt?: string }>>({
     queryKey: ["/api/admin/onboarding/pending"],
     queryFn: async () => {
       const res = await fetch("/api/admin/onboarding/pending", { credentials: "include" });
@@ -217,6 +217,10 @@ export default function AdminHomePage() {
     refetchOnWindowFocus: true,
   });
   const onboardingRows = onboardingQ.data || [];
+  const dismissFinished = async (providerId: string) => {
+    await fetch(`/api/admin/onboarding/${providerId}/complete/dismiss`, { method: "POST", credentials: "include" });
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/onboarding/pending"] });
+  };
 
   const queueCount =
     onboardingRows.length +
@@ -254,7 +258,22 @@ export default function AdminHomePage() {
         ) : (
           <div className="space-y-2">
             {/* Providers mid-onboarding - open the edit page to continue the checklist. */}
-            {onboardingRows.map((o) => (
+            {onboardingRows.map((o) => o.stage === "finished" ? (
+              // The provider finished their side - approving services is the
+              // admin's publish switch. Stays until dismissed.
+              <QueueRow
+                key={`onb-${o.providerId}`}
+                tone="task"
+                icon={<Building2 className="w-4 h-4" />}
+                title={`${o.providerName} finished onboarding`}
+                detail={o.live
+                  ? "All services approved - live in the marketplace and Eva. Dismiss when reviewed."
+                  : "Approve their services on the Profile tab to publish them to parents and Eva."}
+                cta={o.live ? "Open" : "Go live"}
+                onClick={() => navigate(`/admin/providers/${o.providerId}?tab=profile`)}
+                onDismiss={() => dismissFinished(o.providerId)}
+              />
+            ) : (
               <QueueRow
                 key={`onb-${o.providerId}`}
                 tone="task"

@@ -1178,10 +1178,80 @@ export class ProviderOnboardingController {
       orderBy: { createdAt: "desc" },
       take: 25,
     });
-    const summaries = await Promise.all(recent.map((p: any) => computeOnboarding(p.id)));
-    return summaries
-      .filter((s): s is OnboardingSummary => Boolean(s) && s!.percent < 100)
-      .map((s) => ({ providerId: s.providerId, providerName: s.providerName, doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent }));
+    // Providers who FINISHED their side (onbcomplete marker) get their own
+    // row until an admin dismisses it (onbmark:complete_ack) - regardless of
+    // the 90-day window, because the admin's move (approve services) is what
+    // publishes them.
+    const [markers, acks] = await Promise.all([
+      db.parentTask.findMany({
+        where: { source: "SYSTEM", systemKey: { startsWith: "onbcomplete:" } },
+        select: { providerId: true, completedAt: true },
+      }),
+      db.parentTask.findMany({
+        where: { source: "SYSTEM", systemKey: { startsWith: "onbmark:complete_ack:" } },
+        select: { providerId: true },
+      }),
+    ]);
+    const acked = new Set((acks as any[]).map((a) => a.providerId));
+    const finished = new Map<string, Date>();
+    for (const m of markers as any[]) if (m.providerId && !acked.has(m.providerId)) finished.set(m.providerId, m.completedAt);
+
+    const ids = Array.from(new Set([...(recent as any[]).map((p) => p.id), ...finished.keys()]));
+    const summaries = await Promise.all(ids.map((id) => computeOnboarding(id)));
+    const rows: Array<Record<string, unknown>> = [];
+    for (const s of summaries) {
+      if (!s) continue;
+      const finishedAt = finished.get(s.providerId);
+      if (finishedAt) {
+        const live = s.steps.find((st) => st.key === "go_live")?.status === "done";
+        rows.push({
+          stage: "finished", providerId: s.providerId, providerName: s.providerName,
+          doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent,
+          live, finishedAt: finishedAt.toISOString(),
+        });
+      } else if (s.percent < 100) {
+        rows.push({ stage: "in_progress", providerId: s.providerId, providerName: s.providerName, doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent });
+      }
+    }
+    // Finished providers first (admin's move), newest finish on top.
+    return rows.sort((a, b) => {
+      if (a.stage !== b.stage) return a.stage === "finished" ? -1 : 1;
+      return String(b.finishedAt || "").localeCompare(String(a.finishedAt || ""));
+    });
+  }
+
+  /** Admin acknowledged a "finished onboarding" row on Home - it leaves the
+   *  Needs attention queue. Stored as an onbmark marker, like manual step
+   *  check-offs, so the queue stays fully derived. */
+  @Post("api/admin/onboarding/:id/complete/dismiss")
+  @UseGuards(SessionOrJwtGuard)
+  async dismissComplete(@Req() req: Request, @Param("id") id: string) {
+    requireAdmin(req);
+    const db = prisma as any;
+    const provider = await db.provider.findUnique({ where: { id }, select: { id: true } });
+    if (!provider) throw new NotFoundException("Provider not found");
+    const userId = (req.user as any)?.id;
+    const now = new Date();
+    await db.parentTask.upsert({
+      where: { systemKey: `onbmark:complete_ack:${id}` },
+      create: {
+        parentAccountId: id,
+        scope: "PROVIDER",
+        providerId: id,
+        title: "Finished-onboarding notice dismissed by GoStork admin",
+        type: "TODO",
+        priority: "LOW",
+        source: "SYSTEM",
+        systemKey: `onbmark:complete_ack:${id}`,
+        status: "DONE",
+        dueAt: now,
+        completedAt: now,
+        completedByUserId: userId,
+        createdByUserId: userId,
+      },
+      update: { status: "DONE", completedAt: now, completedByUserId: userId },
+    });
+    return { ok: true };
   }
 
   /** Manually check off an optional step ("nothing to do here"). Stored as a
