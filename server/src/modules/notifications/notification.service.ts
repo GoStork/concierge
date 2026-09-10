@@ -3333,6 +3333,9 @@ export class NotificationService implements OnModuleInit {
   async sendProviderOnboardingCompleteNotification(params: {
     providerId: string;
     providerName: string;
+    /** Required and optional both done, vs required only. */
+    allDone: boolean;
+    openOptionalCount: number;
   }) {
     const admins = await this.prisma.user.findMany({
       where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
@@ -3340,8 +3343,12 @@ export class NotificationService implements OnModuleInit {
     });
     if (admins.length === 0) return;
     const brandData = await this.getBrandData();
-    const subject = `${params.providerName} finished onboarding - ready to go live`;
+    const scopeShort = params.allDone ? "required and optional steps" : "required steps";
+    const subject = `${params.providerName} finished their ${scopeShort} - ready to go live`;
     const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=profile`;
+    const optionalLine = params.allDone
+      ? "Optional pages (sponsorship, automation, playbooks, AI concierge, branding): all reviewed too."
+      : `Optional pages still open: ${params.openOptionalCount} (sponsorship, automation, playbooks, AI concierge, branding are optional and do not block going live).`;
 
     for (const admin of admins) {
       if (!admin.email) continue;
@@ -3349,7 +3356,7 @@ export class NotificationService implements OnModuleInit {
       const html = buildBrandedEmail(brandData, {
         title: "Provider Onboarding Complete",
         greeting: `Hi ${firstName},`,
-        body: `<strong>${this.escapeHtml(params.providerName)}</strong> completed every required step of their onboarding - agreement, W-9, profile, calendar, cost sheets, agreement templates, billing basis, and payouts.`,
+        body: `<strong>${this.escapeHtml(params.providerName)}</strong> completed every required step of their onboarding - agreement, W-9, profile, calendar, cost sheets, agreement templates, billing basis, and payouts.<br/><br/>${this.escapeHtml(optionalLine)}`,
         alertBox: { text: "The last step is yours: review their profile and approve their services to publish them in the marketplace and to Eva.", type: "info" },
         buttons: [{ label: "Review and Go Live", url: reviewUrl }],
         footer: "Approving the services is the publish switch - nothing is visible to parents until you do.",

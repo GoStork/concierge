@@ -567,8 +567,10 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const handleProviderOnboardedEvent = useCallback((data: any) => {
     if (data.type !== "provider_onboarding_complete") return;
 
-    const title = `${data.providerName || "A provider"} finished onboarding`;
-    const description = "All required steps are done - review their profile and approve services to go live.";
+    const title = `${data.providerName || "A provider"} finished onboarding - ${data.allDone ? "required and optional steps" : "required steps"}`;
+    const description = data.allDone
+      ? "Every page reviewed - approve their services to go live."
+      : `All required steps are done, ${data.openOptionalCount ?? 0} optional page${(data.openOptionalCount ?? 0) === 1 ? "" : "s"} still open - approve their services to go live.`;
 
     playNotificationChime();
     queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });

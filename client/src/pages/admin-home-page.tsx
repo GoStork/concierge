@@ -203,7 +203,7 @@ export default function AdminHomePage() {
   };
 
   // Providers still onboarding (checklist < 100%) - one aggregate row each.
-  const onboardingQ = useQuery<Array<{ stage: "in_progress" | "finished"; providerId: string; providerName: string; doneCount: number; requiredCount: number; percent: number; live?: boolean; finishedAt?: string }>>({
+  const onboardingQ = useQuery<Array<{ stage: "in_progress" | "finished"; providerId: string; providerName: string; doneCount: number; requiredCount: number; percent: number; live?: boolean; finishedAt?: string; allDone?: boolean; openOptionalCount?: number }>>({
     queryKey: ["/api/admin/onboarding/pending"],
     queryFn: async () => {
       const res = await fetch("/api/admin/onboarding/pending", { credentials: "include" });
@@ -266,10 +266,12 @@ export default function AdminHomePage() {
                 key={`onb-${o.providerId}`}
                 tone={o.live ? "notification" : "task"}
                 icon={<Building2 className="w-4 h-4" />}
-                title={`${o.providerName} finished onboarding`}
-                detail={o.live
+                title={`${o.providerName} finished onboarding - ${o.allDone ? "required and optional steps" : "required steps"}`}
+                detail={`${o.allDone
+                  ? "Every optional page reviewed too."
+                  : `${o.openOptionalCount ?? 0} optional page${(o.openOptionalCount ?? 0) === 1 ? "" : "s"} still open (do not block going live).`} ${o.live
                   ? "All services approved - live in the marketplace and Eva. Dismiss when reviewed."
-                  : "Approve their services on the Profile tab to publish them to parents and Eva."}
+                  : "Approve their services on the Profile tab to publish them to parents and Eva."}`}
                 cta={o.live ? "Open" : "Go live"}
                 onClick={() => navigate(`/admin/providers/${o.providerId}?tab=profile`)}
                 onDismiss={() => dismissFinished(o.providerId)}

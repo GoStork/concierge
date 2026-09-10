@@ -1017,7 +1017,7 @@ export class ProviderOnboardingController {
     const summary = await computeOnboarding(user.providerId);
     if (!summary) throw new NotFoundException("Provider not found");
     const view = buildProviderOnboardingView(summary);
-    await this.maybeNotifyOnboardingComplete(summary, view.percent, user.id);
+    await this.maybeNotifyOnboardingComplete(summary, view, user.id);
     return view;
   }
 
@@ -1025,8 +1025,8 @@ export class ProviderOnboardingController {
    *  GoStork admin once - live toast (persisted for offline admins) plus a
    *  branded email. Idempotent via the onbcomplete:<providerId> DONE marker
    *  task, so polling never re-fires it. Never throws into the caller. */
-  private async maybeNotifyOnboardingComplete(summary: OnboardingSummary, providerPercent: number, actorUserId: string) {
-    if (providerPercent < 100) return;
+  private async maybeNotifyOnboardingComplete(summary: OnboardingSummary, view: ReturnType<typeof buildProviderOnboardingView>, actorUserId: string) {
+    if (view.percent < 100) return;
     const db = prisma as any;
     const systemKey = `onbcomplete:${summary.providerId}`;
     try {
@@ -1057,18 +1057,27 @@ export class ProviderOnboardingController {
     }
     try {
       const admins = await db.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false }, select: { id: true } });
+      // Say exactly what was finished: the required steps only (with how
+      // many optional pages are still open), or required and optional both.
+      const scope = view.allDone
+        ? "required and optional steps"
+        : `required steps (${view.openOptionalCount} optional page${view.openOptionalCount === 1 ? "" : "s"} still open)`;
       await this.appEvents.emit({
         type: "provider_onboarding_complete",
         targetUserIds: admins.map((a: any) => a.id),
         payload: {
           providerId: summary.providerId,
           providerName: summary.providerName,
-          message: `${summary.providerName} finished onboarding - review and approve their services to go live`,
+          allDone: view.allDone,
+          openOptionalCount: view.openOptionalCount,
+          message: `${summary.providerName} finished their ${scope} - review and approve their services to go live`,
         },
       });
       await this.notificationService.sendProviderOnboardingCompleteNotification({
         providerId: summary.providerId,
         providerName: summary.providerName,
+        allDone: view.allDone,
+        openOptionalCount: view.openOptionalCount,
       });
       console.log(`[onboarding] ${summary.providerName} finished onboarding - ${admins.length} admin(s) notified`);
     } catch (e: any) {
@@ -1166,7 +1175,7 @@ export class ProviderOnboardingController {
     requireAdmin(req);
     const summary = await computeOnboarding(id);
     if (!summary) throw new NotFoundException("Provider not found");
-    await this.maybeNotifyOnboardingComplete(summary, buildProviderOnboardingView(summary).percent, (req.user as any)?.id);
+    await this.maybeNotifyOnboardingComplete(summary, buildProviderOnboardingView(summary), (req.user as any)?.id);
     return summary;
   }
 
@@ -1224,10 +1233,14 @@ export class ProviderOnboardingController {
       const finishedAt = finished.get(s.providerId);
       if (finishedAt) {
         const live = s.steps.find((st) => st.key === "go_live")?.status === "done";
+        const view = buildProviderOnboardingView(s);
         rows.push({
           stage: "finished", providerId: s.providerId, providerName: s.providerName,
           doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent,
           live, finishedAt: finishedAt.toISOString(),
+          // Scope of what they finished - read live, so the row upgrades to
+          // "required and optional" on its own when they walk the rest.
+          allDone: view.allDone, openOptionalCount: view.openOptionalCount,
         });
       } else if (s.percent < 100) {
         rows.push({ stage: "in_progress", providerId: s.providerId, providerName: s.providerName, doneCount: s.doneCount, requiredCount: s.requiredCount, percent: s.percent });
