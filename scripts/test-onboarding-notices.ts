@@ -140,15 +140,21 @@ async function main() {
     check("exactly ONE email, 'required and optional' subject", e.length === 1 && /required and optional steps - ready to go live/.test(e[0]), e.join(" | "));
     check("exactly ONE toast, stage=required, allDone=true", t.length === 1 && t[0].stage === "required" && t[0].allDone === true, JSON.stringify(t[0] || null));
     row = await pendingRow();
-    check("one Home row (milestone=all outranks), allDone=true", row?.milestone === "all" && row?.allDone === true, JSON.stringify(row || null));
+    check("one Home row reads 'required and optional' (milestone=required, allDone=true), not 'optional pages too'", row?.milestone === "required" && row?.allDone === true, JSON.stringify(row || null));
     await poll(); await poll();
     check("re-polls add nothing", (await emails()).length === 1 && (await toasts()).length === 1);
+    // The client sends "all" for any row that already reads allDone.
     await dismiss("all");
-    check("dismiss clears it", !(await pendingRow()));
-    // Dismissing "required" on a combined row would leave "all" un-acked:
-    await resetMarkers(); await poll(); await dismiss("required");
+    check("dismiss settles both milestones - row does not come back", !(await pendingRow()) && (await markers()).length === 4, (await markers()).join(","));
+
+    // ════ 7. Required still up when optional finishes ════
+    console.log("\n7. Required row never dismissed, optional pages finish later");
+    await resetMarkers(); await setSponsor(false); await poll(); await setSponsor(true); await poll();
     row = await pendingRow();
-    check("dismissing only 'required' on a combined row: row stays as 'all' (documented, not a bug)", row?.milestone === "all", JSON.stringify(row || null));
+    check("row keeps the 'required and optional' wording (required still un-dismissed)", row?.milestone === "required" && row?.allDone === true, JSON.stringify(row || null));
+    await dismiss("required");
+    row = await pendingRow();
+    check("API dismiss of 'required' alone surfaces the 'all' row (client sends 'all' for allDone rows)", row?.milestone === "all", JSON.stringify(row || null));
   } finally {
     // ── Restore ──
     await db.query(`DELETE FROM "ParentTask" WHERE "systemKey" = ANY($1)`, [KEYS]);

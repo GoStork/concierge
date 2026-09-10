@@ -1255,8 +1255,12 @@ export class ProviderOnboardingController {
       const isAll = String(m.systemKey).startsWith("onbcompleteall:");
       if (isAll ? ackedAll.has(m.providerId) : ackedReq.has(m.providerId)) continue;
       const prev = finished.get(m.providerId);
-      // "all" outranks "required" when both are still un-dismissed.
-      if (!prev || (isAll && prev.stage === "required")) finished.set(m.providerId, { at: m.completedAt, stage: isAll ? "all" : "required" });
+      // While the "required" notice is still un-dismissed it carries the row
+      // (its live allDone flag already says "required and optional"); the
+      // "all" wording only stands on its own once "required" was dismissed.
+      // Otherwise a provider who finished both in one go reads "optional
+      // pages too" as if an earlier notice existed.
+      if (!prev || (!isAll && prev.stage === "all")) finished.set(m.providerId, { at: m.completedAt, stage: isAll ? "all" : "required" });
     }
 
     const ids = Array.from(new Set([...(recent as any[]).map((p) => p.id), ...finished.keys()]));

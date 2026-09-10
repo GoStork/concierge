@@ -280,7 +280,10 @@ export default function AdminHomePage() {
                   : "Approve their services on the Profile tab to publish them to parents and Eva."}`}
                 cta={o.live ? "Open" : "Go live"}
                 onClick={() => navigate(`/admin/providers/${o.providerId}?tab=profile`)}
-                onDismiss={() => dismissFinished(o.providerId, o.milestone === "all" ? "all" : "required")}
+                // A row that already reads "required and optional" has told the
+                // admin everything - dismissing it settles both milestones so it
+                // does not come back as "optional pages too".
+                onDismiss={() => dismissFinished(o.providerId, o.milestone === "all" || o.allDone ? "all" : "required")}
               />
             ) : (
               <QueueRow
