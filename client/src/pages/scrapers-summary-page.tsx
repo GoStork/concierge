@@ -6,7 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, CheckCircle2, XCircle, Clock, RefreshCw, RotateCcw, AlertTriangle, ExternalLink, Database, Trash2, Sparkles, Square } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Loader2, CheckCircle2, XCircle, Clock, RefreshCw, RotateCcw, AlertTriangle, ExternalLink, Database, Trash2, Sparkles, Square, PauseCircle, PlayCircle, MoonStar } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 
@@ -31,6 +32,7 @@ interface ScraperSummary {
   latestDonorCreatedAt: string | null;
   syncProgress?: SyncProgress | null;
   lastFailureActionable?: boolean | null;
+  nightlyPaused?: boolean;
 }
 
 interface SummaryResponse {
@@ -1036,6 +1038,75 @@ function RestartSyncButton({ item }: { item: ScraperSummary }) {
   );
 }
 
+/**
+ * Parks a provider out of the 2 AM nightly without touching its config.
+ * Manual and admin-forced runs still reach a paused provider, so a blocked
+ * agency can be re-tested at any time while its nightly stays quiet - which is
+ * the point: repeated nightly logins against a site that is blocking us keep
+ * re-tripping the lockout and refill the needs-attention digest.
+ */
+function NightlyPauseButton({ item }: { item: ScraperSummary }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isSaving, setIsSaving] = useState(false);
+  const paused = !!item.nightlyPaused;
+
+  const handleToggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsSaving(true);
+    try {
+      await apiRequest("PATCH", `/api/scrapers/nightly-paused/${item.providerId}/${item.type}`, { paused: !paused });
+      toast({
+        title: paused ? "Nightly resumed" : "Nightly paused",
+        description: paused
+          ? `${item.providerName} is back in the 2 AM nightly.`
+          : `${item.providerName} will be skipped by the 2 AM nightly. Manual syncs still work.`,
+        variant: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/scrapers/summary"] });
+    } catch (err: any) {
+      const msg = err?.message || "Failed to update";
+      toast({
+        title: "Error",
+        description: msg.length > 120 ? msg.slice(0, 120) + "..." : msg,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (item.syncProgress) return null;
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "h-5 text-[11px] px-1 gap-0.5 shrink-0",
+        paused && "text-brand-warning hover:text-brand-warning hover:bg-brand-warning/10",
+      )}
+      onClick={handleToggle}
+      disabled={isSaving}
+      data-testid={`button-nightly-pause-${item.providerId}`}
+      title={
+        paused
+          ? `Resume the nightly sync for ${item.providerName}`
+          : `Skip ${item.providerName} in the 2 AM nightly (manual syncs still work)`
+      }
+    >
+      {isSaving ? (
+        <Loader2 className="w-2.5 h-2.5 animate-spin" />
+      ) : paused ? (
+        <PlayCircle className="w-2.5 h-2.5" />
+      ) : (
+        <PauseCircle className="w-2.5 h-2.5" />
+      )}
+      {paused ? "Resume" : "Pause"}
+    </Button>
+  );
+}
+
 function StopSyncButton({ item }: { item: ScraperSummary }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1192,7 +1263,17 @@ function ScraperTypeSection({
                           </div>
                           <StopSyncButton item={item} />
                           <RestartSyncButton item={item} />
+                          <NightlyPauseButton item={item} />
                         </div>
+                        {item.nightlyPaused ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] text-brand-warning"
+                            data-testid={`text-nightly-paused-${item.providerId}`}
+                          >
+                            <MoonStar className="w-2.5 h-2.5" />
+                            Nightly paused
+                          </span>
+                        ) : null}
                         {(() => {
                           const errorCount = item.totalErrors || item.syncProgress?.failed || 0;
                           return errorCount > 0 ? (

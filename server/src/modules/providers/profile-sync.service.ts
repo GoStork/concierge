@@ -8413,6 +8413,8 @@ export async function getScrapersSummary(prisma: PrismaService) {
     // For a FAILED row: true = a human must act (creds/captcha/lockout); false =
     // transient/benign (network blip, server restart) that auto-retries. null = N/A.
     lastFailureActionable?: boolean | null;
+    // Parked out of the 2 AM nightly. Manual/forced runs still reach it.
+    nightlyPaused: boolean;
   }[] = [];
 
   for (const p of providers) {
@@ -8428,6 +8430,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
         providerName: p.name,
         type: "egg-donor",
         syncStatus: p.eggDonorSyncConfig.syncStatus,
+        nightlyPaused: p.eggDonorSyncConfig.nightlyPaused,
         lastSyncAt: p.eggDonorSyncConfig.lastSyncAt,
         lastSyncStartedAt: p.eggDonorSyncConfig.lastSyncStartedAt,
         lastSyncEndedAt: p.eggDonorSyncConfig.lastSyncEndedAt,
@@ -8448,6 +8451,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
         providerName: p.name,
         type: "surrogate",
         syncStatus: p.surrogateSyncConfig.syncStatus,
+        nightlyPaused: p.surrogateSyncConfig.nightlyPaused,
         lastSyncAt: p.surrogateSyncConfig.lastSyncAt,
         lastSyncStartedAt: p.surrogateSyncConfig.lastSyncStartedAt,
         lastSyncEndedAt: p.surrogateSyncConfig.lastSyncEndedAt,
@@ -8468,6 +8472,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
         providerName: p.name,
         type: "sperm-donor",
         syncStatus: p.spermDonorSyncConfig.syncStatus,
+        nightlyPaused: p.spermDonorSyncConfig.nightlyPaused,
         lastSyncAt: p.spermDonorSyncConfig.lastSyncAt,
         lastSyncStartedAt: p.spermDonorSyncConfig.lastSyncStartedAt,
         lastSyncEndedAt: p.spermDonorSyncConfig.lastSyncEndedAt,

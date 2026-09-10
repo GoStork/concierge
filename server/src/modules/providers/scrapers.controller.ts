@@ -310,6 +310,41 @@ export class ScrapersController {
     return { message: "Sync started", jobId };
   }
 
+  @Patch("nightly-paused/:providerId/:type")
+  @ApiOperation({ summary: "Pause or resume a provider's nightly sync (admin only)" })
+  async setNightlyPaused(
+    @Req() req: any,
+    @Param("providerId") providerId: string,
+    @Param("type") type: string,
+    @Body() body: { paused: boolean },
+  ) {
+    requireStrictAdmin(req);
+    const tableMap: Record<string, "eggDonorSyncConfig" | "surrogateSyncConfig" | "spermDonorSyncConfig"> = {
+      "egg-donor": "eggDonorSyncConfig",
+      "surrogate": "surrogateSyncConfig",
+      "sperm-donor": "spermDonorSyncConfig",
+    };
+    const table = tableMap[type];
+    if (!table) {
+      throw new BadRequestException("Invalid sync type");
+    }
+    if (typeof body?.paused !== "boolean") {
+      throw new BadRequestException("`paused` must be true or false");
+    }
+
+    const config = await (this.prisma[table] as any).findUnique({ where: { providerId } });
+    if (!config) {
+      throw new NotFoundException("Sync configuration not found for this provider and type.");
+    }
+
+    await (this.prisma[table] as any).update({
+      where: { providerId },
+      data: { nightlyPaused: body.paused },
+    });
+
+    return { success: true, nightlyPaused: body.paused };
+  }
+
   @Post("stop-sync/:providerId/:type")
   @ApiOperation({ summary: "Stop a running sync for a provider (admin only)" })
   async stopSync(
