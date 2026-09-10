@@ -232,14 +232,16 @@ function SilenceSection({ orgId }: { orgId?: string }) {
         <label className="flex items-center justify-between gap-2 text-sm font-ui">
           <span>
             Silence follow-up
-            <span className="block t-helper">On = when a family goes quiet past their stage's threshold, the ladder below runs. Off = nothing happens, no message and no task.</span>
+            <span className="block t-helper">On = when a family goes quiet past their stage's threshold, the ladder below runs.</span>
+            <span className="block t-helper">Off = nothing happens, no message and no task.</span>
           </span>
           <Switch checked={enabled} onCheckedChange={(v) => { setEnabled(v); setDirty(true); }} data-testid="switch-silence-enabled" />
         </label>
         <label className="flex items-center justify-between gap-2 text-sm font-ui">
           <span>
             Eva sends a check-in first
-            <span className="block t-helper">On = Eva sends one warm check-in in the family's thread, and a task lands on the lead owner only if the quiet continues. Off = skip Eva, the task lands right away.</span>
+            <span className="block t-helper">On = Eva sends one warm check-in in the family's thread, and a task lands on the lead owner only if the quiet continues.</span>
+            <span className="block t-helper">Off = skip Eva, the task lands right away.</span>
           </span>
           <Switch checked={evaEnabled} onCheckedChange={(v) => { setEvaEnabled(v); setDirty(true); }} data-testid="switch-silence-eva" />
         </label>
