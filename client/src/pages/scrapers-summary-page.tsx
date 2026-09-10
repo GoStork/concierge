@@ -890,6 +890,7 @@ function StatusBadge({
   lastSyncEndedAt,
   lastSyncAt,
   lastFailureActionable,
+  nightlyPaused,
 }: {
   status: string;
   progress?: SyncProgress | null;
@@ -897,6 +898,7 @@ function StatusBadge({
   lastSyncEndedAt?: string | null;
   lastSyncAt?: string | null;
   lastFailureActionable?: boolean | null;
+  nightlyPaused?: boolean;
 }) {
   if (progress) {
     return <SyncProgressBar progress={progress} />;
@@ -909,6 +911,22 @@ function StatusBadge({
       <Badge className="bg-primary/10 text-primary hover:bg-primary/15 gap-1 cursor-pointer transition-colors" data-testid="badge-status-running">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Running
+      </Badge>
+    );
+  }
+
+  // Parked out of the nightly on purpose, so "Overdue" would be a lie that grows
+  // by a day every day. FAILED is deliberately NOT short-circuited here: a
+  // provider parked BECAUSE it is broken must keep showing its failure, and the
+  // "Nightly paused" line under the badge explains why it is not retrying.
+  if (nightlyPaused && status !== "FAILED") {
+    return (
+      <Badge
+        className="bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] hover:bg-[hsl(var(--brand-warning)/0.2)] gap-1 cursor-pointer transition-colors"
+        data-testid="badge-status-paused"
+      >
+        <PauseCircle className="w-3.5 h-3.5" />
+        Paused
       </Badge>
     );
   }
@@ -1259,13 +1277,16 @@ function ScraperTypeSection({
                               lastSyncEndedAt={item.lastSyncEndedAt}
                               lastSyncAt={item.lastSyncAt}
                               lastFailureActionable={item.lastFailureActionable}
+                              nightlyPaused={item.nightlyPaused}
                             />
                           </div>
                           <StopSyncButton item={item} />
                           <RestartSyncButton item={item} />
                           <NightlyPauseButton item={item} />
                         </div>
-                        {item.nightlyPaused ? (
+                        {/* The badge already reads "Paused" for every other status, so
+                            this line is only needed where the badge is showing a failure. */}
+                        {item.nightlyPaused && item.syncStatus === "FAILED" ? (
                           <span
                             className="inline-flex items-center gap-1 text-[10px] text-brand-warning"
                             data-testid={`text-nightly-paused-${item.providerId}`}
@@ -1360,12 +1381,16 @@ export default function ScrapersSummaryPage() {
     const lastMs = s.lastSyncAt ? new Date(s.lastSyncAt).getTime() : null;
     return lastMs !== null && (Date.now() - lastMs) <= NIGHTLY_CYCLE_MS;
   }).length;
+  // A parked provider is not overdue - it is not expected to have run. Counting
+  // it here contradicted its own row badge and the number only ever grew.
   const overdueCount = summaries.filter((s) => {
     if (s.syncStatus !== "SUCCESS") return false;
+    if (s.nightlyPaused) return false;
     if (s.lastSyncStartedAt && !s.lastSyncEndedAt) return false; // running, not overdue
     const lastMs = s.lastSyncAt ? new Date(s.lastSyncAt).getTime() : null;
     return !lastMs || (Date.now() - lastMs) > NIGHTLY_CYCLE_MS;
   }).length;
+  const pausedCount = summaries.filter((s) => s.nightlyPaused).length;
   const failedCount = summaries.filter((s) => s.syncStatus === "FAILED" || s.syncStatus === "PARTIAL").length;
 
   return (
@@ -1382,7 +1407,7 @@ export default function ScrapersSummaryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-2 mb-6">
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-providers">{totalProviders}</div>
@@ -1423,6 +1448,12 @@ export default function ScrapersSummaryPage() {
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1 text-[hsl(var(--brand-warning))]" data-testid="text-overdue-count">{overdueCount}</div>
             <div className="t-helper leading-tight">Overdue</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1 text-[hsl(var(--brand-warning))]" data-testid="text-paused-count">{pausedCount}</div>
+            <div className="t-helper leading-tight">Paused</div>
           </CardContent>
         </Card>
         <Card>
