@@ -154,7 +154,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     ipFormOverrideCount, agreementTemplates, adminActivatedCount, onbTasks,
     availCount, doctorCount, legalIdentity,
   ] = await Promise.all([
-    db.user.findMany({ where: { providerId }, select: { id: true, roles: true } }),
+    db.user.findMany({ where: { providerId }, select: { id: true, roles: true, email: true, name: true, firstName: true, lastName: true, isDisabled: true } }),
     hasEgg ? db.eggDonorSyncConfig.findUnique({ where: { providerId } }) : null,
     hasSurrogacy ? db.surrogateSyncConfig.findUnique({ where: { providerId } }) : null,
     hasSperm ? db.spermDonorSyncConfig.findUnique({ where: { providerId } }) : null,
@@ -236,10 +236,22 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   // ── Phase B - Admin setup ──
   // Creating the provider's admin account is the GoStork admin's action (Team
   // tab), so it leads THIS phase rather than sitting in "Created".
-  const hasProviderAdmin = (users as any[]).some((u) => (u.roles || []).includes("PROVIDER_ADMIN"));
+  const providerAdmins = (users as any[]).filter((u) => (u.roles || []).includes("PROVIDER_ADMIN") && !u.isDisabled);
+  const hasProviderAdmin = providerAdmins.length > 0;
+  // "Full Name (email)" for every active admin - so the admin sees exactly
+  // which account was created and where the welcome email lands.
+  const adminLabel = providerAdmins
+    .map((u) => {
+      const full = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.name || "";
+      return full && u.email ? `${full} (${u.email})` : full || u.email || "";
+    })
+    .filter(Boolean)
+    .join(", ");
   steps.push({
     key: "admin_user", group: "admin_setup", label: "Create provider admin user",
-    detail: hasProviderAdmin ? "A PROVIDER_ADMIN account exists." : "Create the provider's admin account so they can log in.",
+    detail: hasProviderAdmin
+      ? `Admin account created for ${adminLabel || "the provider"}.`
+      : "Create the provider's admin account so they can log in.",
     status: hasProviderAdmin ? "done" : "pending", deepLink: editLink("users"),
   });
 
@@ -382,9 +394,9 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   steps.push({
     key: "welcome", group: "admin_setup", label: "Send welcome email",
     detail: welcomeSent
-      ? "Welcome email sent - the provider has their login and set-password link."
+      ? `Welcome email sent to ${adminLabel || "the provider admin"} - they have their login and set-password link.`
       : welcomeReady
-        ? "Agreement signed and W-9 on file - send the provider their welcome email with a set-password link."
+        ? `Agreement signed and W-9 on file - send ${adminLabel || "the provider admin"} their welcome email with a set-password link.`
         : "Unlocks once the agreement is signed and the W-9 is completed.",
     status: welcomeSent ? "done" : welcomeReady ? "pending" : "locked",
     deepLink: editLink("users"),
