@@ -1224,6 +1224,11 @@ model EggDonorSyncConfig {
   syncFrequency      String    @default("manual")
   lastSyncEndedAt    DateTime?
   lastSyncStartedAt  DateTime?
+  // When true the 2 AM ET nightly skips this config entirely. Manual and
+  // admin-forced syncs still run it. Set for a provider whose origin is
+  // actively blocking us, so the nightly stops re-tripping a login lockout
+  // (and stops filling the digest) while the block is being sorted out.
+  nightlyPaused      Boolean   @default(false)
   provider           Provider  @relation(fields: [providerId], references: [id])
 }
 
@@ -1340,6 +1345,11 @@ model SurrogateSyncConfig {
   syncFrequency      String    @default("manual")
   lastSyncEndedAt    DateTime?
   lastSyncStartedAt  DateTime?
+  // When true the 2 AM ET nightly skips this config entirely. Manual and
+  // admin-forced syncs still run it. Set for a provider whose origin is
+  // actively blocking us, so the nightly stops re-tripping a login lockout
+  // (and stops filling the digest) while the block is being sorted out.
+  nightlyPaused      Boolean   @default(false)
   provider           Provider  @relation(fields: [providerId], references: [id])
 }
 
@@ -1438,6 +1448,11 @@ model SpermDonorSyncConfig {
   lastSyncEndedAt    DateTime?
   lastSyncStartedAt  DateTime?
   defaultVialTypes   String[]  @default([])
+  // When true the 2 AM ET nightly skips this config entirely. Manual and
+  // admin-forced syncs still run it. Set for a provider whose origin is
+  // actively blocking us, so the nightly stops re-tripping a login lockout
+  // (and stops filling the digest) while the block is being sorted out.
+  nightlyPaused      Boolean   @default(false)
   provider           Provider  @relation(fields: [providerId], references: [id])
 }
 

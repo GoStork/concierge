@@ -8244,7 +8244,12 @@ export async function runNightlySync(
 
     const allConfigs: { providerId: string; type: DonorType; providerName: string }[] = [];
 
+    // `nightlyPaused` configs are parked: a provider whose origin is actively
+    // blocking us must stop being retried every night, or each attempt re-trips
+    // the site's login lockout and refills the needs-attention digest. Manual
+    // and admin-forced runs still reach them, so un-parking is just a flag flip.
     const eggConfigs = await prisma.eggDonorSyncConfig.findMany({
+      where: { nightlyPaused: false },
       include: { provider: { select: { name: true } } },
     });
     for (const c of eggConfigs) {
@@ -8252,6 +8257,7 @@ export async function runNightlySync(
     }
 
     const surConfigs = await prisma.surrogateSyncConfig.findMany({
+      where: { nightlyPaused: false },
       include: { provider: { select: { name: true } } },
     });
     for (const c of surConfigs) {
@@ -8259,6 +8265,7 @@ export async function runNightlySync(
     }
 
     const spermConfigs = await prisma.spermDonorSyncConfig.findMany({
+      where: { nightlyPaused: false },
       include: { provider: { select: { name: true } } },
     });
     for (const c of spermConfigs) {
