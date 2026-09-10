@@ -1513,6 +1513,23 @@ connected accounts). Remaining tasks are dashboard/bank/insurance:
   activity on a third-party processor account resulting in bank debits is
   covered. (Stripe sells no such insurance; Stripe Chargeback Protection only
   covers disputes on legitimate own-checkout transactions - not this scenario.)
+  Quote-request email drafted 2026-09-10 (Claude session); two sends are
+  BLOCKING pre-launch tasks:
+  - [ ] **Email 1 - Andy (NEXT broker)**: pick up the Cyber quote started
+    June 20, 2025 (never completed), alongside existing GL policy
+    NXT479P99L-01-GL; ask for a bundled price. Must include the scenario
+    question below and the three Crime endorsements.
+  - [ ] **Email 2 - Coalition + Chubb/Hiscox**: same body, comparison quotes;
+    note we carry GL with NEXT and would move everything to one carrier for
+    the right package. Also price E&O/professional liability and EPLI.
+  - The written-answer test that decides the carrier (verbatim, in both
+    emails): "If an unauthorized party gains access to our third-party
+    payment processor (Stripe) and initiates debits from our bank account,
+    is that loss covered? Under which insuring agreement and limit?" Disclose
+    the 2024 ~$42k incident upfront with "controls since hardened" - it
+    surfaces on every application anyway and hiding it can void a claim.
+  - Do NOT flip live payment volume on until one policy with the written
+    confirmation is bound.
 - [ ] Key-rotation drill: practice the 15-minute rotation (create new
   restricted key -> install in host .env -> restart -> delete old key) once
   before launch so it is muscle memory during an incident.
