@@ -723,7 +723,17 @@ export class ProviderOnboardingController {
     // `sections` (ordered) drives the coach bar's on-page tour: each entry
     // matches a data-onb-anchor element on the step's page, and the bar
     // scrolls to and highlights them one by one, PandaDoc-wizard style.
-    type StepSection = { anchor: string; label: string };
+    // `state` lets the coach bar show which sub-section is settled, and
+    // `skip` is an alternative action for one sub-section (e.g. "parents do
+    // not sign one" on an empty agreement card) - the bar calls it and moves
+    // on. Neither exists for whole-step marks; a step that derives from
+    // artifacts can only be settled sub-section by sub-section.
+    type StepSection = {
+      anchor: string;
+      label: string;
+      state?: "done" | "open";
+      skip?: { label: string; method: "PUT" | "POST"; url: string; body?: Record<string, unknown>; invalidate?: string[] };
+    };
     const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean; sections?: StepSection[] }> = {
       // The GoStork agreement lives on the provider's Legal tab (with the
       // W-9) - Legal aggregates everything GoStork needs legally.
@@ -892,6 +902,25 @@ export class ProviderOnboardingController {
           const missing = s.lines.filter((l) => l.state === "missing").map((l) => l.label);
           description = `${settled.length ? `Done: ${settled.join(", ")}. ` : ""}Still needed: ${missing.join(", ")}. No signed agreement for one of them? Mark it as not applicable on its card.`;
         }
+        // Multi-line steps tour one card per line: the flag on an empty
+        // card offers "not applicable" for THAT line, so nothing is ever
+        // marked done wholesale.
+        const sections: StepSection[] | undefined = s.lines && s.lines.length > 1
+          ? s.lines.map((l) => ({
+              anchor: `agreement-template-${l.key}`,
+              label: `${l.label} agreement`,
+              state: l.state === "missing" ? "open" : "done",
+              skip: l.state === "missing"
+                ? {
+                    label: "Parents don't sign one - not applicable",
+                    method: "PUT" as const,
+                    url: `/api/agreements/templates/${l.key}/not-applicable`,
+                    body: { notApplicable: true },
+                    invalidate: ["/api/agreements/templates"],
+                  }
+                : undefined,
+            }))
+          : v.sections;
         return {
           key: s.key,
           label: v.label,
@@ -900,7 +929,7 @@ export class ProviderOnboardingController {
           description,
           minutes: v.minutes,
           selfMarkable: !!v.selfMarkable,
-          sections: v.sections,
+          sections,
           // "waiting on provider" IS their to-do; locked steps stay locked
           // (e.g. signing before the document is sent). A step relaxed to
           // optional for the provider also wears the optional status.

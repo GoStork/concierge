@@ -41,7 +41,15 @@ export type OwnStep = {
   selfMarkable: boolean;
   /** Ordered on-page sections the coach bar tours (scroll + highlight),
    *  each matching a data-onb-anchor element on the step's page. */
-  sections?: { anchor: string; label: string }[];
+  sections?: {
+    anchor: string;
+    label: string;
+    /** Settled vs still-open sub-section (per-line steps). */
+    state?: "done" | "open";
+    /** Alternative action for this sub-section, e.g. mark an agreement line
+     *  as not applicable. The coach bar calls it and advances. */
+    skip?: { label: string; method: "PUT" | "POST"; url: string; body?: Record<string, unknown>; invalidate?: string[] };
+  }[];
   status: "done" | "pending" | "optional" | "locked";
   isOptional: boolean;
 };

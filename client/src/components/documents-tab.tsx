@@ -128,7 +128,7 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
 
       {/* The templates region is the onboarding tour stop for
           "Upload your agency agreement templates". */}
-      <div data-onb-anchor="agency-templates" className="space-y-6">
+      <div data-onb-anchor={multiService ? undefined : "agency-templates"} className="space-y-6">
       {multiService ? (
         serviceTypes.map(st => {
           const row = rowByService.get(st);
@@ -152,7 +152,7 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
           // settled card instead of an empty dropzone nagging forever.
           if (row?.notApplicable && !url) {
             return (
-              <Card key={st} className="p-6 space-y-2" data-testid={`agreement-template-na-${st}`}>
+              <Card key={st} className="p-6 space-y-2" data-testid={`agreement-template-na-${st}`} data-onb-anchor={`agreement-template-${st}`}>
                 <div className="flex items-center gap-2">
                   <FileX2 className="w-5 h-5 text-muted-foreground" />
                   <h2 className="text-lg font-heading">{SERVICE_LABELS[st] || "Agreement"} Template</h2>
@@ -170,8 +170,10 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
             );
           }
           return (
+            // Each line is its own onboarding tour stop, so the flag can
+            // settle THIS line (upload or not applicable) before moving on.
+            <div key={st} data-onb-anchor={`agreement-template-${st}`} data-onb-label={`${SERVICE_LABELS[st] || "Agreement"}`}>
             <PandaDocTemplateEditor
-              key={st}
               templateLabel={`${SERVICE_LABELS[st] || "Agreement"} Template`}
               uploadHeading={`${SERVICE_LABELS[st] || "Agreement"} Template`}
               description={`Upload the agreement parents sign for your ${SERVICE_LABELS[st]?.replace(" Agreement", "").toLowerCase() || "this"} service (PDF or Word). Then open the editor to assign signature and date fields.`}
@@ -207,6 +209,7 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
                 </p>
               }
             />
+            </div>
           );
         })
       ) : (

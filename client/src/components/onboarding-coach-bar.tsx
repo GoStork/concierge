@@ -17,8 +17,11 @@ import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ListChecks, ArrowRight, ArrowDown, Clock, Check } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { CheckCircle2, ListChecks, ArrowRight, ArrowDown, Clock, Check, FileX2 } from "lucide-react";
 import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-onboarding";
+
+type TourSection = NonNullable<OwnStep["sections"]>[number];
 
 /**
  * Scroll a page section (a data-onb-anchor element) into view and ring it
@@ -84,6 +87,19 @@ export function OnboardingCoachBar() {
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/provider/onboarding"] }),
+  });
+  // A sub-section's alternative action (server-declared): call it, refresh
+  // what it touched, and step on to the next section.
+  const skipSection = useMutation({
+    mutationFn: async (skip: NonNullable<TourSection["skip"]>) => {
+      await apiRequest(skip.method, skip.url, skip.body);
+      return skip;
+    },
+    onSuccess: (skip) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/onboarding"] });
+      for (const k of skip.invalidate || []) queryClient.invalidateQueries({ queryKey: [k] });
+      setSectionIdx((i) => i + 1);
+    },
   });
 
   // Which step key completed while THIS visitor was on its page - drives the
@@ -152,7 +168,7 @@ export function OnboardingCoachBar() {
   // testid (e.g. the Automation page) are appended in declared order. This
   // makes tours complete by construction - a page section can only be
   // skipped if its wrapper carries no anchor at all.
-  const [discovered, setDiscovered] = useState<{ anchor: string; label: string }[]>([]);
+  const [discovered, setDiscovered] = useState<TourSection[]>([]);
   const declaredSections = current?.sections;
   useEffect(() => {
     if (!current) {
@@ -164,7 +180,7 @@ export function OnboardingCoachBar() {
     const attempt = () => {
       if (cancelled) return;
       const declared = declaredSections || [];
-      const list: { anchor: string; label: string }[] = [];
+      const list: TourSection[] = [];
       for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-onb-anchor]"))) {
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) continue; // not rendered
@@ -172,7 +188,7 @@ export function OnboardingCoachBar() {
         if (list.some((x) => x.anchor === a)) continue;
         const d = declared.find((s) => s.anchor === a);
         const heading = el.querySelector("h1,h2,h3,h4")?.textContent?.trim();
-        list.push({ anchor: a, label: d?.label || el.getAttribute("data-onb-label") || heading || a });
+        list.push({ anchor: a, label: d?.label || el.getAttribute("data-onb-label") || heading || a, state: d?.state, skip: d?.skip });
       }
       for (const s of declared) {
         if (list.some((x) => x.anchor === s.anchor)) continue;
@@ -266,6 +282,8 @@ export function OnboardingCoachBar() {
   if (hidden) return null;
 
   const isLastSection = sectionIdx >= sections.length - 1;
+  // Only a self-markable, still-open step completes on the flag click.
+  const canMarkHere = !!current && current.selfMarkable && current.status !== "done";
   // Centered above the section, straddling its top border - clear of the
   // left-aligned section titles - bobbing vertically to say "this card".
   const sectionFlag = section && anchorRect && current
@@ -291,10 +309,11 @@ export function OnboardingCoachBar() {
                 if (!isLastSection) {
                   setSectionIdx((i) => Math.min(sections.length - 1, i + 1));
                 } else {
-                  // Done on the last section: a still-open review step gets
-                  // marked complete; an already-done (resumed) step just
-                  // finishes its walkthrough.
-                  if (current.selfMarkable && current.status !== "done") markDone.mutate(current.key);
+                  // Last section: a still-open review step gets marked
+                  // complete ("Done"); anything else - an artifact step or
+                  // an already-done walkthrough - just ends the tour ("Got
+                  // it"), because clicking cannot complete it.
+                  if (canMarkHere) markDone.mutate(current.key);
                   try { sessionStorage.removeItem(tourStorageKey); } catch {}
                   setSectionIdx(sections.length); // end the tour
                 }
@@ -303,7 +322,7 @@ export function OnboardingCoachBar() {
             >
               {isLastSection ? (
                 <>
-                  {markDone.isPending ? "Saving..." : "Done"}
+                  {markDone.isPending ? "Saving..." : canMarkHere ? "Done" : "Got it"}
                   <Check className="w-4 h-4" />
                 </>
               ) : (
@@ -313,6 +332,18 @@ export function OnboardingCoachBar() {
                 </>
               )}
             </button>
+            {section.skip && (
+              <button
+                type="button"
+                className="mt-1.5 mx-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--background))] text-[hsl(var(--primary))] text-xs font-medium shadow hover:bg-[hsl(var(--primary)/0.06)] transition-colors whitespace-nowrap"
+                disabled={skipSection.isPending}
+                onClick={() => skipSection.mutate(section.skip!)}
+                data-testid="onboarding-section-skip"
+              >
+                <FileX2 className="w-3.5 h-3.5" />
+                {skipSection.isPending ? "Saving..." : section.skip.label}
+              </button>
+            )}
           </div>
         </>,
         document.body,
@@ -367,12 +398,22 @@ export function OnboardingCoachBar() {
               <Clock className="w-3 h-3" /> ~{current.minutes} min · {data.doneCount}/{data.requiredCount} done
             </span>
           </div>
-          <div className="text-sm text-muted-foreground truncate">{current.description}</div>
+          <div className="text-sm text-muted-foreground line-clamp-2">{current.description}</div>
           {section && sections.length > 1 && (
             <div className="mt-1 flex items-center gap-2 text-xs font-medium text-[hsl(var(--primary))]">
               <span>
                 Section {sectionIdx + 1}/{sections.length}: {section.label}
               </span>
+              {section.state === "open" && (
+                <span className="px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]">
+                  still needed - upload, or mark not applicable
+                </span>
+              )}
+              {section.state === "done" && (
+                <span className="flex items-center gap-1 text-[hsl(var(--brand-success))]">
+                  <Check className="w-3 h-3" /> settled
+                </span>
+              )}
               {sectionIdx > 0 && (
                 <button
                   type="button"
