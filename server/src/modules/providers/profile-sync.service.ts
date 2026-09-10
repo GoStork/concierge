@@ -6114,6 +6114,67 @@ async function runApiSyncJob(
     // The detail response is merged over the list record; a failed detail fetch
     // keeps the list record and logs the error instead of dropping the profile.
     let fullRecords = limited.filter((r) => r && typeof r === "object");
+
+    // ─── Incremental detail fetching (same contract as the SOURCE_URL scraper) ──
+    // A full profile is static once written - height, education, ethnicity never
+    // change. The only volatile fields (availability, egg/vial lot pricing) ride
+    // on the LIST record, which we read in full every run anyway. So hash the
+    // list record and only spend a detail call when that hash moved, the donor
+    // is new, or the row is past the pricing-refresh window.
+    //
+    // Until Sep 2026 this path called the detail endpoint for EVERY record on
+    // EVERY run: 933 calls a night for Lucina, which tripped their rate limiter
+    // (HTTP 429 ERR_SERVER_OVERLOAD) on 3 of 6 nights and left most donors
+    // holding stale data. Every Lucina row still has cardHash NULL because this
+    // path never wrote one.
+    //
+    // Because availability is IN the hash, an availability change always busts
+    // the skip - a skipped record is one where nothing we read has changed, so
+    // not upserting it loses nothing.
+    const listItemsForHash = fullRecords.map((r) => mapApiRecordToItem(r, job.type, profileUrlTemplate));
+    const recordHashes: (string | null)[] = fullRecords.map((r) => {
+      try {
+        return createHash("md5").update(JSON.stringify(r)).digest("hex");
+      } catch {
+        return null; // unhashable record - always fetch it
+      }
+    });
+    const hashSkipIdx = new Set<number>();
+    const hashSkipExternalIds = new Set<string>();
+    if (detailApiUrl && detailApiUrl.trim()) {
+      const idsForHash = listItemsForHash.map((it) => it.externalId).filter(Boolean) as string[];
+      if (idsForHash.length > 0) {
+        const where = { providerId: job.providerId, externalId: { in: idsForHash } };
+        const select = { externalId: true, cardHash: true, lastFullSyncAt: true, profileData: true };
+        const existingRows: any[] =
+          job.type === "surrogate" ? await prisma.surrogate.findMany({ where, select })
+          : job.type === "sperm-donor" ? await prisma.spermDonor.findMany({ where, select })
+          : await prisma.eggDonor.findMany({ where, select });
+        const byId = new Map<string, any>();
+        for (const row of existingRows) if (row.externalId) byId.set(row.externalId, row);
+
+        const PRICING_CHECK_MS = 14 * 24 * 60 * 60 * 1000;
+        for (let idx = 0; idx < fullRecords.length; idx++) {
+          const extId = listItemsForHash[idx]?.externalId;
+          const hash = recordHashes[idx];
+          if (!extId || !hash) continue;
+          const row = byId.get(extId);
+          if (!row || !row.cardHash || row.cardHash !== hash) continue;
+          // Never skip a row that has not actually banked a full profile yet, or
+          // it would stay thin forever behind a matching hash.
+          const pd = row.profileData;
+          const hasFullProfile =
+            !!row.lastFullSyncAt &&
+            !!pd && typeof pd === "object" && !!(pd as any)._sections &&
+            Object.keys((pd as any)._sections).length > 0;
+          if (!hasFullProfile) continue;
+          // Pricing drift the list may not expose: force a refresh every 14 days.
+          if (Date.now() - new Date(row.lastFullSyncAt).getTime() > PRICING_CHECK_MS) continue;
+          hashSkipIdx.add(idx);
+          hashSkipExternalIds.add(extId);
+        }
+      }
+    }
     // Records whose full profile could not be fetched this run. They are NOT
     // upserted (a list-only record would blank the columns the last full
     // profile filled) but still count as "seen" for stale detection.
@@ -6142,8 +6203,19 @@ async function runApiSyncJob(
       let detailFailed = 0;
       const merged: any[] = new Array(fullRecords.length);
       const DETAIL_CONCURRENCY = 4;
+      // Unchanged records never enter the work queue, so their detail call is
+      // never made. They keep the row already in the database.
+      for (const idx of hashSkipIdx) merged[idx] = fullRecords[idx];
+      const detailWork = fullRecords
+        .map((record, idx) => ({ record, idx }))
+        .filter(({ idx }) => !hashSkipIdx.has(idx));
+      const detailTotal = detailWork.length;
+      if (hashSkipIdx.size > 0) {
+        console.log(`[donor-sync] Detail endpoint: skipping ${hashSkipIdx.size} unchanged profile(s), fetching ${detailTotal}`);
+      }
+      job.currentStep = `Fetching full profiles... (0/${detailTotal})`;
       await runWithConcurrency(
-        fullRecords.map((record, idx) => ({ record, idx })),
+        detailWork,
         DETAIL_CONCURRENCY,
         async ({ record, idx }) => {
           if (isJobCancelled(job.id)) {
@@ -6200,18 +6272,23 @@ async function runApiSyncJob(
             if (detailFailed <= 10) job.errors.push(`Detail fetch failed for ${params.case_id || params.id || "record " + idx}: ${err.message}`);
           }
           detailDone++;
-          if (detailDone % 5 === 0 || detailDone === fullRecords.length) {
-            job.currentStep = `Fetching full profiles... (${detailDone}/${fullRecords.length})`;
+          if (detailDone % 5 === 0 || detailDone === detailTotal) {
+            job.currentStep = `Fetching full profiles... (${detailDone}/${detailTotal})`;
           }
         },
       );
       if (detailFailed > 10) job.errors.push(`Detail fetch failed for ${detailFailed} profiles total (first 10 listed)`);
-      console.log(`[donor-sync] Detail endpoint: ${fullRecords.length - detailFailed}/${fullRecords.length} full profiles fetched`);
+      console.log(`[donor-sync] Detail endpoint: ${detailTotal - detailFailed}/${detailTotal} full profiles fetched, ${hashSkipIdx.size} unchanged (skipped)`);
       fullRecords = merged;
     }
 
     const items = fullRecords.map((r) => mapApiRecordToItem(r, job.type, profileUrlTemplate));
-    // items[i] corresponds to fullRecords[i] (merged keeps the list order)
+    // items[i] corresponds to fullRecords[i] (merged keeps the list order).
+    // Stamp the LIST-record hash so the next run can compare against it. It must
+    // come from the list record, not the merged one, or it would never match.
+    for (let i = 0; i < items.length; i++) {
+      if (recordHashes[i]) (items[i] as any).cardHash = recordHashes[i];
+    }
     const detailFailedExternalIds = new Set<string>(
       items.filter((_, i) => detailFailedIdx.has(i)).map((it) => it.externalId).filter(Boolean),
     );
@@ -6230,6 +6307,7 @@ async function runApiSyncJob(
 
     const BATCH_SIZE = 5;
     let detailSkipped = 0;
+    let unchangedSkipped = 0;
     for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
       if (isJobCancelled(job.id)) {
         job.status = "failed";
@@ -6240,6 +6318,13 @@ async function runApiSyncJob(
       const batch = uniqueItems.slice(i, i + BATCH_SIZE);
       await Promise.all(
         batch.map(async (item) => {
+          // Nothing on the list record moved, so the stored row is already
+          // correct - re-upserting it would only rewrite identical values.
+          if (item.externalId && hashSkipExternalIds.has(item.externalId)) {
+            unchangedSkipped++;
+            job.processed++;
+            return;
+          }
           if (detailApiUrl && item.externalId && detailFailedExternalIds.has(item.externalId)) {
             // Keep last run's full profile rather than overwrite it with the
             // thin list record. Counted as skipped, not failed.
@@ -6267,6 +6352,9 @@ async function runApiSyncJob(
     }
     if (detailSkipped > 0) {
       job.errors.push(`${detailSkipped} profile(s) kept their previous full profile - the detail endpoint did not return them this run`);
+    }
+    if (unchangedSkipped > 0) {
+      console.log(`[donor-sync] ${unchangedSkipped} of ${uniqueItems.length} profiles unchanged (no detail call, no write)`);
     }
 
     if (!isJobCancelled(job.id)) {
@@ -7863,11 +7951,60 @@ async function runSyncJob(
       }
       console.log(`[donor-sync] Slug-card catalog: ${allCardLinks.size} profiles across ${totalPages} page(s), importing ${entries.length}`);
 
+      // Skip the fetch+extract for cards that have not changed. This check has to
+      // happen HERE, not in enrichAndImportItems: by the time an item reaches the
+      // shared hash-skip we have already paid for the profile-page fetch AND a
+      // Gemini extraction call on it. That was ~178 Gemini extractions a night
+      // for Family Creations, re-deriving profile text that had not moved.
+      //
+      // Availability is NOT lost by skipping: a matched donor drops off the
+      // listing entirely, which markStaleProfiles picks up from list membership.
+      // Pricing drift is caught by the same 14-day forced refresh the other
+      // paths use.
+      const SLUG_PRICING_CHECK_MS = 14 * 24 * 60 * 60 * 1000;
+      const slugSkip = new Set<string>();
+      {
+        const slugIds = entries.map(([slug]) => slug).filter(Boolean);
+        if (slugIds.length > 0 && !testMode) {
+          const where = { providerId: job.providerId, externalId: { in: slugIds } };
+          const select = { externalId: true, cardHash: true, lastFullSyncAt: true, profileData: true };
+          const rows: any[] =
+            job.type === "surrogate" ? await prisma.surrogate.findMany({ where, select })
+            : job.type === "sperm-donor" ? await prisma.spermDonor.findMany({ where, select })
+            : await prisma.eggDonor.findMany({ where, select });
+          const byId = new Map<string, any>();
+          for (const r of rows) if (r.externalId) byId.set(r.externalId, r);
+          for (const [slug, card] of entries) {
+            const row = byId.get(slug);
+            if (!row || !row.cardHash || !row.lastFullSyncAt) continue;
+            const pd = row.profileData;
+            const hasFullProfile =
+              !!pd && typeof pd === "object" && !!(pd as any)._sections &&
+              Object.keys((pd as any)._sections).length > 0;
+            if (!hasFullProfile) continue;
+            if (Date.now() - new Date(row.lastFullSyncAt).getTime() > SLUG_PRICING_CHECK_MS) continue;
+            const cardHash = createHash("md5")
+              .update(JSON.stringify({ slug, url: card.url, name: card.name || "", photoUrl: card.photoUrl || "" }))
+              .digest("hex");
+            if (cardHash === row.cardHash) slugSkip.add(slug);
+          }
+          if (slugSkip.size > 0) {
+            console.log(`[donor-sync] Slug-card catalog: ${slugSkip.size} unchanged card(s) - no profile fetch, no Gemini extraction`);
+          }
+        }
+      }
+
       let pending: any[] = [];
       let collected = 0;
+      let slugUnchanged = 0;
       for (const [slug, card] of entries) {
         if (isJobCancelled(job.id)) break;
         collected++;
+        if (slugSkip.has(slug)) {
+          slugUnchanged++;
+          job.processed++;
+          continue;
+        }
         job.currentStep = `Importing profile ${collected} of ${entries.length}...`;
         try {
           const profileHtml = await fetchHtml(card.url, sessionCookies);
@@ -7881,6 +8018,11 @@ async function runSyncJob(
           const geminiId = typeof item.externalId === "string" ? item.externalId.trim() : "";
           item.externalId = slug;
           item.profileUrl = card.url;
+          // Hash the LISTING CARD (not the extracted profile) - Gemini output can
+          // vary run to run, so hashing it would never match and never skip.
+          item.cardHash = createHash("md5")
+            .update(JSON.stringify({ slug, url: card.url, name: card.name || "", photoUrl: card.photoUrl || "" }))
+            .digest("hex");
           if (!item.name) item.name = card.name || (geminiId && !/^\d+$/.test(geminiId) ? geminiId : null);
           if (!item.photoUrl && card.photoUrl) item.photoUrl = card.photoUrl;
           pending.push(item);
@@ -7896,7 +8038,7 @@ async function runSyncJob(
       }
       if (pending.length > 0) await enrichAndImportItems(pending);
       if (totalIsFixed) job.total = job.processed;
-      console.log(`[donor-sync] Slug-card catalog imported ${job.processed} ${job.type} profiles`);
+      console.log(`[donor-sync] Slug-card catalog imported ${job.processed} ${job.type} profiles (${slugUnchanged} unchanged, skipped)`);
     }
 
     // Non-streamed discovery paths (single-page, EDC/Gemini pagination, profile
