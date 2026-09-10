@@ -1171,6 +1171,41 @@ fails. Open ask with them: exempt our IP from login protection, or (preferred,
 and they are already planning it) expose a proper API with a per-third-party
 auth profile. Full diagnosis in `docs/scraper-playbook.md`.
 
+**Eggspecting status (2026-09-10) - nightly PARKED, launch blocker.** Their
+developer confirmed on 2026-09-10 that he whitelisted `34.85.132.142` on the
+WPCaptcha plugin's **pro** version AND on WP Engine, and escalated to WP
+Engine's higher tiers. The very next login attempt (13:05:57 UTC, one minute
+after he applied it) still returned the identical 403, so none of it reached
+us. He concluded "the cf-ray id is 100% a cloudflare level block" - that
+inference is wrong and we should not let it redirect the next round of tickets:
+`cf-ray` is present on every response Cloudflare proxies, verified the same day
+by pulling `https://www.eggspecting.com/` and `/wp-login.php` from an unrelated
+IP and getting **200 + `server: cloudflare` + `cf-ray`** on both. The only
+header that indicates a Cloudflare block is `cf-mitigated`, and our 403 carries
+neither it nor a Cloudflare block page (see the detection order in
+`profile-sync.service.ts` ~line 1028).
+
+That same test localises the problem: `/wp-login.php` returns **200 with the
+normal WPCaptcha/reCAPTCHA login form from an arbitrary IP** and **403 from
+`34.85.132.142`**, same minute. Cloudflare is passing traffic; the origin is
+singling out our address. Leading hypothesis is a WPCaptcha **lockout** entry
+for that IP accumulated over 10+ nights of failed logins - a separate list from
+the whitelist, so whitelisting alone would not clear it. Open ask with their
+developer: check the plugin's blocked / locked-out IP list and remove
+`34.85.132.142`.
+
+- [ ] **Eggspecting's nightly is paused in PROD** (`EggDonorSyncConfig.
+  nightlyPaused = true`, added 2026-09-10, migration
+  `20260910_nightly_paused`). Every nightly retry was re-tripping the lockout
+  and refilling the needs-attention digest. Manual and admin-forced
+  (`{force:true}`) syncs still reach it, so testing a fix needs no un-pause.
+  **Un-pause before launch** or Eggspecting's donors are absent from the
+  marketplace - and confirm a real sync succeeds first.
+- [ ] Push their developer for a REST API date. As of 2026-09-10 it is "in
+  talks with the client", no timeline. It is the only durable fix: this
+  provider has never once completed a sync, and every workaround so far has
+  been defeated by a different layer of the same stack.
+
 - [ ] **This allowlist is pinned to `34.85.132.142`.** If `gostork-2-prod` ever
   changes address - rebuild, region move, or the app.gostork.com flip landing on
   different egress - the Eggspecting entry silently stops matching and the sync
