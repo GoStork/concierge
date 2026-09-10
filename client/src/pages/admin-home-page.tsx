@@ -259,11 +259,12 @@ export default function AdminHomePage() {
           <div className="space-y-2">
             {/* Providers mid-onboarding - open the edit page to continue the checklist. */}
             {onboardingRows.map((o) => o.stage === "finished" ? (
-              // The provider finished their side - approving services is the
-              // admin's publish switch. Stays until dismissed.
+              // The provider finished their side. Services still unapproved =
+              // a task (teal, "Go live"); already live = an FYI (amber) to
+              // read and dismiss. Stays until dismissed either way.
               <QueueRow
                 key={`onb-${o.providerId}`}
-                tone="task"
+                tone={o.live ? "notification" : "task"}
                 icon={<Building2 className="w-4 h-4" />}
                 title={`${o.providerName} finished onboarding`}
                 detail={o.live
