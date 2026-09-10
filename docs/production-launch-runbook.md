@@ -953,8 +953,12 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   existing fallback) unless sales/legal opens another route; ask Stripe
   sales before launch since LATAM surrogacy is a core market. BUILT
   2026-08-19 (cadc6127 + e68d7035): legal-entity country on the Legal tab
-  drives W-9 vs W-8BEN-E (second PandaDoc template set - [ ] ERAN: upload
-  the IRS W-8BEN-E PDF in the admin Legal page), local tax-ID label, the
+  drives W-9 vs W-8BEN-E (second PandaDoc template set - [x] DONE
+  2026-09-10: IRS W-8BEN-E PDF (Rev. 10-2021) uploaded on prod, PandaDoc
+  template e3peERazYeqTC8tdBFHYW5, Signature + Print Name + Date fields
+  placed on page 8 Part XXX assigned to role "Client" (same as W-9),
+  roles cache refreshed - admin block shows Fields configured), local
+  tax-ID label, the
   invoice guardrail, the Stripe account country (recipient service
   agreement for non-US, EIN pre-filled only for US, in-app bank form
   US-only), the Payouts page rail (Stripe vs "international payouts" card
