@@ -17,7 +17,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, RefreshCw, Zap } from "lucide-react";
+import { FileText, RefreshCw, Zap, FileX2, Undo2 } from "lucide-react";
 import { PandaDocTemplateEditor } from "./pandadoc-template-editor";
 import { AgreementRows } from "./agreements-list";
 import { AdminProviderAgreements } from "./admin-provider-agreements";
@@ -39,6 +39,7 @@ interface TemplateRow {
   agreementTemplateUrl: string | null;
   agreementTemplateOriginalName: string | null;
   pandaDocTemplateId: string | null;
+  notApplicable?: boolean;
 }
 
 interface TemplatesResponse {
@@ -142,6 +143,32 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
           const filename = row?.agreementTemplateOriginalName
             ?? (fromLegacy ? tpl?.legacy.agreementTemplateOriginalName ?? fileNameFromUrl(url) : fileNameFromUrl(url));
           const svcParam = fromLegacy ? qs : `?serviceType=${st}${adminForProvider ? `&providerId=${encodeURIComponent(providerId)}` : ""}`;
+          const serviceNoun = SERVICE_LABELS[st]?.replace(" Agreement", "").toLowerCase() || "this";
+          const setNotApplicable = async (value: boolean) => {
+            await apiRequest("PUT", withOrg(`/api/agreements/templates/${st}/not-applicable`), { notApplicable: value });
+            invalidateTemplates();
+          };
+          // The provider told us this line has no signed agreement: a quiet
+          // settled card instead of an empty dropzone nagging forever.
+          if (row?.notApplicable && !url) {
+            return (
+              <Card key={st} className="p-6 space-y-2" data-testid={`agreement-template-na-${st}`}>
+                <div className="flex items-center gap-2">
+                  <FileX2 className="w-5 h-5 text-muted-foreground" />
+                  <h2 className="text-lg font-heading">{SERVICE_LABELS[st] || "Agreement"} Template</h2>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="t-helper flex-1 min-w-[240px]">
+                    Not applicable - you told us parents do not sign an agreement for your {serviceNoun} service. Eva will not draft one for these families.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => setNotApplicable(false)} className="shrink-0">
+                    <Undo2 className="w-4 h-4 mr-1.5" />
+                    Undo - upload a template
+                  </Button>
+                </div>
+              </Card>
+            );
+          }
           return (
             <PandaDocTemplateEditor
               key={st}
@@ -166,6 +193,19 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
               editorSessionEndpoint={`/api/agreements/template-editor-session${svcParam}`}
               refreshRolesEndpoint={`/api/agreements/refresh-roles${svcParam}`}
               onAfterChange={invalidateTemplates}
+              emptyStateFooter={
+                <p className="t-helper">
+                  Parents do not sign an agreement for your {serviceNoun} service?{" "}
+                  <button
+                    type="button"
+                    className="text-primary underline underline-offset-2 hover:opacity-80"
+                    onClick={() => setNotApplicable(true)}
+                    data-testid={`agreement-template-mark-na-${st}`}
+                  >
+                    Mark as not applicable
+                  </button>
+                </p>
+              }
             />
           );
         })

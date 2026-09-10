@@ -870,6 +870,12 @@ export class BillingService {
     // loud provider-only nudge, never a fabricated document.
     const serviceType = await agreementServiceTypeForSession(sessionId);
     const tpl = await resolveAgreementTemplate(invoice.provider.id, serviceType);
+    // The provider said this line has no signed agreement - nothing to draft
+    // and nothing to nudge about.
+    if (tpl.notApplicable) {
+      this.logger.log(`Agreement auto-draft skipped for session ${sessionId}: service line marked not applicable (serviceType=${serviceType})`);
+      return { status: "skipped", reason: "NOT_APPLICABLE" };
+    }
     if (!tpl.agreementTemplateUrl || !tpl.pandaDocTemplateId) {
       const alreadyNudged = await this.prisma.aiChatMessage.findFirst({
         where: { sessionId, uiCardType: "provider_only", content: { contains: "agreement template" } },

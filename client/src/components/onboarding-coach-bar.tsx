@@ -109,7 +109,11 @@ export function OnboardingCoachBar() {
   }, [location.pathname]);
 
   const steps = data?.steps || [];
-  const hidden = !data || data.percent >= 100;
+  // At 100% the bar retires - except for the one render where the LAST step
+  // flipped to done right here, which earns a "setup complete" send-off
+  // instead of silently vanishing.
+  const complete = !!data && data.percent >= 100;
+  const hidden = !data || (complete && !celebrateKey);
   const next = steps.find((s) => s.key === data?.nextKey) || null;
   const onPage = steps.filter((s) => s.link === location.pathname);
   // Several steps can share a page (/account/documents holds both the
@@ -127,7 +131,7 @@ export function OnboardingCoachBar() {
     savedTour = JSON.parse(sessionStorage.getItem(tourStorageKey) || "null");
   } catch {}
   const resumedStep =
-    !hidden && !openStep && savedTour
+    !hidden && !complete && !openStep && savedTour
       ? steps.find((s) => s.key === savedTour!.key && s.link === location.pathname && s.status === "done") || null
       : null;
   const current = openStep || resumedStep;
@@ -325,9 +329,18 @@ export function OnboardingCoachBar() {
         <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success))] shrink-0" />
         <div className="flex-1 min-w-0 text-sm">
           <span className="font-medium">{celebrated.label} - done!</span>
-          {next && <span className="text-muted-foreground"> {data.doneCount}/{data.requiredCount} steps complete.</span>}
+          {complete ? (
+            <span className="text-muted-foreground"> That was the last one - your setup is complete and parents can find you.</span>
+          ) : next ? (
+            <span className="text-muted-foreground"> {data.doneCount}/{data.requiredCount} steps complete.</span>
+          ) : null}
         </div>
-        {next && (
+        {complete && (
+          <Button size="sm" variant="outline" onClick={() => setCelebrateKey(null)} data-testid="onboarding-coach-finish">
+            Done
+          </Button>
+        )}
+        {!complete && next && (
           <Button size="sm" onClick={() => navigate(next.link)} data-testid="onboarding-coach-next">
             Next: {next.label}
             <ArrowRight className="w-3.5 h-3.5 ml-1.5" />

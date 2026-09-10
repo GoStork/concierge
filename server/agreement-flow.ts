@@ -89,6 +89,9 @@ export async function generateAndAnnounceAgreement(opts: GenerateAndAnnounceOpts
 
   const serviceType = await agreementServiceTypeForSession(session.id);
   const tpl = await resolveAgreementTemplate(opts.providerId, serviceType);
+  if (tpl.notApplicable) {
+    throw new Error("This service is marked as not using a signed agreement. Upload a template on Settings > Agency Agreements to send one.");
+  }
 
   // GoStork payment gate: if this provider uses PandaDoc agreements, a paid
   // invoice is required first - GoStork collects its referral fee before the

@@ -14,7 +14,7 @@
  * of the surrounding form column because PandaDoc needs ~1024px+).
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,9 @@ export interface PandaDocTemplateEditorProps {
   /** Called after any successful mutation (upload, delete, fields saved) so
    *  the parent can invalidate dependent queries. */
   onAfterChange?: () => void;
+  /** Rendered directly under the empty dropzone (nothing uploaded yet) - an
+   *  escape hatch such as "this service has no signed agreement". */
+  emptyStateFooter?: ReactNode;
 }
 
 export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
@@ -88,6 +91,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
     editorSessionEndpoint,
     refreshRolesEndpoint,
     onAfterChange,
+    emptyStateFooter,
   } = props;
 
   const { toast } = useToast();
@@ -359,6 +363,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
           <p className="t-helper shrink-0 hidden sm:block">PDF, DOC, DOCX - max 16MB</p>
         </div>
       )}
+      {!templateUrl && emptyStateFooter}
 
       {templateUrl && (
         <div

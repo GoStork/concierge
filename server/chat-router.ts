@@ -5503,6 +5503,7 @@ chatRouter.get("/api/agreements/templates", requireAuth, async (req, res) => {
         agreementTemplateUrl: r.agreementTemplateUrl,
         agreementTemplateOriginalName: r.agreementTemplateOriginalName,
         pandaDocTemplateId: r.pandaDocTemplateId,
+        notApplicable: r.notApplicable === true,
       })),
       agreementAutomation: provider?.agreementAutomation ?? null,
       adminAutoAgreementDraft: autoDraft,
@@ -5527,13 +5528,53 @@ chatRouter.put("/api/agreements/templates/:serviceType", requireAuth, async (req
     const orgId = agreementsProviderId(req);
     const row = await prisma.providerAgreementTemplate.upsert({
       where: { providerId_serviceType: { providerId: orgId, serviceType } },
-      // New file invalidates the previously synced PandaDoc template + roles
-      update: { agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null, pandaDocTemplateId: null, pandaDocRoles: null },
+      // New file invalidates the previously synced PandaDoc template + roles,
+      // and a real upload always overrides an earlier "not applicable" mark.
+      update: { agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null, pandaDocTemplateId: null, pandaDocRoles: null, notApplicable: false },
       create: { providerId: orgId, serviceType, agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null },
     });
     res.json({ ok: true, serviceType: row.serviceType });
   } catch (e: any) {
     console.error("Upsert agreement template error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// A service line that does not use a signed parent agreement (an IVF clinic
+// usually does not). Marking it satisfies the onboarding step for that line
+// and stops the auto-draft "no template configured" nudge; uploading a file
+// later clears the mark. Only an EMPTY slot can be marked - a slot with a
+// file is a real template, delete it first.
+chatRouter.put("/api/agreements/templates/:serviceType/not-applicable", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const serviceType = String(req.params.serviceType);
+  const VALID = ["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER"];
+  if (!VALID.includes(serviceType)) return res.status(400).json({ message: "Invalid serviceType" });
+  const notApplicable = req.body?.notApplicable === true;
+  try {
+    const orgId = agreementsProviderId(req);
+    const existing = await prisma.providerAgreementTemplate.findUnique({
+      where: { providerId_serviceType: { providerId: orgId, serviceType } },
+      select: { agreementTemplateUrl: true },
+    });
+    if (notApplicable && existing?.agreementTemplateUrl) {
+      return res.status(400).json({ message: "This service already has a template - remove the file first." });
+    }
+    if (notApplicable) {
+      await prisma.providerAgreementTemplate.upsert({
+        where: { providerId_serviceType: { providerId: orgId, serviceType } },
+        update: { notApplicable: true },
+        create: { providerId: orgId, serviceType, notApplicable: true },
+      });
+    } else if (existing) {
+      // Un-marking an empty slot leaves nothing worth keeping - drop the row
+      // so the slot reads exactly like it never existed.
+      await prisma.providerAgreementTemplate.deleteMany({ where: { providerId: orgId, serviceType, agreementTemplateUrl: null } });
+    }
+    res.json({ ok: true, serviceType, notApplicable });
+  } catch (e: any) {
+    console.error("Mark agreement template not-applicable error:", e);
     res.status(500).json({ message: e.message });
   }
 });

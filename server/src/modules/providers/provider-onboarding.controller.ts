@@ -30,6 +30,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { prisma } from "../../../db";
 import { isClinicianMember } from "./clinician";
+import { humanizeLineServiceType } from "../billing/billing.service";
 
 type StepStatus = "done" | "pending" | "waiting_on_provider" | "optional" | "locked";
 
@@ -53,6 +54,10 @@ export type OnboardingStep = {
   /** Inventory (scraper_*) steps only: how many profiles exist - the
    *  provider view uses it to phrase the step as Add vs Review. */
   recordCount?: number;
+  /** Per-service-line breakdown for steps that complete one line at a time
+   *  (agreement templates) - what is uploaded, what the provider marked as
+   *  not applicable, and what is still missing. */
+  lines?: Array<{ key: string; label: string; state: "uploaded" | "not_applicable" | "missing" }>;
 };
 
 /** Optional steps the admin can check off by hand when there is nothing to
@@ -171,7 +176,7 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
     db.taskPlaybook.count({ where: { providerId } }),
     db.providerAutoReply.count({ where: { providerId } }),
     db.ipFormProviderOverride.count({ where: { providerId } }),
-    db.providerAgreementTemplate.findMany({ where: { providerId }, select: { serviceType: true, agreementTemplateUrl: true } }),
+    db.providerAgreementTemplate.findMany({ where: { providerId }, select: { serviceType: true, agreementTemplateUrl: true, notApplicable: true } }),
     // "Activated" = used their set-password link or logged in at least once.
     db.user.count({
       where: {
@@ -471,21 +476,34 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   // Parent agreement templates: one per service line (the contracts parents
   // sign). The legacy single-template fields on Provider cover the first
   // line for providers set up before per-service templates existed.
-  const tplKeys = new Set(
-    (agreementTemplates as any[]).filter((t) => t.agreementTemplateUrl).map((t) => t.serviceType),
-  );
-  const tplMissing = approvedLineKeys.filter((k, i) => !tplKeys.has(k) && !(i === 0 && provider.agreementTemplateUrl));
+  // A line is settled by a file OR by the provider marking it "not
+  // applicable" (no signed agreement for that service).
+  const tplByKey = new Map((agreementTemplates as any[]).map((t) => [t.serviceType, t]));
+  const tplLines = approvedLineKeys.map((k, i) => {
+    const row = tplByKey.get(k);
+    const uploaded = Boolean(row?.agreementTemplateUrl) || (i === 0 && !row?.agreementTemplateUrl && Boolean(provider.agreementTemplateUrl));
+    const state: "uploaded" | "not_applicable" | "missing" = uploaded ? "uploaded" : row?.notApplicable ? "not_applicable" : "missing";
+    return { key: k, label: humanizeLineServiceType(k), state };
+  });
+  const tplMissing = tplLines.filter((l) => l.state === "missing").map((l) => l.label);
+  const tplUploaded = tplLines.filter((l) => l.state === "uploaded").map((l) => l.label);
+  const tplNa = tplLines.filter((l) => l.state === "not_applicable").map((l) => l.label);
+  const tplDoneDetail = [
+    tplUploaded.length ? `Uploaded: ${tplUploaded.join(", ")}.` : "",
+    tplNa.length ? `Not applicable (no signed agreement): ${tplNa.join(", ")}.` : "",
+  ].filter(Boolean).join(" ") || "Agreement template(s) uploaded for every service line.";
   providerStep(
     "agreement_templates", "onbtemplates", "Parent agreement templates uploaded",
     approvedLineKeys.length > 0 && tplMissing.length === 0,
-    "Agreement template(s) uploaded for every service line.",
+    tplDoneDetail,
     tplMissing.length && tplMissing.length < approvedLineKeys.length
-      ? `Waiting for templates for: ${tplMissing.join(", ")}.`
+      ? `${tplUploaded.length ? `Uploaded: ${tplUploaded.join(", ")}. ` : ""}Waiting for templates for: ${tplMissing.join(", ")}.`
       : "Waiting for the provider to upload the agreement(s) parents sign.",
     "agreements",
     false,
     tplMissing.length && tplMissing.length < approvedLineKeys.length ? "Started" : undefined,
   );
+  steps[steps.length - 1].lines = tplLines;
   // Parent Pays Basis is decided by the provider on their Billing page. A
   // line counts as decided once its config says TOTAL_COST or carries a
   // default first-payment amount - DEFAULT_FIRST_PAYMENT with no amount is
@@ -865,12 +883,21 @@ export class ProviderOnboardingController {
         }
         const v = VIEW[s.key];
         const isOptional = v.optionalOverride ?? !!s.isOptional;
+        // Per-line steps tell the provider exactly which lines are settled
+        // and which still need a file - one upload out of three otherwise
+        // looks like a finished job that never completes.
+        let description = v.description;
+        if (s.lines?.length && s.status !== "done") {
+          const settled = s.lines.filter((l) => l.state !== "missing").map((l) => l.label);
+          const missing = s.lines.filter((l) => l.state === "missing").map((l) => l.label);
+          description = `${settled.length ? `Done: ${settled.join(", ")}. ` : ""}Still needed: ${missing.join(", ")}. No signed agreement for one of them? Mark it as not applicable on its card.`;
+        }
         return {
           key: s.key,
           label: v.label,
           link: v.link,
           where: v.where,
-          description: v.description,
+          description,
           minutes: v.minutes,
           selfMarkable: !!v.selfMarkable,
           sections: v.sections,

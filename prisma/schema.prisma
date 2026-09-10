@@ -2387,6 +2387,10 @@ model ProviderAgreementTemplate {
   agreementTemplateOriginalName String?
   pandaDocTemplateId            String?
   pandaDocRoles                 String? // JSON array of role names in signing order
+  /// The provider told us this service line does not use a signed parent
+  /// agreement (e.g. an IVF clinic). Satisfies the onboarding step and
+  /// silences the "no template" auto-draft nudge for that line.
+  notApplicable                 Boolean  @default(false)
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
 

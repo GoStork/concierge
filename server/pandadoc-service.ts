@@ -618,6 +618,8 @@ export type ResolvedAgreementTemplate = {
   agreementTemplateOriginalName: string | null;
   pandaDocTemplateId: string | null;
   pandaDocRoles: string | null;
+  /** The provider marked this service line as not using a signed agreement. */
+  notApplicable: boolean;
 };
 
 /**
@@ -640,6 +642,20 @@ export async function resolveAgreementTemplate(providerId: string, serviceType?:
         agreementTemplateOriginalName: row.agreementTemplateOriginalName,
         pandaDocTemplateId: row.pandaDocTemplateId,
         pandaDocRoles: row.pandaDocRoles,
+        notApplicable: false,
+      };
+    }
+    // An explicit "no agreement for this line" wins over the legacy
+    // provider-wide template - the provider said there is nothing to sign.
+    if (row?.notApplicable) {
+      return {
+        source: "service",
+        serviceType,
+        agreementTemplateUrl: null,
+        agreementTemplateOriginalName: null,
+        pandaDocTemplateId: null,
+        pandaDocRoles: null,
+        notApplicable: true,
       };
     }
   }
@@ -654,6 +670,7 @@ export async function resolveAgreementTemplate(providerId: string, serviceType?:
     agreementTemplateOriginalName: provider?.agreementTemplateOriginalName ?? null,
     pandaDocTemplateId: provider?.pandaDocTemplateId ?? null,
     pandaDocRoles: provider?.pandaDocRoles ?? null,
+    notApplicable: false,
   };
 }
 
