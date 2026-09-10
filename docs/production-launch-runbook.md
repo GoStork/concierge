@@ -954,10 +954,21 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   sales before launch since LATAM surrogacy is a core market. BUILT
   2026-08-19 (cadc6127 + e68d7035): legal-entity country on the Legal tab
   drives W-9 vs W-8BEN-E (second PandaDoc template set - [x] DONE
-  2026-09-10: IRS W-8BEN-E PDF (Rev. 10-2021) uploaded on prod, PandaDoc
-  template e3peERazYeqTC8tdBFHYW5, Signature + Print Name + Date fields
-  placed on page 8 Part XXX assigned to role "Client" (same as W-9),
-  roles cache refreshed - admin block shows Fields configured), local
+  2026-09-10: full fillable template live on prod as PandaDoc template
+  vmSsyZNZ97Kemr955b7eu3, role "Role 1", roles cache refreshed, admin
+  block shows Fields configured. Built by trimming the IRS fillable PDF
+  (Rev. 10-2021) to the 33 needed AcroForm fields (Part I lines 1-4/6/7,
+  lines 8/9a/9b/10, Part XXX capacity + signature + print + date - the
+  IRS PDF's own /Sig field imports as a REAL PandaDoc signature field),
+  creating a PandaDoc DOCUMENT from file with parse_form_fields:true +
+  per-field role mapping, then File > Convert to Template in the PandaDoc
+  app. Template-from-file does NOT support parse_form_fields - the
+  document-then-convert route is the only automated path. Line 3/7 and
+  TIN/GIIN/FTIN/ref fields set optional; name/country/address required.
+  Trimmed PDF stored as w8beneTemplateUrl (fw8bene-trimmed.pdf); the
+  trimming script pattern lives in this entry's commit context. Server
+  now passes parse_form_fields:true on template sync (dcfa08be) which is
+  inert for templates today but documents the intent), local
   tax-ID label, the
   invoice guardrail, the Stripe account country (recipient service
   agreement for non-US, EIN pre-filled only for US, in-app bank form
