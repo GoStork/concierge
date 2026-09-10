@@ -27,6 +27,7 @@ import {
 import { Request } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
+import { AppEventsService } from "../notifications/app-events.service";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { prisma } from "../../../db";
 import { isClinicianMember } from "./clinician";
@@ -219,8 +220,9 @@ export async function computeOnboarding(providerId: string): Promise<OnboardingS
   }
   const handoffTasks = (onbTasks as any[]).filter((t) => {
     const k = String(t.systemKey || "");
-    // Markers, not handoff tasks: manual check-offs + the welcome-email flag.
-    return !k.startsWith("onbmark:") && !k.startsWith("onbwelcome:");
+    // Markers, not handoff tasks: manual check-offs, the welcome-email flag,
+    // and the "admins were told it is complete" flag.
+    return !k.startsWith("onbmark:") && !k.startsWith("onbwelcome:") && !k.startsWith("onbcomplete:");
   });
   const tasksSentAt: string | null = handoffTasks.length
     ? new Date(Math.min(...handoffTasks.map((t) => new Date(t.createdAt).getTime()))).toISOString()
@@ -655,11 +657,296 @@ export async function sendProviderWelcomeEmails(notificationService: Notificatio
   return sent;
 }
 
+/** The provider's OWN onboarding view: their Phase 3 steps in second
+ *  person, derived from the same computeOnboarding - one truth, two
+ *  audiences. Module-level so the admin endpoint can evaluate the provider's
+ *  progress too (the completion notification fires from either side). */
+export function buildProviderOnboardingView(summary: OnboardingSummary) {
+
+  // `where` names the exact page in the provider's own navigation.
+  // `selfMarkable` steps are review-style: the page may already be fine as
+  // built, so the provider confirms with "Mark as done" (closes the
+  // underlying onb* task - the same mechanism the queue used).
+  // `optionalOverride` relaxes an admin-required step for the provider's
+  // view (inventory: some agencies genuinely have no available roster and
+  // match on their agency profile instead).
+  // `sections` (ordered) drives the coach bar's on-page tour: each entry
+  // matches a data-onb-anchor element on the step's page, and the bar
+  // scrolls to and highlights them one by one, PandaDoc-wizard style.
+  // `state` lets the coach bar show which sub-section is settled, and
+  // `skip` is an alternative action for one sub-section (e.g. "parents do
+  // not sign one" on an empty agreement card) - the bar calls it and moves
+  // on. Neither exists for whole-step marks; a step that derives from
+  // artifacts can only be settled sub-section by sub-section.
+  type StepSection = {
+    anchor: string;
+    label: string;
+    state?: "done" | "open";
+    skip?: { label: string; method: "PUT" | "POST"; url: string; body?: Record<string, unknown>; invalidate?: string[] };
+  };
+  const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean; sections?: StepSection[] }> = {
+    // The GoStork agreement lives on the provider's Legal tab (with the
+    // W-9) - Legal aggregates everything GoStork needs legally.
+    agreement: { label: "Sign the GoStork agreement", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 5,
+      description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." ,
+      sections: [{ anchor: "gostork-agreement", label: "GoStork Agreement" }] },
+    w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
+      description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." ,
+      sections: [{ anchor: "w9-section", label: "W-9" }] },
+    // No password_reset row here: anyone READING this list already set
+    // their password (first login lands on /account, where the Review My
+    // Account wizard takes over). The admin checklist keeps tracking it.
+    profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
+      description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." ,
+      sections: [
+        { anchor: "company-profile", label: "Company Profile" },
+        { anchor: "company-locations", label: "Locations" },
+        { anchor: "company-team", label: "Team Members" },
+      ] },
+    knowledge_review: { label: "Review what Eva knows about you", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
+      description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." ,
+      sections: [{ anchor: "ai-knowledge", label: "What Eva knows" }] },
+    doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
+      description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." ,
+      sections: [{ anchor: "doctor-records", label: "Doctor Records" }] },
+    // One task, three tour stops (the Legal page is the only one that
+    // keeps separate tasks per section): connect, set hours, check the
+    // booking link. Done = connected AND availability set (enforced below).
+    calendar: { label: "Set up your calendar and availability", link: "/account/calendar", where: "Settings -> Calendar", minutes: 7,
+      description: "Three things on this page: connect Google, Outlook, or Apple Calendar; set your Weekly Availability hours; then open Your Calendar Link and check the booking page parents will see.",
+      sections: [
+        { anchor: "calendar-connect", label: "Connected Calendars" },
+        { anchor: "availability", label: "Weekly Availability" },
+        { anchor: "booking-link", label: "Your Calendar Link" },
+      ] },
+    video_room: { label: "Review My Account", link: "/account", where: "Settings -> My Account", minutes: 2, selfMarkable: true,
+      description: "On My Account, check three things: your personal info and mobile number for text updates, your Video Room link, and your Connected Calendars.",
+      sections: [
+        { anchor: "personal-info", label: "Personal Information" },
+        { anchor: "video-room", label: "Video Room" },
+        { anchor: "connected-calendars", label: "Connected Calendars" },
+        { anchor: "calendar-link", label: "Your Calendar Link" },
+      ] },
+    legal_details: { label: "Complete your legal details", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
+      description: "Review both sections: Business identity (legal name, tax classification, tax ID) and Business address. They auto-fill from your signed W-9 - confirm and fix anything off.",
+      sections: [
+        { anchor: "business-identity", label: "Business identity" },
+        { anchor: "business-address", label: "Business address" },
+      ] },
+    stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
+      description: "Connect your bank account through Stripe so parent payments reach you." ,
+      sections: [
+        { anchor: "payouts-setup", label: "Payout setup" },
+        { anchor: "payout-identity", label: "Business identity" },
+      ] },
+    costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Cost Sheets", minutes: 10,
+      description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." ,
+      sections: [{ anchor: "cost-sheets", label: "Cost Sheets" }] },
+    agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agency Agreements", minutes: 5,
+      description: "Upload the agreements you send to parents so signing happens right inside GoStork." ,
+      sections: [{ anchor: "agency-templates", label: "Agreement Templates" }] },
+    // One Billing task, two tour stops: see the agreed GoStork fee, then
+    // choose the Parent Pays Basis (the choice is what completes it).
+    pay_basis: { label: "Review GoStork fees and how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 4,
+      description: "Two things on this page: see the referral fee agreed with GoStork for each of your services, then choose your Parent Pays Basis - how parents are invoiced.",
+      sections: [
+        { anchor: "gostork-fees", label: "GoStork Referral Fee" },
+        { anchor: "pay-basis", label: "Parent Pays Basis" },
+      ] },
+    team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
+      description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." ,
+      sections: [{ anchor: "team-members", label: "Team Members" }] },
+    ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
+      description: "Review your AI assistant's settings and the persona that speaks for your company - this is how it engages parents on your behalf." ,
+      sections: [{ anchor: "ai-assistant", label: "Your AI assistant" }] },
+    parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", where: "Settings -> Parent Form", minutes: 5, selfMarkable: true,
+      description: "Review the intake form parents complete before a match call, and tailor it if you like." ,
+      sections: [{ anchor: "parent-form", label: "Parent Form" }] },
+    playbooks: { label: "Configure playbooks", link: "/account/playbooks", where: "Settings -> Playbooks", minutes: 5, selfMarkable: true,
+      description: "Set up playbooks that automate your follow-ups with families." ,
+      sections: [{ anchor: "playbooks", label: "Playbooks" }] },
+    automation: { label: "Review automations", link: "/account/automation", where: "Settings -> Automation", minutes: 3, selfMarkable: true,
+      description: "Review all three sections: auto-replies, billing automation, and silence rules - sensible defaults are already on." ,
+      sections: [
+        { anchor: "auto-reply", label: "Auto-replies" },
+        { anchor: "billing", label: "Billing automation" },
+        { anchor: "silence", label: "Silence rules" },
+      ] },
+    branding: { label: "Review your branding", link: "/account/branding", where: "Settings -> Branding", minutes: 3, selfMarkable: true,
+      description: "Check your logo and brand colors - they appear on your parent-facing documents." ,
+      sections: [{ anchor: "branding", label: "Brand settings" }] },
+    sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
+      description: "See how sponsored placement can boost your visibility with matching families." ,
+      sections: [{ anchor: "sponsorship-dashboard", label: "Sponsorship" }] },
+  };
+  // The provider's journey order, by IMPORTANCE of each Settings page -
+  // Legal -> My Account -> Company -> Calendar -> Team -> Cost Sheets ->
+  // Agency Agreements -> Billing -> Payouts -> Parent Form -> inventory ->
+  // Sponsorship -> Automation -> Playbooks -> AI Concierge -> Branding.
+  // This same order drives the Settings tab strips on both sides.
+  const PROVIDER_ORDER = [
+    "agreement", "w9", "legal_details",
+    "video_room",
+    "profile_review",
+    "calendar",
+    "team",
+    "costs_uploaded",
+    "agreement_templates",
+    "pay_basis",
+    "stripe",
+    "parent_form_provider",
+    "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review",
+    "sponsorship",
+    "automation",
+    "playbooks",
+    "ai", "knowledge_review",
+    "branding",
+  ];
+  const orderOf = (key: string) => {
+    const i = PROVIDER_ORDER.indexOf(key);
+    return i === -1 ? 999 : i;
+  };
+  // Inventory steps are phrased by what the provider can actually do:
+  // egg/sperm donors are only scraped in by GoStork, so with profiles the
+  // step is "Review your X" (closed by marking) and with none it is hidden
+  // (nothing they can do). Surrogates can be uploaded manually, so an
+  // empty roster shows "Add your surrogates" instead.
+  const INVENTORY: Record<string, { noun: string; link: string; where: string; canUpload: boolean }> = {
+    scraper_egg: { noun: "egg donors", link: "/account/egg-donors", where: "Settings -> Egg Donors", canUpload: false },
+    scraper_surrogate: { noun: "surrogates", link: "/account/surrogates", where: "Settings -> Surrogates", canUpload: true },
+    scraper_sperm: { noun: "sperm donors", link: "/account/sperm-donors", where: "Settings -> Sperm Donors", canUpload: false },
+  };
+  const steps = summary.steps
+    .filter((s) => VIEW[s.key] || INVENTORY[s.key])
+    .map((s) => {
+      const inv = INVENTORY[s.key];
+      if (inv) {
+        const count = s.recordCount || 0;
+        if (count === 0 && !inv.canUpload) return null; // nothing synced, nothing to do
+        const review = count > 0;
+        return {
+          key: s.key,
+          label: review ? `Review your ${inv.noun}` : `Add your ${inv.noun}`,
+          link: inv.link,
+          where: inv.where,
+          description: review
+            ? `GoStork synced ${count} ${inv.noun} from your database - look through the profiles parents will see and flag anything that is off.`
+            : `Upload your available ${inv.noun} so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile.`,
+          minutes: review ? 10 : 15,
+          selfMarkable: true,
+          sections: [{ anchor: "profile-records", label: `${inv.noun[0].toUpperCase()}${inv.noun.slice(1)}` }],
+          // Review completes on the provider's word (the mark), never on
+          // the profile count the sync produced.
+          status: s.manuallyDone ? ("done" as const) : ("optional" as const),
+          isOptional: true,
+        };
+      }
+      const v = VIEW[s.key];
+      const isOptional = v.optionalOverride ?? !!s.isOptional;
+      // Per-line steps tell the provider exactly which lines are settled
+      // and which still need a file - one upload out of three otherwise
+      // looks like a finished job that never completes.
+      let description = v.description;
+      if (s.lines?.length && s.status !== "done") {
+        const settled = s.lines.filter((l) => l.state !== "missing").map((l) => l.label);
+        const missing = s.lines.filter((l) => l.state === "missing").map((l) => l.label);
+        description = `${settled.length ? `Done: ${settled.join(", ")}. ` : ""}Still needed: ${missing.join(", ")}. No signed agreement for one of them? Mark it as not applicable on its card.`;
+      }
+      // Multi-line steps tour one card per line: the flag on an empty
+      // card offers "not applicable" for THAT line, so nothing is ever
+      // marked done wholesale.
+      const sections: StepSection[] | undefined = s.lines && s.lines.length > 1
+        ? s.lines.map((l) => ({
+            anchor: `agreement-template-${l.key}`,
+            label: `${l.label} agreement`,
+            state: l.state === "missing" ? "open" : "done",
+            skip: l.state === "missing"
+              ? {
+                  label: "Parents don't sign one - not applicable",
+                  method: "PUT" as const,
+                  url: `/api/agreements/templates/${l.key}/not-applicable`,
+                  body: { notApplicable: true },
+                  invalidate: ["/api/agreements/templates"],
+                }
+              : undefined,
+          }))
+        : v.sections;
+      return {
+        key: s.key,
+        label: v.label,
+        link: v.link,
+        where: v.where,
+        description,
+        minutes: v.minutes,
+        selfMarkable: !!v.selfMarkable,
+        sections,
+        // "waiting on provider" IS their to-do; locked steps stay locked
+        // (e.g. signing before the document is sent). A step relaxed to
+        // optional for the provider also wears the optional status.
+        status: s.status === "done" || s.status === "locked"
+          ? s.status
+          : isOptional ? "optional" : "pending",
+        isOptional,
+      };
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null);
+  // The merged calendar task absorbs the availability requirement: it only
+  // reads done once the calendar is connected AND hours are set (both are
+  // still separate rows on the admin checklist).
+  {
+    const cal = steps.find((s) => s.key === "calendar");
+    const availabilityDone = summary.steps.find((s) => s.key === "availability")?.status === "done";
+    if (cal && cal.status === "done" && !availabilityDone) cal.status = "pending";
+  }
+  // Steps that live on the same Settings tab always sit together (the way
+  // Stripe's setup guide groups its sections). The order is STATIC - groups
+  // in journey order (by their first step), journey order inside each
+  // group - it never reshuffles as steps complete. The Next badge simply
+  // marks the current task wherever it sits in the list.
+  type ProviderStep = (typeof steps)[number];
+  const groupsByWhere = new Map<string, ProviderStep[]>();
+  for (const s of steps) {
+    const list = groupsByWhere.get(s.where);
+    if (list) list.push(s);
+    else groupsByWhere.set(s.where, [s]);
+  }
+  const orderedSteps = [...groupsByWhere.values()]
+    .map((list) => list.sort((a, b) => orderOf(a.key) - orderOf(b.key)))
+    .sort((a, b) => orderOf(a[0].key) - orderOf(b[0].key))
+    .flat();
+  const required = orderedSteps.filter((s) => !s.isOptional);
+  const doneCount = required.filter((s) => s.status === "done").length;
+  // The recommended next action: first unlocked required step in display
+  // order, then first unlocked optional one. Free order stays - this is a
+  // suggestion. The same key wears the Next badge in the list, so the
+  // "Next up" card and the list always agree.
+  const nextKey =
+    orderedSteps.find((s) => !s.isOptional && s.status === "pending")?.key ||
+    orderedSteps.find((s) => s.status === "pending" || s.status === "optional")?.key ||
+    null;
+  // Required steps drive the percent; optional pages still count as OPEN
+  // work for the coach bar, which keeps walking until nothing is left.
+  const openOptionalCount = orderedSteps.filter((s) => s.isOptional && (s.status === "optional" || s.status === "pending")).length;
+  const allDone = orderedSteps.every((s) => s.status === "done" || s.status === "locked") && doneCount === required.length;
+  return {
+    steps: orderedSteps,
+    nextKey,
+    doneCount,
+    requiredCount: required.length,
+    percent: required.length ? Math.round((doneCount / required.length) * 100) : 0,
+    openOptionalCount,
+    allDone,
+  };
+}
+
 @Controller()
 export class ProviderOnboardingController {
   // Explicit @Inject: the esbuild bundle emits no design:type metadata, so
   // plain constructor injection resolves to undefined at runtime.
-  constructor(@Inject(NotificationService) private readonly notificationService: NotificationService) {}
+  constructor(
+    @Inject(NotificationService) private readonly notificationService: NotificationService,
+    @Inject(AppEventsService) private readonly appEvents: AppEventsService,
+  ) {}
 
   /** Send the provider admin(s) their welcome email: login email + a
    *  set-password link (7-day token). The onboarding "Send welcome email"
@@ -702,9 +989,6 @@ export class ProviderOnboardingController {
     await db.provider.update({ where: { id }, data: { welcomeRemindCount: 0 } }).catch(() => {});
     return { sent };
   }
-  /** The provider's OWN onboarding view: their Phase 3 steps in second
-   *  person, derived from the same computeOnboarding - one truth, two
-   *  audiences. */
   @Get("api/provider/onboarding")
   @UseGuards(SessionOrJwtGuard)
   async myOnboarding(@Req() req: Request) {
@@ -712,275 +996,62 @@ export class ProviderOnboardingController {
     if (!user?.providerId) throw new ForbiddenException("Providers only");
     const summary = await computeOnboarding(user.providerId);
     if (!summary) throw new NotFoundException("Provider not found");
+    const view = buildProviderOnboardingView(summary);
+    await this.maybeNotifyOnboardingComplete(summary, view.percent);
+    return view;
+  }
 
-    // `where` names the exact page in the provider's own navigation.
-    // `selfMarkable` steps are review-style: the page may already be fine as
-    // built, so the provider confirms with "Mark as done" (closes the
-    // underlying onb* task - the same mechanism the queue used).
-    // `optionalOverride` relaxes an admin-required step for the provider's
-    // view (inventory: some agencies genuinely have no available roster and
-    // match on their agency profile instead).
-    // `sections` (ordered) drives the coach bar's on-page tour: each entry
-    // matches a data-onb-anchor element on the step's page, and the bar
-    // scrolls to and highlights them one by one, PandaDoc-wizard style.
-    // `state` lets the coach bar show which sub-section is settled, and
-    // `skip` is an alternative action for one sub-section (e.g. "parents do
-    // not sign one" on an empty agreement card) - the bar calls it and moves
-    // on. Neither exists for whole-step marks; a step that derives from
-    // artifacts can only be settled sub-section by sub-section.
-    type StepSection = {
-      anchor: string;
-      label: string;
-      state?: "done" | "open";
-      skip?: { label: string; method: "PUT" | "POST"; url: string; body?: Record<string, unknown>; invalidate?: string[] };
-    };
-    const VIEW: Record<string, { label: string; link: string; where: string; description: string; minutes: number; selfMarkable?: boolean; optionalOverride?: boolean; sections?: StepSection[] }> = {
-      // The GoStork agreement lives on the provider's Legal tab (with the
-      // W-9) - Legal aggregates everything GoStork needs legally.
-      agreement: { label: "Sign the GoStork agreement", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 5,
-        description: "Review and sign your GoStork service agreement - it is what lets us start sending families your way." ,
-        sections: [{ anchor: "gostork-agreement", label: "GoStork Agreement" }] },
-      w9: { label: "Complete your W-9", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
-        description: "Fill in your W-9 so we can pay you. It only takes a couple of minutes." ,
-        sections: [{ anchor: "w9-section", label: "W-9" }] },
-      // No password_reset row here: anyone READING this list already set
-      // their password (first login lands on /account, where the Review My
-      // Account wizard takes over). The admin checklist keeps tracking it.
-      profile_review: { label: "Review your company profile", link: "/account/company", where: "Settings -> Company", minutes: 10, selfMarkable: true,
-        description: "Check the profile we built for you - description, photos, locations, and contact details - and fix anything that is off. This is what parents see." ,
-        sections: [
-          { anchor: "company-profile", label: "Company Profile" },
-          { anchor: "company-locations", label: "Locations" },
-          { anchor: "company-team", label: "Team Members" },
-        ] },
-      knowledge_review: { label: "Review what Eva knows about you", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
-        description: "Eva answers parents using your website and documents - check what she knows and add your FAQs or program guides." ,
-        sections: [{ anchor: "ai-knowledge", label: "What Eva knows" }] },
-      doctors_review: { label: "Review your doctors", link: "/account/doctors", where: "Settings -> Doctors", minutes: 10, selfMarkable: true,
-        description: "GoStork built profiles for your doctors - look through what parents will see and flag anything that is off." ,
-        sections: [{ anchor: "doctor-records", label: "Doctor Records" }] },
-      // One task, three tour stops (the Legal page is the only one that
-      // keeps separate tasks per section): connect, set hours, check the
-      // booking link. Done = connected AND availability set (enforced below).
-      calendar: { label: "Set up your calendar and availability", link: "/account/calendar", where: "Settings -> Calendar", minutes: 7,
-        description: "Three things on this page: connect Google, Outlook, or Apple Calendar; set your Weekly Availability hours; then open Your Calendar Link and check the booking page parents will see.",
-        sections: [
-          { anchor: "calendar-connect", label: "Connected Calendars" },
-          { anchor: "availability", label: "Weekly Availability" },
-          { anchor: "booking-link", label: "Your Calendar Link" },
-        ] },
-      video_room: { label: "Review My Account", link: "/account", where: "Settings -> My Account", minutes: 2, selfMarkable: true,
-        description: "On My Account, check three things: your personal info and mobile number for text updates, your Video Room link, and your Connected Calendars.",
-        sections: [
-          { anchor: "personal-info", label: "Personal Information" },
-          { anchor: "video-room", label: "Video Room" },
-          { anchor: "connected-calendars", label: "Connected Calendars" },
-          { anchor: "calendar-link", label: "Your Calendar Link" },
-        ] },
-      legal_details: { label: "Complete your legal details", link: "/account/legal-identity", where: "Settings -> Legal", minutes: 3,
-        description: "Review both sections: Business identity (legal name, tax classification, tax ID) and Business address. They auto-fill from your signed W-9 - confirm and fix anything off.",
-        sections: [
-          { anchor: "business-identity", label: "Business identity" },
-          { anchor: "business-address", label: "Business address" },
-        ] },
-      stripe: { label: "Connect payouts", link: "/account/payouts", where: "Settings -> Payouts", minutes: 5,
-        description: "Connect your bank account through Stripe so parent payments reach you." ,
-        sections: [
-          { anchor: "payouts-setup", label: "Payout setup" },
-          { anchor: "payout-identity", label: "Business identity" },
-        ] },
-      costs_uploaded: { label: "Upload your cost sheet(s)", link: "/account/costs", where: "Settings -> Cost Sheets", minutes: 10,
-        description: "Upload a cost sheet for each program you offer - parents compare programs by cost, so this is how you show up." ,
-        sections: [{ anchor: "cost-sheets", label: "Cost Sheets" }] },
-      agreement_templates: { label: "Upload your agency agreement templates", link: "/account/documents", where: "Settings -> Agency Agreements", minutes: 5,
-        description: "Upload the agreements you send to parents so signing happens right inside GoStork." ,
-        sections: [{ anchor: "agency-templates", label: "Agreement Templates" }] },
-      // One Billing task, two tour stops: see the agreed GoStork fee, then
-      // choose the Parent Pays Basis (the choice is what completes it).
-      pay_basis: { label: "Review GoStork fees and how parents are invoiced", link: "/account/billing", where: "Settings -> Billing", minutes: 4,
-        description: "Two things on this page: see the referral fee agreed with GoStork for each of your services, then choose your Parent Pays Basis - how parents are invoiced.",
-        sections: [
-          { anchor: "gostork-fees", label: "GoStork Referral Fee" },
-          { anchor: "pay-basis", label: "Parent Pays Basis" },
-        ] },
-      team: { label: "Add your team & assign roles", link: "/account/team", where: "Settings -> Team", minutes: 5, selfMarkable: true,
-        description: "Invite teammates and assign their roles and service lines so the right person sees each family. Just you? Mark it done." ,
-        sections: [{ anchor: "team-members", label: "Team Members" }] },
-      ai: { label: "Set up your AI Concierge", link: "/account/concierge", where: "Settings -> AI Concierge", minutes: 5, selfMarkable: true,
-        description: "Review your AI assistant's settings and the persona that speaks for your company - this is how it engages parents on your behalf." ,
-        sections: [{ anchor: "ai-assistant", label: "Your AI assistant" }] },
-      parent_form_provider: { label: "Review your Parent Form", link: "/account/parent-form", where: "Settings -> Parent Form", minutes: 5, selfMarkable: true,
-        description: "Review the intake form parents complete before a match call, and tailor it if you like." ,
-        sections: [{ anchor: "parent-form", label: "Parent Form" }] },
-      playbooks: { label: "Configure playbooks", link: "/account/playbooks", where: "Settings -> Playbooks", minutes: 5, selfMarkable: true,
-        description: "Set up playbooks that automate your follow-ups with families." ,
-        sections: [{ anchor: "playbooks", label: "Playbooks" }] },
-      automation: { label: "Review automations", link: "/account/automation", where: "Settings -> Automation", minutes: 3, selfMarkable: true,
-        description: "Review all three sections: auto-replies, billing automation, and silence rules - sensible defaults are already on." ,
-        sections: [
-          { anchor: "auto-reply", label: "Auto-replies" },
-          { anchor: "billing", label: "Billing automation" },
-          { anchor: "silence", label: "Silence rules" },
-        ] },
-      branding: { label: "Review your branding", link: "/account/branding", where: "Settings -> Branding", minutes: 3, selfMarkable: true,
-        description: "Check your logo and brand colors - they appear on your parent-facing documents." ,
-        sections: [{ anchor: "branding", label: "Brand settings" }] },
-      sponsorship: { label: "Explore sponsorship", link: "/account/sponsorship", where: "Settings -> Sponsorship", minutes: 2, selfMarkable: true,
-        description: "See how sponsored placement can boost your visibility with matching families." ,
-        sections: [{ anchor: "sponsorship-dashboard", label: "Sponsorship" }] },
-    };
-    // The provider's journey order, by IMPORTANCE of each Settings page -
-    // Legal -> My Account -> Company -> Calendar -> Team -> Cost Sheets ->
-    // Agency Agreements -> Billing -> Payouts -> Parent Form -> inventory ->
-    // Sponsorship -> Automation -> Playbooks -> AI Concierge -> Branding.
-    // This same order drives the Settings tab strips on both sides.
-    const PROVIDER_ORDER = [
-      "agreement", "w9", "legal_details",
-      "video_room",
-      "profile_review",
-      "calendar",
-      "team",
-      "costs_uploaded",
-      "agreement_templates",
-      "pay_basis",
-      "stripe",
-      "parent_form_provider",
-      "scraper_egg", "scraper_surrogate", "scraper_sperm", "doctors_review",
-      "sponsorship",
-      "automation",
-      "playbooks",
-      "ai", "knowledge_review",
-      "branding",
-    ];
-    const orderOf = (key: string) => {
-      const i = PROVIDER_ORDER.indexOf(key);
-      return i === -1 ? 999 : i;
-    };
-    // Inventory steps are phrased by what the provider can actually do:
-    // egg/sperm donors are only scraped in by GoStork, so with profiles the
-    // step is "Review your X" (closed by marking) and with none it is hidden
-    // (nothing they can do). Surrogates can be uploaded manually, so an
-    // empty roster shows "Add your surrogates" instead.
-    const INVENTORY: Record<string, { noun: string; link: string; where: string; canUpload: boolean }> = {
-      scraper_egg: { noun: "egg donors", link: "/account/egg-donors", where: "Settings -> Egg Donors", canUpload: false },
-      scraper_surrogate: { noun: "surrogates", link: "/account/surrogates", where: "Settings -> Surrogates", canUpload: true },
-      scraper_sperm: { noun: "sperm donors", link: "/account/sperm-donors", where: "Settings -> Sperm Donors", canUpload: false },
-    };
-    const steps = summary.steps
-      .filter((s) => VIEW[s.key] || INVENTORY[s.key])
-      .map((s) => {
-        const inv = INVENTORY[s.key];
-        if (inv) {
-          const count = s.recordCount || 0;
-          if (count === 0 && !inv.canUpload) return null; // nothing synced, nothing to do
-          const review = count > 0;
-          return {
-            key: s.key,
-            label: review ? `Review your ${inv.noun}` : `Add your ${inv.noun}`,
-            link: inv.link,
-            where: inv.where,
-            description: review
-              ? `GoStork synced ${count} ${inv.noun} from your database - look through the profiles parents will see and flag anything that is off.`
-              : `Upload your available ${inv.noun} so parents can browse them. No live roster right now? Mark it done - parents will match with your agency profile.`,
-            minutes: review ? 10 : 15,
-            selfMarkable: true,
-            sections: [{ anchor: "profile-records", label: `${inv.noun[0].toUpperCase()}${inv.noun.slice(1)}` }],
-            // Review completes on the provider's word (the mark), never on
-            // the profile count the sync produced.
-            status: s.manuallyDone ? ("done" as const) : ("optional" as const),
-            isOptional: true,
-          };
-        }
-        const v = VIEW[s.key];
-        const isOptional = v.optionalOverride ?? !!s.isOptional;
-        // Per-line steps tell the provider exactly which lines are settled
-        // and which still need a file - one upload out of three otherwise
-        // looks like a finished job that never completes.
-        let description = v.description;
-        if (s.lines?.length && s.status !== "done") {
-          const settled = s.lines.filter((l) => l.state !== "missing").map((l) => l.label);
-          const missing = s.lines.filter((l) => l.state === "missing").map((l) => l.label);
-          description = `${settled.length ? `Done: ${settled.join(", ")}. ` : ""}Still needed: ${missing.join(", ")}. No signed agreement for one of them? Mark it as not applicable on its card.`;
-        }
-        // Multi-line steps tour one card per line: the flag on an empty
-        // card offers "not applicable" for THAT line, so nothing is ever
-        // marked done wholesale.
-        const sections: StepSection[] | undefined = s.lines && s.lines.length > 1
-          ? s.lines.map((l) => ({
-              anchor: `agreement-template-${l.key}`,
-              label: `${l.label} agreement`,
-              state: l.state === "missing" ? "open" : "done",
-              skip: l.state === "missing"
-                ? {
-                    label: "Parents don't sign one - not applicable",
-                    method: "PUT" as const,
-                    url: `/api/agreements/templates/${l.key}/not-applicable`,
-                    body: { notApplicable: true },
-                    invalidate: ["/api/agreements/templates"],
-                  }
-                : undefined,
-            }))
-          : v.sections;
-        return {
-          key: s.key,
-          label: v.label,
-          link: v.link,
-          where: v.where,
-          description,
-          minutes: v.minutes,
-          selfMarkable: !!v.selfMarkable,
-          sections,
-          // "waiting on provider" IS their to-do; locked steps stay locked
-          // (e.g. signing before the document is sent). A step relaxed to
-          // optional for the provider also wears the optional status.
-          status: s.status === "done" || s.status === "locked"
-            ? s.status
-            : isOptional ? "optional" : "pending",
-          isOptional,
-        };
-      })
-      .filter((s): s is NonNullable<typeof s> => s !== null);
-    // The merged calendar task absorbs the availability requirement: it only
-    // reads done once the calendar is connected AND hours are set (both are
-    // still separate rows on the admin checklist).
-    {
-      const cal = steps.find((s) => s.key === "calendar");
-      const availabilityDone = summary.steps.find((s) => s.key === "availability")?.status === "done";
-      if (cal && cal.status === "done" && !availabilityDone) cal.status = "pending";
+  /** The moment a provider's required steps all read done, tell every
+   *  GoStork admin once - live toast (persisted for offline admins) plus a
+   *  branded email. Idempotent via the onbcomplete:<providerId> DONE marker
+   *  task, so polling never re-fires it. Never throws into the caller. */
+  private async maybeNotifyOnboardingComplete(summary: OnboardingSummary, providerPercent: number) {
+    if (providerPercent < 100) return;
+    const db = prisma as any;
+    const systemKey = `onbcomplete:${summary.providerId}`;
+    try {
+      const existing = await db.parentTask.findUnique({ where: { systemKey }, select: { id: true } });
+      if (existing) return;
+      const now = new Date();
+      await db.parentTask.create({
+        data: {
+          parentAccountId: summary.providerId,
+          scope: "PROVIDER",
+          providerId: summary.providerId,
+          title: "Provider finished onboarding - GoStork admins notified",
+          type: "TODO",
+          priority: "LOW",
+          source: "SYSTEM",
+          systemKey,
+          status: "DONE",
+          dueAt: now,
+          completedAt: now,
+        },
+      });
+    } catch (e: any) {
+      // A concurrent poll won the race on the unique systemKey - it sends.
+      console.warn(`[onboarding] completion marker for ${summary.providerId} not written: ${e?.message}`);
+      return;
     }
-    // Steps that live on the same Settings tab always sit together (the way
-    // Stripe's setup guide groups its sections). The order is STATIC - groups
-    // in journey order (by their first step), journey order inside each
-    // group - it never reshuffles as steps complete. The Next badge simply
-    // marks the current task wherever it sits in the list.
-    type ProviderStep = (typeof steps)[number];
-    const groupsByWhere = new Map<string, ProviderStep[]>();
-    for (const s of steps) {
-      const list = groupsByWhere.get(s.where);
-      if (list) list.push(s);
-      else groupsByWhere.set(s.where, [s]);
+    try {
+      const admins = await db.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false }, select: { id: true } });
+      await this.appEvents.emit({
+        type: "provider_onboarding_complete",
+        targetUserIds: admins.map((a: any) => a.id),
+        payload: {
+          providerId: summary.providerId,
+          providerName: summary.providerName,
+          message: `${summary.providerName} finished onboarding - review and approve their services to go live`,
+        },
+      });
+      await this.notificationService.sendProviderOnboardingCompleteNotification({
+        providerId: summary.providerId,
+        providerName: summary.providerName,
+      });
+      console.log(`[onboarding] ${summary.providerName} finished onboarding - ${admins.length} admin(s) notified`);
+    } catch (e: any) {
+      console.error(`[onboarding] completion notification failed for ${summary.providerId}: ${e?.message}`);
     }
-    const orderedSteps = [...groupsByWhere.values()]
-      .map((list) => list.sort((a, b) => orderOf(a.key) - orderOf(b.key)))
-      .sort((a, b) => orderOf(a[0].key) - orderOf(b[0].key))
-      .flat();
-    const required = orderedSteps.filter((s) => !s.isOptional);
-    const doneCount = required.filter((s) => s.status === "done").length;
-    // The recommended next action: first unlocked required step in display
-    // order, then first unlocked optional one. Free order stays - this is a
-    // suggestion. The same key wears the Next badge in the list, so the
-    // "Next up" card and the list always agree.
-    const nextKey =
-      orderedSteps.find((s) => !s.isOptional && s.status === "pending")?.key ||
-      orderedSteps.find((s) => s.status === "pending" || s.status === "optional")?.key ||
-      null;
-    return {
-      steps: orderedSteps,
-      nextKey,
-      doneCount,
-      requiredCount: required.length,
-      percent: required.length ? Math.round((doneCount / required.length) * 100) : 0,
-    };
   }
 
   /** The provider confirms a review-style step themselves ("all good here").
@@ -1073,6 +1144,7 @@ export class ProviderOnboardingController {
     requireAdmin(req);
     const summary = await computeOnboarding(id);
     if (!summary) throw new NotFoundException("Provider not found");
+    await this.maybeNotifyOnboardingComplete(summary, buildProviderOnboardingView(summary).percent);
     return summary;
   }
 

@@ -58,6 +58,7 @@ export type NotificationChannel =
   // A provider requested a new service line (status NEW) - admins must
   // review and approve it before it goes live in the marketplace.
   | "provider_service_requested"
+  | "provider_onboarding_complete"
   // A provider retired one of its APPROVED service lines - FYI to admins,
   // nothing to approve (the line is already unpublished).
   | "provider_service_removed"
@@ -3323,6 +3324,44 @@ export class NotificationService implements OnModuleInit {
         subject,
         body: html,
       }).catch(e => this.logger.error(`Failed to send service request email to ${admin.email}: ${e.message}`));
+    }
+  }
+
+  /** A provider completed every required onboarding step. Admins get the
+   *  nudge to do the one thing left on GoStork's side: approve the services,
+   *  which is what publishes the provider. */
+  async sendProviderOnboardingCompleteNotification(params: {
+    providerId: string;
+    providerName: string;
+  }) {
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { id: true, email: true, name: true },
+    });
+    if (admins.length === 0) return;
+    const brandData = await this.getBrandData();
+    const subject = `${params.providerName} finished onboarding - ready to go live`;
+    const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=profile`;
+
+    for (const admin of admins) {
+      if (!admin.email) continue;
+      const firstName = admin.name ? getFirstName(admin.name) : "there";
+      const html = buildBrandedEmail(brandData, {
+        title: "Provider Onboarding Complete",
+        greeting: `Hi ${firstName},`,
+        body: `<strong>${this.escapeHtml(params.providerName)}</strong> completed every required step of their onboarding - agreement, W-9, profile, calendar, cost sheets, agreement templates, billing basis, and payouts.`,
+        alertBox: { text: "The last step is yours: review their profile and approve their services to publish them in the marketplace and to Eva.", type: "info" },
+        buttons: [{ label: "Review and Go Live", url: reviewUrl }],
+        footer: "Approving the services is the publish switch - nothing is visible to parents until you do.",
+      });
+      await this.dispatchNotification({
+        userId: admin.id,
+        type: "EMAIL",
+        channel: "provider_onboarding_complete",
+        recipient: admin.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send onboarding-complete email to ${admin.email}: ${e.message}`));
     }
   }
 

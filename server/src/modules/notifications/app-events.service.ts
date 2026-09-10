@@ -5,7 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { trackConnect, trackDisconnect, getConnectedCount } from "../../../online-tracker";
 
 export interface AppEvent {
-  type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted" | "human_escalation" | "human_concluded" | "user_profile_updated" | "parent_ready_to_proceed" | "provider_service_requested";
+  type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted" | "human_escalation" | "human_concluded" | "user_profile_updated" | "parent_ready_to_proceed" | "provider_service_requested" | "provider_onboarding_complete";
   payload: Record<string, any>;
   targetUserIds: string[];
   actorUserId?: string;
@@ -93,6 +93,9 @@ export class AppEventsService {
         // A provider asked GoStork to approve a new service line - admins get
         // the toast on next connect if they were offline when it was requested.
         "provider_service_requested",
+        // A provider finished every required onboarding step - admins get the
+        // toast on next connect if they were offline at the time.
+        "provider_onboarding_complete",
       ];
 
       const unseen = await this.prisma.inAppNotification.findMany({

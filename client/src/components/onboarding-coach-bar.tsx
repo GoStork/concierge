@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { CheckCircle2, ListChecks, ArrowRight, ArrowDown, Clock, Check, FileX2 } from "lucide-react";
 import { useProviderOnboarding, type OwnStep } from "@/components/provider-own-onboarding";
+import { CelebrationBurst } from "@/components/chat/celebration-burst";
 
 type TourSection = NonNullable<OwnStep["sections"]>[number];
 
@@ -125,10 +126,13 @@ export function OnboardingCoachBar() {
   }, [location.pathname]);
 
   const steps = data?.steps || [];
-  // At 100% the bar retires - except for the one render where the LAST step
-  // flipped to done right here, which earns a "setup complete" send-off
-  // instead of silently vanishing.
-  const complete = !!data && data.percent >= 100;
+  // Required steps hit 100% first (the milestone parents care about), but
+  // the bar keeps walking the optional pages until nothing is open. It
+  // retires only when ALL of it is done - except for the one render where
+  // the last step flipped right here, which earns a send-off instead of a
+  // silent vanish.
+  const requiredComplete = !!data && data.percent >= 100;
+  const complete = !!data && data.allDone;
   const hidden = !data || (complete && !celebrateKey);
   const next = steps.find((s) => s.key === data?.nextKey) || null;
   const onPage = steps.filter((s) => s.link === location.pathname);
@@ -357,11 +361,22 @@ export function OnboardingCoachBar() {
         className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[color-mix(in_srgb,hsl(var(--brand-success))_8%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
         data-testid="onboarding-coach-done"
       >
+        {/* Fireworks the moment the required setup completes (same show as
+            a payment landing in chat); confetti when the optional pages are
+            walked too. Once per tab, via the burst's own guard. */}
+        {requiredComplete && !celebrated.isOptional && (
+          <CelebrationBurst messageId="onboarding-required-complete" createdAt={new Date().toISOString()} kind="payment_received" />
+        )}
+        {complete && celebrated.isOptional && (
+          <CelebrationBurst messageId="onboarding-all-complete" createdAt={new Date().toISOString()} kind="match_confirmed" />
+        )}
         <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success))] shrink-0" />
         <div className="flex-1 min-w-0 text-sm">
           <span className="font-medium">{celebrated.label} - done!</span>
           {complete ? (
-            <span className="text-muted-foreground"> That was the last one - your setup is complete and parents can find you.</span>
+            <span className="text-muted-foreground"> Every page reviewed - your setup is complete and parents can find you.</span>
+          ) : requiredComplete && !celebrated.isOptional ? (
+            <span className="text-muted-foreground"> All required steps are done - parents can find you. {data.openOptionalCount} optional page{data.openOptionalCount === 1 ? "" : "s"} worth a look next.</span>
           ) : next ? (
             <span className="text-muted-foreground"> {data.doneCount}/{data.requiredCount} steps complete.</span>
           ) : null}
@@ -452,14 +467,14 @@ export function OnboardingCoachBar() {
     >
       <div className="flex-1 min-w-0 flex items-center gap-3">
         <span className="text-sm font-medium shrink-0">
-          Getting started - {data.doneCount}/{data.requiredCount}
+          {requiredComplete ? "Setup complete" : `Getting started - ${data.doneCount}/${data.requiredCount}`}
         </span>
         <span className="flex-1 min-w-[60px] max-w-[180px] h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden">
           <span className="block h-full rounded-full bg-[hsl(var(--primary))] transition-all" style={{ width: `${data.percent}%` }} />
         </span>
       </div>
       <Button size="sm" variant="outline" onClick={() => navigate(next.link)} data-testid="onboarding-coach-continue">
-        Continue setup: {next.label}
+        {next.isOptional ? `Optional: ${next.label}` : `Continue setup: ${next.label}`}
         <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
       </Button>
     </div>

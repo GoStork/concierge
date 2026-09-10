@@ -57,6 +57,10 @@ export type OwnStep = {
 export type OwnOnboarding = {
   steps: OwnStep[];
   nextKey: string | null;
+  /** Optional pages still open - the coach bar keeps walking until zero. */
+  openOptionalCount: number;
+  /** Nothing left at all, required or optional. */
+  allDone: boolean;
   doneCount: number;
   requiredCount: number;
   percent: number;
@@ -107,7 +111,9 @@ export function ProviderOwnOnboarding() {
   const { data } = useProviderOnboarding();
 
   if (!data) return null;
-  if (data.percent >= 100) return null;
+  // Retire only when the optional pages are walked too - required-complete
+  // still has "worth a look" work to point at.
+  if (data.allDone) return null;
 
   const next = data.steps.find((s) => s.key === data.nextKey) || null;
   // Full list open until they are properly underway, then folded behind the
@@ -122,7 +128,9 @@ export function ProviderOwnOnboarding() {
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-sm font-medium">
-            Getting started - {data.doneCount}/{data.requiredCount} steps done
+            {data.percent >= 100
+              ? `Setup complete - ${data.openOptionalCount} optional page${data.openOptionalCount === 1 ? "" : "s"} worth a look`
+              : `Getting started - ${data.doneCount}/${data.requiredCount} steps done`}
           </span>
           <span className="mt-1 block h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden">
             <span

@@ -562,6 +562,43 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  // A provider finished every required onboarding step - the admin's move is
+  // to approve their services, which is the publish switch.
+  const handleProviderOnboardedEvent = useCallback((data: any) => {
+    if (data.type !== "provider_onboarding_complete") return;
+
+    const title = `${data.providerName || "A provider"} finished onboarding`;
+    const description = "All required steps are done - review their profile and approve services to go live.";
+
+    playNotificationChime();
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/onboarding/pending"] });
+
+    const { id: toastId } = toast({
+      title,
+      description,
+      variant: "success",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate(`/admin/providers/${data.providerId}?tab=profile`); }}
+          data-testid="button-review-onboarded-provider-from-toast"
+        >
+          Review
+        </Button>
+      ),
+      duration: 30000,
+    });
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(title, { body: description, icon: "/favicon.ico", tag: `provider-onboarded-${data.providerId}` });
+      } catch {}
+    }
+  }, [toast, dismiss, navigate]);
+
   useEffect(() => {
     if (!user) return;
     if ("Notification" in window && Notification.permission === "default") {
@@ -594,6 +631,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
         handleIpFormPhotocopyRequestEvent(data);
         handleServiceRequestedEvent(data);
+        handleProviderOnboardedEvent(data);
       } catch {}
     };
 
