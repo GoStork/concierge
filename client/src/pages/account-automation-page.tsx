@@ -208,7 +208,7 @@ function SilenceSection({ orgId }: { orgId?: string }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-onb-anchor="silence" data-onb-label="Silence signal">
       <SectionHeading
         id="silence"
         title="Silence signal"
@@ -387,7 +387,7 @@ function BillingAutomationSection({ orgId }: { orgId?: string }) {
             ];
         const selected = selectedFor(group.key);
         return (
-          <div key={group.key} className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
+          <div key={group.key} className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3" data-onb-anchor={`automation-${group.key}`} data-onb-label={group.title}>
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-primary" />
               <h3 className="text-sm font-heading">{group.title}</h3>
@@ -475,7 +475,7 @@ export default function AccountAutomationPage({ providerId: providerIdProp }: { 
       {providerId && (
         <>
           <div className="border-t border-border" />
-          <div id="auto-reply" className="scroll-mt-24">
+          <div id="auto-reply" className="scroll-mt-24" data-onb-anchor="auto-reply" data-onb-label="Booking auto-reply">
             <ProviderAutoReplyTab providerId={orgId} />
           </div>
           <div className="border-t border-border" />

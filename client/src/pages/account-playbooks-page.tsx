@@ -406,7 +406,7 @@ export default function AccountPlaybooksPage({ providerId }: { providerId?: stri
         </div>
       ) : (
         <>
-          <div className="space-y-2">
+          <div className="space-y-2" data-onb-anchor="playbooks-yours" data-onb-label="Your playbooks">
             <h3 className="text-sm font-heading text-muted-foreground">
               {isAdmin ? "GoStork playbooks" : "Your playbooks"}
             </h3>
@@ -421,7 +421,7 @@ export default function AccountPlaybooksPage({ providerId }: { providerId?: stri
           </div>
 
           {(data?.starters || []).length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2" data-onb-anchor="playbooks-starters" data-onb-label="GoStork starters">
               <h3 className="text-sm font-heading text-muted-foreground">GoStork starters</h3>
               {(data?.starters || []).map((pb) => (
                 <PlaybookCard key={pb.id} pb={pb} isAdmin={isAdmin} providerId={providerId} onEdit={isAdmin ? () => setEditing(pb) : undefined} />

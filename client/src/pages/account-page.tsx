@@ -1997,7 +1997,7 @@ export default function AccountPage() {
         )}
         <Route path="branding" element={
           isAdmin ? <BrandSettingsTab /> :
-          isProvider && providerId ? <div data-onb-anchor="branding"><BrandSettingsForm
+          isProvider && providerId ? <div><BrandSettingsForm
             getEndpoint={`/api/brand/provider/${providerId}`}
             putEndpoint={`/api/brand/provider/${providerId}`}
             resetEndpoint={`/api/brand/provider/${providerId}/reset`}
@@ -2016,7 +2016,7 @@ export default function AccountPage() {
           ) : <ConciergeSettingsTab />
         } />
         {(isProvider || isAdmin) && (
-          <Route path="playbooks" element={<div data-onb-anchor="playbooks"><AccountPlaybooksPage /></div>} />
+          <Route path="playbooks" element={<AccountPlaybooksPage />} />
         )}
         {(isProvider || isAdmin) && (
           <Route path="automation" element={<AccountAutomationPage />} />

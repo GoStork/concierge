@@ -184,20 +184,26 @@ export function OnboardingCoachBar() {
     const attempt = () => {
       if (cancelled) return;
       const declared = declaredSections || [];
-      const list: TourSection[] = [];
+      const found: Array<{ el: HTMLElement; section: TourSection }> = [];
       for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-onb-anchor]"))) {
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) continue; // not rendered
         const a = el.getAttribute("data-onb-anchor")!;
-        if (list.some((x) => x.anchor === a)) continue;
+        if (found.some((x) => x.section.anchor === a)) continue;
         const d = declared.find((s) => s.anchor === a);
         const heading = el.querySelector("h1,h2,h3,h4")?.textContent?.trim();
-        list.push({ anchor: a, label: d?.label || el.getAttribute("data-onb-label") || heading || a, state: d?.state, skip: d?.skip });
+        found.push({ el, section: { anchor: a, label: d?.label || el.getAttribute("data-onb-label") || heading || a, state: d?.state, skip: d?.skip } });
       }
       for (const s of declared) {
-        if (list.some((x) => x.anchor === s.anchor)) continue;
-        if (document.getElementById(s.anchor) || document.querySelector(`[data-testid="${s.anchor}"]`)) list.push(s);
+        if (found.some((x) => x.section.anchor === s.anchor)) continue;
+        const el = document.getElementById(s.anchor) || document.querySelector<HTMLElement>(`[data-testid="${s.anchor}"]`);
+        if (el) found.push({ el, section: s });
       }
+      // Walk the page top to bottom regardless of how each section was
+      // resolved or declared - a tour that jumps down then back up reads as
+      // broken.
+      found.sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      const list: TourSection[] = found.map((f) => f.section);
       if (list.length) {
         setDiscovered(list);
         // Resuming a saved tour (reload / OAuth return) wins over the

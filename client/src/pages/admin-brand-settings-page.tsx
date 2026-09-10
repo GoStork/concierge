@@ -1395,7 +1395,7 @@ export function BrandSettingsForm({
 
       <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 ${formDisabled ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="lg:col-span-2 space-y-6">
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-identity" data-onb-label="Identity" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Identity</h2>
@@ -1417,7 +1417,7 @@ export function BrandSettingsForm({
 
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-logo-assets" data-onb-label="Logo & Assets" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Image className="w-5 h-5 text-primary" />
@@ -1524,7 +1524,7 @@ export function BrandSettingsForm({
 
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-onboarding-images" data-onb-label="Onboarding Images" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Onboarding Images</h2>
@@ -1568,7 +1568,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-color-system" data-onb-label="Color System" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Palette className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Color System</h2>
@@ -1620,7 +1620,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-chat-palette" data-onb-label="Chat Participant Palette" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <MessageCircle className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-chat-palette">Chat Participant Palette</h2>
@@ -1664,7 +1664,7 @@ export function BrandSettingsForm({
             })()}
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-chat-bubbles" data-onb-label="Chat Bubble & Input Styling" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <MessageCircle className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Chat Bubble & Input Styling</h2>
@@ -2050,7 +2050,7 @@ export function BrandSettingsForm({
             <ChatBubblePreview form={form} />
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-8">
+          <Card data-onb-anchor="brand-marketplace" data-onb-label="Marketplace" className="rounded-[var(--container-radius)] p-6 space-y-8">
             <div className="flex items-center gap-2">
               <LayoutTemplate className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-marketplace">Marketplace</h2>
@@ -2288,7 +2288,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-advanced-colors" data-onb-label="Advanced Theme Colors" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Layers className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-advanced-colors">Advanced Theme Colors</h2>
@@ -2341,7 +2341,7 @@ export function BrandSettingsForm({
                 </div>
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-typography" data-onb-label="Typography" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Type className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Typography</h2>
@@ -2639,7 +2639,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6" data-testid="card-content-typography">
+          <Card data-onb-anchor="brand-content-typography" data-onb-label="Content & Interface Typography" className="rounded-[var(--container-radius)] p-6 space-y-6" data-testid="card-content-typography">
             <div className="flex items-center gap-2">
               <Type className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-content-typography">Content &amp; Interface Typography</h2>
@@ -2780,7 +2780,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+          <Card data-onb-anchor="brand-shape-radius" data-onb-label="Shape & Radius" className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Frame className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Shape & Radius</h2>

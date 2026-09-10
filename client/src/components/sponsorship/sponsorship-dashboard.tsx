@@ -129,7 +129,11 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
       {/* Start a sponsorship - pinned at the top for providers (admins use the
           per-plan Charge / Complimentary grid lower down). Hidden in the
           performance (all-profiles) view, which is analytics-only. */}
-      {!isAdmin && !isPerformance && <BoostProfilesCard onChanged={refetchAll} />}
+      {!isAdmin && !isPerformance && (
+        <div data-onb-anchor="sponsorship-boost" data-onb-label="Boost your profiles">
+          <BoostProfilesCard onChanged={refetchAll} />
+        </div>
+      )}
 
       {/* ONE filter bar (user decision, 7C polish): scope, date range, and
           profile type sit together instead of three stacked rows. The same
@@ -362,6 +366,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
 
       {/* Your sponsorships - current + history in one table with an Actions column */}
       {!isPerformance && (
+        <div data-onb-anchor="sponsorship-list" data-onb-label="Your sponsorships">
         <SponsorshipsTable
           sponsorships={listQ.data || []}
           loading={listQ.isLoading}
@@ -370,6 +375,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
           base={base}
           onChanged={refetchAll}
         />
+        </div>
       )}
     </div>
   );
