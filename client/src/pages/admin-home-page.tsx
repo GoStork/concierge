@@ -19,7 +19,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Headphones,
-  Globe,
   Receipt,
   FileSignature,
   Landmark,
@@ -356,61 +355,29 @@ export default function AdminHomePage() {
         )}
       </Card>
 
-      {/* Upcoming meetings - the admin's own on top, then platform wide */}
+      {/* Upcoming meetings - only the ones this admin hosts */}
       <Card className="p-5 space-y-3">
-        <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
+        <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="My upcoming meetings" viewAllTo="/calendar" />
         {(data?.upcomingMeetings || []).length === 0 ? (
           <p className="t-helper py-2">No upcoming meetings scheduled.</p>
-        ) : (() => {
-          const meetings = data?.upcomingMeetings || [];
-          const myId = (user as any)?.id;
-          const mine = meetings.filter(b => b.hostUserId === myId);
-          const platform = meetings.filter(b => b.hostUserId !== myId);
-          const renderRow = (b: (typeof meetings)[number]) => (
-            <div key={b.id} className="flex items-center gap-3 py-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{b.subject || `${b.parentName} with ${b.providerName}`}</p>
-                <p className="t-helper">{b.parentName} - {b.providerName} - {fmtWhen(b.scheduledAt)}</p>
+        ) : (
+          <div className="divide-y">
+            {(data?.upcomingMeetings || []).map(b => (
+              <div key={b.id} className="flex items-center gap-3 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{b.subject || `${b.parentName} with ${b.providerName}`}</p>
+                  <p className="t-helper">{b.parentName} - {b.providerName} - {fmtWhen(b.scheduledAt)}</p>
+                </div>
+                {b.status === "PENDING" && (
+                  <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>Awaiting confirm</span>
+                )}
+                <Button variant="outline" size="sm" onClick={() => openMeeting(b.id)}>
+                  Details
+                </Button>
               </div>
-              {b.status === "PENDING" && (
-                <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>Awaiting confirm</span>
-              )}
-              <Button variant="outline" size="sm" onClick={() => openMeeting(b.id)}>
-                Details
-              </Button>
-            </div>
-          );
-          return (
-            <div className="space-y-4">
-              {/* My meetings: tinted panel so the admin's own commitments
-                  never blend into the marketplace noise below */}
-              {mine.length > 0 && (
-                <div className="rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-secondary/60 px-4 pb-1 pt-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground">
-                      <Headphones className="w-3.5 h-3.5" />
-                    </span>
-                    <p className="text-sm font-heading font-semibold">My meetings</p>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">{mine.length}</span>
-                  </div>
-                  <div className="divide-y">{mine.map(renderRow)}</div>
-                </div>
-              )}
-              {platform.length > 0 && (
-                <div className="rounded-[var(--radius)] border border-[hsl(var(--accent)/0.25)] bg-[hsl(var(--accent)/0.08)] px-4 pb-1 pt-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center bg-accent text-accent-foreground">
-                      <Globe className="w-3.5 h-3.5" />
-                    </span>
-                    <p className="text-sm font-heading font-semibold">Platform meetings</p>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[hsl(var(--accent)/0.15)] text-accent">{platform.length}</span>
-                  </div>
-                  <div className="divide-y">{platform.map(renderRow)}</div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Platform funnel - last 30 days */}

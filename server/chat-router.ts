@@ -4806,8 +4806,10 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
     ]);
 
     const [upcomingMeetings, recentInvoices, recentPayouts] = await Promise.all([
+      // Only the admin's OWN upcoming meetings (they host) - the Home page is
+      // a personal agenda, not a platform-wide feed of parent-provider calls.
       prisma.booking.findMany({
-        where: { scheduledAt: { gte: now }, status: { in: ["PENDING", "CONFIRMED"] } },
+        where: { scheduledAt: { gte: now }, status: { in: ["PENDING", "CONFIRMED"] }, providerUserId: user.id },
         orderBy: { scheduledAt: "asc" },
         take: 8,
         select: {
