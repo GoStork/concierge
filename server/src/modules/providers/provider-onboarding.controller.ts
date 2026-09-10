@@ -997,7 +997,7 @@ export class ProviderOnboardingController {
     const summary = await computeOnboarding(user.providerId);
     if (!summary) throw new NotFoundException("Provider not found");
     const view = buildProviderOnboardingView(summary);
-    await this.maybeNotifyOnboardingComplete(summary, view.percent);
+    await this.maybeNotifyOnboardingComplete(summary, view.percent, user.id);
     return view;
   }
 
@@ -1005,7 +1005,7 @@ export class ProviderOnboardingController {
    *  GoStork admin once - live toast (persisted for offline admins) plus a
    *  branded email. Idempotent via the onbcomplete:<providerId> DONE marker
    *  task, so polling never re-fires it. Never throws into the caller. */
-  private async maybeNotifyOnboardingComplete(summary: OnboardingSummary, providerPercent: number) {
+  private async maybeNotifyOnboardingComplete(summary: OnboardingSummary, providerPercent: number, actorUserId: string) {
     if (providerPercent < 100) return;
     const db = prisma as any;
     const systemKey = `onbcomplete:${summary.providerId}`;
@@ -1026,6 +1026,8 @@ export class ProviderOnboardingController {
           status: "DONE",
           dueAt: now,
           completedAt: now,
+          createdByUserId: actorUserId,
+          completedByUserId: actorUserId,
         },
       });
     } catch (e: any) {
@@ -1144,7 +1146,7 @@ export class ProviderOnboardingController {
     requireAdmin(req);
     const summary = await computeOnboarding(id);
     if (!summary) throw new NotFoundException("Provider not found");
-    await this.maybeNotifyOnboardingComplete(summary, buildProviderOnboardingView(summary).percent);
+    await this.maybeNotifyOnboardingComplete(summary, buildProviderOnboardingView(summary).percent, (req.user as any)?.id);
     return summary;
   }
 
