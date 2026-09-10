@@ -1560,7 +1560,10 @@ export async function syncW9TemplateToPandaDoc(formType: TaxFormType = "W9"): Pr
   }
 
   const formData = new FormData();
-  formData.append("data", JSON.stringify({ name: F.pandaName }));
+  // parse_form_fields: a fillable PDF's AcroForm fields (the IRS W-8BEN-E /
+  // W-9 PDFs define one per line, signature included) import as PandaDoc
+  // fields at their exact positions - no manual dragging in the editor.
+  formData.append("data", JSON.stringify({ name: F.pandaName, parse_form_fields: true }));
   formData.append("file", new Blob([buffer as unknown as ArrayBuffer], { type: contentType }), filename);
 
   const createRes = await fetch("https://api.pandadoc.com/public/v1/templates", {
