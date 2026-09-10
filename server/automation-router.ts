@@ -13,7 +13,7 @@ import { prisma } from "./db";
 import { isGostorkStaff, isProviderStaff } from "./parent-crm";
 import { JOURNEY_STAGE_ORDER } from "../shared/journey-ladder";
 import { SILENCE_DEFAULT_THRESHOLDS, resolveSilenceConfig } from "./silence-sweep";
-import { SERVICE_LINES } from "./service-lines";
+import { SERVICE_LINES, serviceTypeOfSubject, serviceLineOfType } from "./service-lines";
 import {
   getAutomationDefaults,
   docModeOverride,
@@ -58,8 +58,25 @@ automationRouter.get("/api/automation/silence", requireAuth, async (req, res) =>
     const view = resolveSilenceConfig(w.isAdmin ? defaultsRow : orgRow, defaultsRow);
     const shadowActive = !w.isAdmin && (!view.shadowSince
       || Date.now() - view.shadowSince.getTime() < 7 * 86_400_000);
+    // The lines this provider actually offers, so the form shows only those
+    // toggles - the platform-defaults page (no provider) shows all of them.
+    let providerLines: string[] | null = null;
+    if (w.providerId) {
+      const services = await prisma.providerService.findMany({
+        where: { providerId: w.providerId, status: { not: "DECLINED" } },
+        select: { providerType: { select: { name: true } } },
+      });
+      const set = new Set<string>();
+      for (const svc of services) {
+        const name = svc.providerType?.name || "";
+        const line = serviceLineOfType(serviceTypeOfSubject(name)) || (name.toLowerCase().includes("legal") ? "legal" : null);
+        if (line) set.add(line);
+      }
+      providerLines = (SERVICE_LINES as readonly string[]).filter((l) => set.has(l));
+    }
     res.json({
       isAdmin: w.isAdmin,
+      providerLines,
       enabled: view.enabled,
       evaEnabled: view.evaEnabled,
       shadowSince: view.shadowSince,

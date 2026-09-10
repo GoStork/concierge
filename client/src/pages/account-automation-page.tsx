@@ -35,6 +35,8 @@ interface SilenceSettings {
   shadowActive: boolean;
   thresholds: Record<string, number | null>;
   lineEnabled: Record<string, boolean>;
+  /** Lines this provider offers; null on the platform-defaults page. */
+  providerLines: string[] | null;
 }
 
 type FlowKey = "costSheetAutomation" | "invoiceAutomation" | "agreementAutomation";
@@ -228,13 +230,16 @@ function SilenceSection({ orgId }: { orgId?: string }) {
 
       <div className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
         <label className="flex items-center justify-between gap-2 text-sm font-ui">
-          <span>Silence automation</span>
+          <span>
+            Silence follow-up
+            <span className="block t-helper">On = when a family goes quiet past their stage's threshold, the ladder below runs. Off = nothing happens, no message and no task.</span>
+          </span>
           <Switch checked={enabled} onCheckedChange={(v) => { setEnabled(v); setDirty(true); }} data-testid="switch-silence-enabled" />
         </label>
         <label className="flex items-center justify-between gap-2 text-sm font-ui">
           <span>
-            Eva's check-in step
-            <span className="block t-helper">Off = the coordinator task only, no message to the family.</span>
+            Eva sends a check-in first
+            <span className="block t-helper">On = Eva sends one warm check-in in the family's thread, and a task lands on the lead owner only if the quiet continues. Off = skip Eva, the task lands right away.</span>
           </span>
           <Switch checked={evaEnabled} onCheckedChange={(v) => { setEvaEnabled(v); setDirty(true); }} data-testid="switch-silence-eva" />
         </label>
@@ -265,8 +270,13 @@ function SilenceSection({ orgId }: { orgId?: string }) {
 
       <div className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-2">
         <h3 className="text-sm font-heading">Service lines</h3>
+        <p className="t-helper">Turn the follow-up off for a service line and quiet families on that line are left alone.</p>
         <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 pt-1">
-          {Object.entries(SERVICE_LINE_LABELS).map(([line, label]) => (
+          {Object.entries(SERVICE_LINE_LABELS)
+            // A provider only sees the lines they offer; the platform-defaults
+            // page (no provider) shows every line.
+            .filter(([line]) => !data.providerLines || data.providerLines.includes(line))
+            .map(([line, label]) => (
             <label key={line} className="flex items-center justify-between gap-2 text-sm font-ui">
               <span>{label}</span>
               <Switch
