@@ -1866,6 +1866,16 @@ export default function AccountPage() {
     '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
     '/account/members', '/account/scrapers', '/account/test-runner',
   ];
+  // GoStork admins have no legal-identity form to fill first: for them the
+  // legal-identity route is the global W-9 template + tracking view, which
+  // belongs with the contracts, right after GoStork Contracts.
+  const adminTabOrder = [
+    '/account', '/account/company', '/account/calendar', '/account/team',
+    '/account/documents', '/account/legal-identity',
+    '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
+    '/account/parent-form', '/account/ip-form-template', '/account/scrapers', '/account/test-runner',
+  ];
+  const tabOrder = isAdmin ? adminTabOrder : providerTabOrder;
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
     if (tab.roles === null) {
@@ -1886,14 +1896,18 @@ export default function AccountPage() {
     if (tab.roles === 'provider-form') return isProvider && !isAdmin && !!providerId;
     return true;
   }).sort((a, b) => {
-    const ai = providerTabOrder.indexOf(a.to);
-    const bi = providerTabOrder.indexOf(b.to);
+    const ai = tabOrder.indexOf(a.to);
+    const bi = tabOrder.indexOf(b.to);
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-  }).map(tab => (
+  }).map(tab => {
+    if (!isAdmin) return tab;
     // Admins get the global W-9 template + tracking view there, not a legal
     // identity form - name the tab for what it actually holds for them.
-    tab.to === '/account/legal-identity' && isAdmin ? { ...tab, label: 'W-9' } : tab
-  ));
+    if (tab.to === '/account/legal-identity') return { ...tab, label: 'W-9' };
+    // For GoStork the house-provider "agreements" are its own contracts.
+    if (tab.to === '/account/documents') return { ...tab, label: 'GoStork Contracts' };
+    return tab;
+  });
 
   const isTabActive = (tab: typeof tabs[0]) => {
     if (tab.end) return location.pathname === tab.to;

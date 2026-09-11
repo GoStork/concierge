@@ -3434,17 +3434,19 @@ export class NotificationService implements OnModuleInit {
   }) {
     const brandData = await this.getBrandData();
     const firstName = params.adminName ? getFirstName(params.adminName) : "there";
-    const providerUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=billing`;
+    // The signed form lives on the provider's Legal tab (tax-form card), not
+    // Billing - Billing is referral fees.
+    const providerUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=legal-identity`;
     const form = params.formLabel || "W-9";
     const subject = `${form} completed - ${params.providerName}`;
 
     const html = buildBrandedEmail(brandData, {
       title: `${form} Completed`,
       greeting: `Hi ${firstName},`,
-      body: `<strong>${this.escapeHtml(params.providerName)}</strong> has completed and signed their ${form} form. You can view and download it from the provider's Billing tab.`,
+      body: `<strong>${this.escapeHtml(params.providerName)}</strong> has completed and signed their ${form} form. You can view and download it from the provider's Legal tab.`,
       alertBox: { text: `The signed ${form} is ready to view and download.`, type: "success" },
       buttons: [{ label: `View ${form}`, url: providerUrl }],
-      footer: `You can download the signed ${form} from the provider's Billing tab at any time.`,
+      footer: `You can download the signed ${form} from the provider's Legal tab at any time, or from Settings -> W-9 where every provider's form is listed.`,
     });
 
     await this.dispatchNotification({
