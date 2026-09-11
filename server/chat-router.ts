@@ -6307,14 +6307,12 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
     console.error(`[W-9 webhook] Reminder task close failed: ${err?.message}`);
   }
 
-  // Pull W-9 field values into ProviderLegalIdentity so legalName, taxId,
-  // tax classification, and business address auto-fill (only into empty
-  // fields - manual edits win). Best-effort: a failure here doesn't
-  // affect the W-9 completion itself.
-  // W-8BEN-E layouts differ and carry no EIN/SSN - the W-9 extractor's
-  // field map does not apply, so foreign forms are stored as signed
-  // records only (the provider typed their details into the Legal tab).
-  if ((w9.formType || "W9") === "W9") try {
+  // Pull the signed form's field values into ProviderLegalIdentity so
+  // legalName, taxId, tax classification, and business address auto-fill
+  // (only into empty fields - manual edits win). syncFromW9 picks the W-9
+  // or W-8BEN-E field map from the record's formType. Best-effort: a
+  // failure here doesn't affect the completion itself.
+  try {
     const { getNestApp } = await import("./nest-app-ref");
     const nestApp = getNestApp();
     if (nestApp) {

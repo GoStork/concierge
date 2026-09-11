@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { prisma as prismaClient } from "../../../db";
-import { extractW9Fields } from "./w9-extractor";
+import { extractW9Fields, extractW8BeneFields } from "./w9-extractor";
 import { countryFromLocations } from "../../../../shared/payout-countries";
 
 /**
@@ -230,6 +230,7 @@ export class LegalIdentityService {
     maybeFill("businessAddressCity", "businessAddressCity");
     maybeFill("businessAddressState", "businessAddressState");
     maybeFill("businessAddressPostalCode", "businessAddressPostalCode");
+    maybeFill("businessAddressCountry", "businessAddressCountry");
 
     // Re-derive businessType whenever taxClassification changes. In force
     // mode that means recomputing every time; in non-force we only do it
@@ -279,7 +280,7 @@ export class LegalIdentityService {
   > {
     const w9 = await this.prisma.providerW9.findUnique({
       where: { providerId },
-      select: { status: true, pandaDocDocumentId: true, completedAt: true },
+      select: { status: true, pandaDocDocumentId: true, completedAt: true, formType: true },
     });
     if (!w9) return { status: "noop", reason: "Provider has no W-9 record yet" };
     if (w9.status !== "COMPLETED") return { status: "noop", reason: `W-9 status is ${w9.status}, not COMPLETED` };
@@ -299,7 +300,9 @@ export class LegalIdentityService {
 
     let extracted: LegalIdentityFormData | null;
     try {
-      extracted = await extractW9Fields(w9.pandaDocDocumentId);
+      extracted = (w9.formType || "W9") === "W9"
+        ? await extractW9Fields(w9.pandaDocDocumentId)
+        : await extractW8BeneFields(w9.pandaDocDocumentId);
     } catch (e: any) {
       this.logger.error(`W-9 extract failed for provider ${providerId}: ${e?.message}`);
       return { status: "failed", reason: e?.message || "Extract failed" };

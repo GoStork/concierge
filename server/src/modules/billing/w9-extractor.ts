@@ -1,7 +1,7 @@
 /**
- * PandaDoc W-9 field extractor. Fetches a completed W-9 document from
- * PandaDoc and maps its form-field values to ProviderLegalIdentity
- * fields.
+ * PandaDoc tax-form field extractors. Fetch a completed W-9 or W-8BEN-E
+ * document from PandaDoc and map its form-field values to
+ * ProviderLegalIdentity fields.
  *
  * Field mapping (from the GoStork W-9 PandaDoc template):
  *   Full_Name           -> legalName            (Line 1)
@@ -14,6 +14,7 @@
  */
 
 import type { LegalIdentityFormData } from "./legal-identity.service";
+import { countryNameToIso } from "../../../../shared/payout-countries";
 
 // Maps the W-9 Line 3a radio-button option (1-5) to our enum value.
 // Order matches the W-9 form's printed boxes.
@@ -109,7 +110,16 @@ export function parseCityStateZip(raw: string | null | undefined): {
  * Throws on misconfiguration (missing env var) or invalid doc id - those
  * are bugs, not transient.
  */
-export async function extractW9Fields(pandaDocDocumentId: string): Promise<LegalIdentityFormData | null> {
+type PandaDocField = { uuid?: string; field_id?: string; merge_field?: string; name?: string; type?: string; value?: any; field_value?: any };
+type FieldGetter = (...candidates: string[]) => string | null;
+
+/**
+ * Fetches a completed document's fields from PandaDoc and returns a getter
+ * that resolves a field by `name`, `merge_field`, or `field_id`. Returns
+ * null on transient failures (PandaDoc 5xx) so the caller can retry;
+ * throws on misconfiguration or an invalid doc id.
+ */
+async function fetchPandaDocFields(pandaDocDocumentId: string): Promise<FieldGetter | null> {
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY not set");
 
@@ -124,7 +134,7 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
   if (!res.ok) {
     throw new Error(`PandaDoc details API ${res.status}: ${await res.text().catch(() => "")}`);
   }
-  const data = (await res.json()) as { fields?: Array<{ uuid?: string; field_id?: string; merge_field?: string; name?: string; value?: any; field_value?: any }> };
+  const data = (await res.json()) as { fields?: PandaDocField[] };
 
   const fields = data.fields || [];
   // PandaDoc surfaces fields differently across API versions; we look up
@@ -155,6 +165,12 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
     }
     return null;
   };
+  return get;
+}
+
+export async function extractW9Fields(pandaDocDocumentId: string): Promise<LegalIdentityFormData | null> {
+  const get = await fetchPandaDocFields(pandaDocDocumentId);
+  if (!get) return null;
 
   const legalName = get("Full_Name") || null;
   // W-9 Line 2 ("Business name / disregarded entity name, if different
@@ -193,5 +209,102 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
     businessAddressCity: parsed.city,
     businessAddressState: parsed.state,
     businessAddressPostalCode: parsed.postalCode,
+  };
+}
+
+/**
+ * W-8BEN-E (Rev. 10-2021) field map. The PandaDoc template was built from
+ * the IRS PDF, so fields keep the PDF's own widget names
+ * ("topmostSubform[0].Page1[0].f1_4[0]"). Page 1 lines we use:
+ *   f1_1        -> Line 1  Name of organization      -> legalName + businessName
+ *   f1_3        -> Line 3  Disregarded entity name   -> businessName (when set)
+ *   c1_1[0..12] -> Line 4  Chapter 3 status boxes    -> taxClassification
+ *   f1_4        -> Line 6  Permanent residence street
+ *   f1_5        -> Line 6  City / state or province / postal code
+ *   f1_6        -> Line 6  Country                   -> businessAddressCountry
+ *   f1_10       -> Line 8  U.S. TIN (if any)
+ *   f1_12       -> Line 9b Foreign TIN               -> taxId (taxIdType=foreign)
+ * Line 2 (country of incorporation, f1_2) is not the address country and
+ * is deliberately not mapped. Lines 7 (mailing address) and 9a (GIIN) are
+ * not needed for payouts.
+ */
+const W8_PAGE1 = "topmostSubform[0].Page1[0].";
+// Printed order of the Line 4 boxes on the 2021 form.
+const W8_CHAPTER3_STATUS: Array<string | null> = [
+  "C_CORPORATION",    // Corporation
+  "LLC",              // Disregarded entity
+  "PARTNERSHIP",      // Partnership
+  "TRUST_ESTATE",     // Simple trust
+  "TRUST_ESTATE",     // Grantor trust
+  "TRUST_ESTATE",     // Complex trust
+  "TRUST_ESTATE",     // Estate
+  null,               // Government
+  null,               // Central Bank of Issue
+  null,               // Tax-exempt organization
+  null,               // Private foundation
+  null,               // International organization
+  null,               // (last box on the row)
+];
+
+/**
+ * Foreign "City, Province, Postal" line: no 2-letter-state assumption.
+ * Split on commas; a trailing token that carries digits is the postal
+ * code, the first token is the city, anything between is the region.
+ */
+export function parseForeignCityLine(raw: string | null | undefined): {
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+} {
+  if (!raw) return { city: null, state: null, postalCode: null };
+  const parts = raw.split(",").map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return { city: null, state: null, postalCode: null };
+  let postalCode: string | null = null;
+  if (parts.length > 1 && /\d/.test(parts[parts.length - 1])) postalCode = parts.pop()!;
+  const city = parts.shift() || null;
+  const state = parts.length ? parts.join(", ") : null;
+  return { city, state, postalCode };
+}
+
+export async function extractW8BeneFields(pandaDocDocumentId: string): Promise<LegalIdentityFormData | null> {
+  const get = await fetchPandaDocFields(pandaDocDocumentId);
+  if (!get) return null;
+  const line = (id: string) => get(`${W8_PAGE1}${id}[0]`)?.trim() || null;
+
+  const legalName = line("f1_1");
+  const businessName = line("f1_3") || legalName;
+
+  let taxClassification: string | null = null;
+  for (let i = 0; i < W8_CHAPTER3_STATUS.length; i++) {
+    const v = get(`${W8_PAGE1}c1_1[${i}]`);
+    if (v === "true" || v === "1") { taxClassification = W8_CHAPTER3_STATUS[i]; break; }
+  }
+  // W-8BEN-E is the entity form (an individual signs a W-8BEN), so an
+  // unticked or unmapped Line 4 still means "company" on the Legal tab.
+  taxClassification ??= "C_CORPORATION";
+
+  // No apt/suite split for foreign streets: "#" is part of the street
+  // number in Latin American addresses ("Carrera 5 #9-26 Sur"), not a unit.
+  const line1 = line("f1_4");
+  const parsed = parseForeignCityLine(line("f1_5"));
+  const businessAddressCountry = countryNameToIso(line("f1_6"));
+
+  const usTin = line("f1_10");
+  const foreignTin = line("f1_12");
+  const taxIdType: "ein" | "foreign" | null = usTin ? "ein" : foreignTin ? "foreign" : null;
+  const taxId = usTin ? usTin.replace(/[^\d-]/g, "") : foreignTin;
+
+  return {
+    legalName,
+    businessName,
+    taxClassification,
+    taxId,
+    taxIdType,
+    businessAddressLine1: line1,
+    businessAddressLine2: null,
+    businessAddressCity: parsed.city,
+    businessAddressState: parsed.state,
+    businessAddressPostalCode: parsed.postalCode,
+    businessAddressCountry,
   };
 }

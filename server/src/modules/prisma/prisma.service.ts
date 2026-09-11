@@ -51,6 +51,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerLegalIdentity;
   }
 
+  get providerW9() {
+    return prisma.providerW9;
+  }
+
   get providerReview() {
     return prisma.providerReview;
   }
