@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { prisma as prismaClient } from "../../../db";
 import { extractW9Fields } from "./w9-extractor";
+import { countryFromLocations } from "../../../../shared/payout-countries";
 
 /**
  * Source of truth for a provider's legal identity (legal name, tax ID,
@@ -55,6 +56,50 @@ export interface LegalIdentityFormData {
   businessAddressCountry?: string | null;
 }
 
+/**
+ * Standalone so non-Nest code (pandadoc-service's tax-form picker) can use
+ * the same row-creation + pre-fill as LegalIdentityService.getOrCreate.
+ * See that method's doc for the pre-fill rules.
+ */
+export async function ensureLegalIdentityRow(providerId: string) {
+  const existing = await prismaClient.providerLegalIdentity.findUnique({
+    where: { providerId },
+  });
+  const needsUrl = !existing?.businessUrl?.trim();
+  const needsCountry = !existing?.businessAddressCountry?.trim();
+  if (existing && !needsUrl && !needsCountry) return existing;
+
+  // Either the row doesn't exist, or a pre-fillable field is empty.
+  // Look up the provider's marketing website / primary location.
+  const provider = await prismaClient.provider.findUnique({
+    where: { id: providerId },
+    select: {
+      websiteUrl: true,
+      locations: { orderBy: { sortOrder: "asc" }, select: { address: true, city: true, state: true, zip: true } },
+    },
+  });
+  const websiteUrl = needsUrl ? provider?.websiteUrl?.trim() || null : null;
+  const country = needsCountry ? countryFromLocations(provider?.locations || []) : null;
+
+  if (!existing) {
+    return await prismaClient.providerLegalIdentity.create({
+      data: {
+        providerId,
+        ...(websiteUrl ? { businessUrl: websiteUrl } : {}),
+        ...(country ? { businessAddressCountry: country } : {}),
+      },
+    });
+  }
+  if (!websiteUrl && !country) return existing;
+  return await prismaClient.providerLegalIdentity.update({
+    where: { providerId },
+    data: {
+      ...(websiteUrl ? { businessUrl: websiteUrl } : {}),
+      ...(country ? { businessAddressCountry: country } : {}),
+    },
+  });
+}
+
 @Injectable()
 export class LegalIdentityService {
   private readonly logger = new Logger(LegalIdentityService.name);
@@ -69,34 +114,17 @@ export class LegalIdentityService {
    * business_profile.url so we'd rather copy it once than make the
    * provider re-type their website. Provider can still override here if
    * the legal-entity site differs from the marketing site.
+   *
+   * Same for businessAddressCountry: a row with no country yet takes the
+   * country of the provider's primary profile location (Company tab
+   * "Locations"), so a Colombian agency lands on Colombia / W-8BEN-E
+   * instead of the US / W-9 default. The column has no DB default on
+   * purpose - null means "nobody chose yet", so the pre-fill can tell
+   * itself apart from a deliberate "United States". Once saved (manually
+   * or from a W-9) the value is authoritative and never re-derived.
    */
   async getOrCreate(providerId: string) {
-    const existing = await this.prisma.providerLegalIdentity.findUnique({
-      where: { providerId },
-    });
-    if (existing && existing.businessUrl?.trim()) return existing;
-
-    // Either the row doesn't exist, or it exists but businessUrl is empty.
-    // Look up the provider's marketing website and use it as a default.
-    const provider = await this.prisma.provider.findUnique({
-      where: { id: providerId },
-      select: { websiteUrl: true },
-    });
-    const websiteUrl = provider?.websiteUrl?.trim() || null;
-
-    if (!existing) {
-      return await this.prisma.providerLegalIdentity.create({
-        data: {
-          providerId,
-          ...(websiteUrl ? { businessUrl: websiteUrl } : {}),
-        },
-      });
-    }
-    if (!websiteUrl) return existing;
-    return await this.prisma.providerLegalIdentity.update({
-      where: { providerId },
-      data: { businessUrl: websiteUrl },
-    });
+    return await ensureLegalIdentityRow(providerId);
   }
 
   /** Full row for the UI, plus the provider's display name so the form

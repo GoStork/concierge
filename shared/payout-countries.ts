@@ -124,3 +124,95 @@ export function currencyFor(code: string | null | undefined): string {
   if (EEA_COUNTRIES.includes(c)) return "EUR";
   return "USD";
 }
+
+/**
+ * Reverse of Intl.DisplayNames: an English country name ("Colombia",
+ * "United States") -> ISO-3166 alpha-2, or null when
+ * the text is not a country. Used to pre-select the legal-entity country
+ * from a provider's profile location, which stores the country as free
+ * text (ProviderLocation has no country column - the geocoder's country
+ * name lands in `state`, e.g. "Cajicá" / "Colombia").
+ */
+const COUNTRY_ALIASES: Record<string, string> = {
+  "usa": "US", "u.s.": "US", "u.s.a.": "US", "united states of america": "US", "america": "US",
+  "uk": "GB", "u.k.": "GB", "united kingdom": "GB", "great britain": "GB", "england": "GB", "scotland": "GB", "wales": "GB",
+  "türkiye": "TR", "turkiye": "TR",
+  "czechia": "CZ", "czech republic": "CZ",
+  "south korea": "KR", "korea": "KR",
+  "russia": "RU", "vietnam": "VN", "iran": "IR", "syria": "SY", "laos": "LA", "moldova": "MD",
+  "bolivia": "BO", "venezuela": "VE", "tanzania": "TZ", "macedonia": "MK", "north macedonia": "MK",
+  "ivory coast": "CI", "cape verde": "CV", "swaziland": "SZ", "burma": "MM", "holland": "NL",
+  "hong kong": "HK", "macau": "MO", "taiwan": "TW", "palestine": "PS",
+  "uae": "AE", "u.a.e.": "AE", "emirates": "AE",
+};
+let countryNameIndex: Map<string, string> | null = null;
+function buildCountryNameIndex(): Map<string, string> {
+  const index = new Map<string, string>(Object.entries(COUNTRY_ALIASES));
+  const names = typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "region" })
+    : null;
+  if (!names) return index;
+  // Every alpha-2 region Intl knows about; non-countries (e.g. "EU", "UN",
+  // unassigned pairs) are skipped because DisplayNames echoes the code back.
+  for (let a = 65; a <= 90; a++) {
+    for (let b = 65; b <= 90; b++) {
+      const code = String.fromCharCode(a) + String.fromCharCode(b);
+      let name: string | undefined;
+      try { name = names.of(code) ?? undefined; } catch { continue; }
+      if (!name || name === code) continue;
+      // First code wins: ICU also names alias codes ("UK" -> "United
+      // Kingdom") and the canonical one sorts first, plus explicit aliases
+      // above must not be clobbered.
+      const key = name.toLowerCase();
+      if (!index.has(key)) index.set(key, code);
+    }
+  }
+  return index;
+}
+/** Names only, never bare codes: a US state abbreviation ("CA", "CO", "DE",
+ *  "IN", ...) is also a valid ISO country code, so a 2-letter `state` must
+ *  not be read as a country. */
+export function countryNameToIso(text: string | null | undefined): string | null {
+  const t = (text || "").trim();
+  if (t.length < 3) return null;
+  countryNameIndex ??= buildCountryNameIndex();
+  return countryNameIndex.get(t.toLowerCase()) ?? null;
+}
+
+const US_STATES = new Set([
+  "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in", "ia", "ks", "ky", "la",
+  "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok",
+  "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy", "dc", "pr",
+  "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware", "florida",
+  "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
+  "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana", "nebraska",
+  "nevada", "new hampshire", "new jersey", "new mexico", "new york", "north carolina", "north dakota", "ohio",
+  "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee", "texas",
+  "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming", "district of columbia",
+  "puerto rico",
+]);
+
+/**
+ * Best-effort country for a provider from its profile locations, checking
+ * the parts a geocoder may have put the country name in. First location
+ * wins (that is the one the Company tab shows as primary). A US state or a
+ * US-shaped ZIP resolves to "US" since US locations never carry the
+ * country name.
+ */
+export function countryFromLocations(
+  locations: ReadonlyArray<{ state?: string | null; city?: string | null; address?: string | null; zip?: string | null }>,
+): string | null {
+  for (const loc of locations) {
+    for (const part of [loc.state, loc.city]) {
+      const iso = countryNameToIso(part);
+      if (iso) return iso;
+    }
+    // "Cra 7 #12-34, Bogotá, Colombia" style single-line addresses
+    const tail = (loc.address || "").split(",").pop();
+    const iso = countryNameToIso(tail);
+    if (iso) return iso;
+    if (US_STATES.has((loc.state || "").trim().toLowerCase())) return "US";
+    if (/^\d{5}(-\d{4})?$/.test((loc.zip || "").trim())) return "US";
+  }
+  return null;
+}

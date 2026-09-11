@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
 import { parentAccountKey, releaseParentContact } from "./parent-privacy";
 import { decryptNullable } from "./src/lib/encrypt";
+import { ensureLegalIdentityRow } from "./src/modules/billing/legal-identity.service";
 import { Storage } from "@google-cloud/storage";
 import * as path from "path";
 import * as fs from "fs";
@@ -1688,7 +1689,10 @@ export async function resolveTaxFormTemplate(providerId: string, settings?: any)
   templateUpdatedAt: Date | null;
 }> {
   const s = settings || (await getSiteSettingsOrThrow());
-  const legal = await prisma.providerLegalIdentity.findUnique({ where: { providerId }, select: { businessAddressCountry: true, usPayoutEntity: true } });
+  // ensureLegalIdentityRow (not a raw findUnique) so a provider whose Legal
+  // tab was never opened still gets the country pre-filled from its
+  // profile location before the form type is decided.
+  const legal = await ensureLegalIdentityRow(providerId);
   // usPayoutEntity ("I have a US entity") flips the owed form to the W-9.
   const formType = legal?.usPayoutEntity || (legal?.businessAddressCountry || "US").toUpperCase() === "US" ? "W9" : "W8BENE";
   if (formType === "W9") {

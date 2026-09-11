@@ -1996,7 +1996,10 @@ model ProviderLegalIdentity {
   businessAddressCity       String?
   businessAddressState      String?
   businessAddressPostalCode String?
-  businessAddressCountry    String? @default("US")
+  // ISO-3166 alpha-2. No DB default on purpose: null = "nobody chose yet",
+  // which lets LegalIdentityService.getOrCreate pre-fill it from the
+  // provider's primary profile location. Readers treat null as US.
+  businessAddressCountry    String?
 
   // "I have a US entity": the provider operates abroad but owns a US legal
   // entity and wants Stripe payouts to its US bank + a W-9 with a US EIN.
