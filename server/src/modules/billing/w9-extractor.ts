@@ -222,13 +222,18 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
  *   f1_4        -> Line 6  Permanent residence street
  *   f1_5        -> Line 6  City / state or province / postal code
  *   f1_6        -> Line 6  Country                   -> businessAddressCountry
- *   f1_10       -> Line 8  U.S. TIN (if any)
- *   f1_12       -> Line 9b Foreign TIN               -> taxId (taxIdType=foreign)
+ * Lines 8-10 continue on page 2 of the 2021 revision, and the IRS nests
+ * two of them in read-order groups:
+ *   Page2[0].f2_1                       -> Line 8  U.S. TIN (if any)
+ *   Page2[0].Line9b_ReadOrder[0].f2_3   -> Line 9b Foreign TIN -> taxId (taxIdType=foreign)
  * Line 2 (country of incorporation, f1_2) is not the address country and
- * is deliberately not mapped. Lines 7 (mailing address) and 9a (GIIN) are
- * not needed for payouts.
+ * is deliberately not mapped. Lines 7 (mailing address), 9a (GIIN, f2_2)
+ * and 10 (reference, f2_4) are not needed for payouts.
  */
 const W8_PAGE1 = "topmostSubform[0].Page1[0].";
+const W8_PAGE2 = "topmostSubform[0].Page2[0].";
+const W8_US_TIN = `${W8_PAGE2}f2_1[0]`;
+const W8_FOREIGN_TIN = `${W8_PAGE2}Line9b_ReadOrder[0].f2_3[0]`;
 // Printed order of the Line 4 boxes on the 2021 form.
 const W8_CHAPTER3_STATUS: Array<string | null> = [
   "C_CORPORATION",    // Corporation
@@ -293,8 +298,8 @@ export async function extractW8BeneFields(pandaDocDocumentId: string): Promise<L
   const parsed = parseForeignCityLine(line("f1_5"));
   const businessAddressCountry = countryNameToIso(line("f1_6"));
 
-  const usTin = line("f1_10", "US_TIN");
-  const foreignTin = line("f1_12", "Foreign_TIN", "NIT");
+  const usTin = get(W8_US_TIN, "f2_1", "US_TIN")?.trim() || null;
+  const foreignTin = get(W8_FOREIGN_TIN, "f2_3", "Foreign_TIN", "NIT")?.trim() || null;
   const taxIdType: "ein" | "foreign" | null = usTin ? "ein" : foreignTin ? "foreign" : null;
   const taxId = usTin ? usTin.replace(/[^\d-]/g, "") : foreignTin;
 
