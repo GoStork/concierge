@@ -269,7 +269,11 @@ export function parseForeignCityLine(raw: string | null | undefined): {
 export async function extractW8BeneFields(pandaDocDocumentId: string): Promise<LegalIdentityFormData | null> {
   const get = await fetchPandaDocFields(pandaDocDocumentId);
   if (!get) return null;
-  const line = (id: string) => get(`${W8_PAGE1}${id}[0]`)?.trim() || null;
+  // Fields auto-detected from the IRS PDF carry the full widget path; fields
+  // added by hand in the PandaDoc editor may carry just the short id
+  // ("f1_12") or a readable name ("Foreign_TIN") - accept all of them.
+  const line = (id: string, ...aliases: string[]) =>
+    get(`${W8_PAGE1}${id}[0]`, id, ...aliases)?.trim() || null;
 
   const legalName = line("f1_1");
   const businessName = line("f1_3") || legalName;
@@ -289,8 +293,8 @@ export async function extractW8BeneFields(pandaDocDocumentId: string): Promise<L
   const parsed = parseForeignCityLine(line("f1_5"));
   const businessAddressCountry = countryNameToIso(line("f1_6"));
 
-  const usTin = line("f1_10");
-  const foreignTin = line("f1_12");
+  const usTin = line("f1_10", "US_TIN");
+  const foreignTin = line("f1_12", "Foreign_TIN", "NIT");
   const taxIdType: "ein" | "foreign" | null = usTin ? "ein" : foreignTin ? "foreign" : null;
   const taxId = usTin ? usTin.replace(/[^\d-]/g, "") : foreignTin;
 
