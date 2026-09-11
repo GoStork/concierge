@@ -57,6 +57,11 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
   });
   const effectiveForm = formType || w9?.formType || "W9";
   const FORM = effectiveForm === "W9" ? "W-9" : "W-8BEN-E";
+  // The Legal tab's country dropdown changed but is not saved yet: the
+  // status, template and w9Id the server returned belong to the OTHER form
+  // (it answers per the saved country), and a "Resend" click would send
+  // that other form. Show the switch as pending until Save.
+  const pendingSwitch = !!formType && !!w9?.formType && formType !== w9.formType;
 
   // Auto-open the inline template-setup panel when the admin lands on a
   // provider whose template is uploaded but missing the signature field.
@@ -114,6 +119,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
             <p className="text-sm font-medium">{FORM} Form</p>
           <p className="t-helper">
             {w9Loading ? "Loading..."
+              : pendingSwitch ? `Save the country change to switch this provider to the ${FORM}`
               : !w9?.templateConfigured && w9?.templateNeedsFields ? (isProviderMode ? "Not available yet" : "Template uploaded - assign signature field to finish setup")
               : !w9?.templateConfigured ? (isProviderMode ? "Not available yet" : `No ${FORM} template configured`)
               : w9.status === "COMPLETED" ? `Completed${w9.completedAt ? ` ${new Date(w9.completedAt).toLocaleDateString()}` : ""}`
@@ -124,7 +130,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
           </div>
         </div>
 
-        {w9?.status === "COMPLETED" && w9.w9Id && (
+        {!pendingSwitch && w9?.status === "COMPLETED" && w9.w9Id && (
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             <span className="flex items-center gap-1 text-xs font-medium" style={{ color: "hsl(var(--brand-success))" }}>
               <Check className="w-3.5 h-3.5" /> Completed
@@ -178,7 +184,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
           </div>
         )}
 
-        {!isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
+        {!pendingSwitch && !isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             {w9.status === "SENT" && w9.w9Id && (
               <Button variant="ghost" size="sm" onClick={() => navigate(`/w9/${w9.w9Id}`)} title="View">
@@ -196,7 +202,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
             </Button>
           </div>
         )}
-        {!isProviderMode && !w9?.templateConfigured && !w9Loading && (
+        {!pendingSwitch && !isProviderMode && !w9?.templateConfigured && !w9Loading && (
           <Button
             type="button"
             variant={w9?.templateNeedsFields ? "default" : "outline"}
@@ -209,7 +215,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
             {showW9Setup ? "Hide template setup" : w9?.templateNeedsFields ? "Configure signature field" : "Set up template"}
           </Button>
         )}
-        {!isProviderMode && w9?.templateConfigured && !w9Loading && (
+        {!pendingSwitch && !isProviderMode && w9?.templateConfigured && !w9Loading && (
           <Button
             type="button"
             variant="ghost"
@@ -222,7 +228,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
             {showW9Setup ? "Hide template" : "Edit template"}
           </Button>
         )}
-        {isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
+        {!pendingSwitch && isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
           <Button
             size="sm"
             disabled={w9FillMutation.isPending}

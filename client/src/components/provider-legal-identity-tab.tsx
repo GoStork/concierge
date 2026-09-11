@@ -20,7 +20,7 @@ import { AdminW9Table } from "./admin-w9-table";
 import { GostorkAgreementCard } from "./gostork-agreement-card";
 import { AdminProviderAgreements } from "./admin-provider-agreements";
 import { useAuth } from "@/hooks/use-auth";
-import { ALL_COUNTRIES, POPULAR_COUNTRIES } from "@/lib/phone-countries";
+import { CountryCodeCombobox } from "@/components/ui/country-autocomplete-input";
 import { isUsEntity, taxIdLabelFor, taxFormFor, TAX_FORM_LABELS, payoutRailFor } from "@shared/payout-countries";
 
 interface LegalIdentityState {
@@ -191,6 +191,9 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [getUrl] });
+      // The country decides which tax form is owed; the status card must
+      // re-read (a W-9 row reads NOT_SENT for a W-8BEN-E provider).
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] || "").endsWith("/w9") });
     },
   });
 
@@ -369,24 +372,15 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
             ? "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. US entities are paid through Stripe."
             : "Decides the tax form (W-9 for US, W-8BEN-E otherwise) and how you are paid. Non-US entities are paid through GoStork's international payout partner."}
         >
-          <select
+          <CountryCodeCombobox
             value={country}
-            onChange={e => {
-              const c = e.target.value;
+            onChange={c => {
               setCountry(c);
               if (c !== "US" && taxIdType !== "foreign") setTaxIdType("foreign");
               if (c === "US" && taxIdType === "foreign") setTaxIdType("ein");
             }}
-            className="w-full h-10 rounded-md border bg-background px-3 text-sm font-ui"
             data-testid="legal-country-select"
-          >
-            <optgroup label="Common">
-              {POPULAR_COUNTRIES.map(c => <option key={c.isoCode} value={c.isoCode}>{c.flag} {c.name}</option>)}
-            </optgroup>
-            <optgroup label="All countries">
-              {ALL_COUNTRIES.map(c => <option key={c.isoCode} value={c.isoCode}>{c.flag} {c.name}</option>)}
-            </optgroup>
-          </select>
+          />
         </Field>
 
         <Field

@@ -1,9 +1,12 @@
 import * as React from "react";
-import { X } from "lucide-react";
+import { X, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getCountryFlag } from "@/lib/country-flag";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { ALL_COUNTRIES as ALL_ISO_COUNTRIES, POPULAR_COUNTRIES as POPULAR_ISO_COUNTRIES, type PhoneCountry } from "@/lib/phone-countries";
 
 const COUNTRIES = [
   "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda",
@@ -302,5 +305,63 @@ export function SingleCountryAutocompleteInput({
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * Searchable single-country picker that stores an ISO code (the two
+ * autocompletes above store display names). Same Popover + Command
+ * combobox the timezone picker in calendar-settings uses, with the
+ * "Common" / "All countries" split of the old native <select>. Type to
+ * filter by name or code.
+ */
+interface CountryCodeComboboxProps {
+  value: string;
+  onChange: (isoCode: string) => void;
+  disabled?: boolean;
+  "data-testid"?: string;
+}
+
+export function CountryCodeCombobox({ value, onChange, disabled, "data-testid": testId }: CountryCodeComboboxProps) {
+  const [open, setOpen] = React.useState(false);
+  const selected = ALL_ISO_COUNTRIES.find((c) => c.isoCode === value);
+  const renderItem = (c: PhoneCountry) => (
+    <CommandItem
+      key={c.isoCode}
+      value={`${c.name} ${c.isoCode}`}
+      onSelect={() => { onChange(c.isoCode); setOpen(false); }}
+      data-testid={testId ? `${testId}-option-${c.isoCode}` : undefined}
+    >
+      <Check className={cn("mr-2 h-4 w-4", value === c.isoCode ? "opacity-100" : "opacity-0")} />
+      <span className="mr-2">{c.flag}</span>{c.name}
+    </CommandItem>
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="w-full justify-between font-normal h-10 bg-background"
+          data-testid={testId}
+        >
+          <span className="truncate">{selected ? `${selected.flag} ${selected.name}` : "Select country..."}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search countries..." />
+          <CommandList className="max-h-[300px]">
+            <CommandEmpty>No country found.</CommandEmpty>
+            <CommandGroup heading="Common">{POPULAR_ISO_COUNTRIES.map(renderItem)}</CommandGroup>
+            <CommandGroup heading="All countries">{ALL_ISO_COUNTRIES.map(renderItem)}</CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
