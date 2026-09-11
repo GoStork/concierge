@@ -3071,10 +3071,14 @@ export class NotificationService implements OnModuleInit {
      * non-GoStork email (provider.email): email still sends, no Notification row.
      */
     fallbackSigner: { userId: string | null; email: string; name: string };
+    /** "W-9" (US entity) or "W-8BEN-E" (foreign entity) - the copy must name
+     *  the form the signer is actually about to open. Defaults to W-9. */
+    formLabel?: string;
   }) {
     const brandData = await this.getBrandData();
     const companyName = brandData.companyName;
-    const subject = `Action required: complete your W-9 for ${companyName}`;
+    const formLabel = params.formLabel || "W-9";
+    const subject = `Action required: complete your ${formLabel} for ${companyName}`;
 
     // W-9 requests are addressed to the people responsible for billing and
     // compliance: every PROVIDER_ADMIN and BILLING_MANAGER at the provider.
@@ -3103,11 +3107,11 @@ export class NotificationService implements OnModuleInit {
 
     for (const r of recipients) {
       const html = buildBrandedEmail(brandData, {
-        title: "Complete Your W-9",
+        title: `Complete Your ${formLabel}`,
         greeting: `Hi ${r.firstName},`,
-        body: `${this.escapeHtml(companyName)} needs a completed W-9 form for <strong>${this.escapeHtml(params.providerName)}</strong>. Please fill out and sign the form using the button below - it only takes a minute.`,
-        alertBox: { text: "Your W-9 is required before payouts can be processed.", type: "info" },
-        buttons: [{ label: "Fill Out & Sign W-9", url: params.signingUrl }],
+        body: `${this.escapeHtml(companyName)} needs a completed ${formLabel} form for <strong>${this.escapeHtml(params.providerName)}</strong>. Please fill out and sign the form using the button below - it only takes a minute.`,
+        alertBox: { text: `Your ${formLabel} is required before payouts can be processed.`, type: "info" },
+        buttons: [{ label: `Fill Out & Sign ${formLabel}`, url: params.signingUrl }],
         footer: "If you have any questions about this request, please reply to this email.",
       });
 
@@ -3119,10 +3123,10 @@ export class NotificationService implements OnModuleInit {
           recipient: r.email,
           subject,
           body: html,
-        }).catch(e => this.logger.error(`Failed to send W-9 request email to ${r.email}: ${e.message}`));
+        }).catch(e => this.logger.error(`Failed to send ${formLabel} request email to ${r.email}: ${e.message}`));
       } else {
         await this.sendRawEmail(r.email, subject, html)
-          .catch(e => this.logger.error(`Failed to send W-9 request email to ${r.email}: ${e.message}`));
+          .catch(e => this.logger.error(`Failed to send ${formLabel} request email to ${r.email}: ${e.message}`));
       }
     }
   }

@@ -20,6 +20,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { notifyProviderAgreementProviderTurn } from "../../../pandadoc-service";
 import { mintW9GuestToken } from "./w9.controller";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { TAX_FORM_LABELS, type TaxFormType } from "../../../../shared/payout-countries";
 
 const THRESHOLD_DAYS = [3, 7, 10];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -58,7 +59,7 @@ export async function runDocumentReminderSweep(notifications: NotificationServic
   try {
     const w9s = await db.providerW9.findMany({
       where: { status: "SENT", requestedAt: { not: null }, autoRemindCount: { lt: THRESHOLD_DAYS.length } },
-      select: { id: true, providerId: true, requestedAt: true, autoRemindCount: true, requestedByUserId: true, guestToken: true, signerEmail: true, signerUserId: true },
+      select: { id: true, providerId: true, requestedAt: true, autoRemindCount: true, requestedByUserId: true, guestToken: true, signerEmail: true, signerUserId: true, formType: true },
     });
     for (const w of w9s) {
       if (remindersDue(w.requestedAt) <= w.autoRemindCount) continue;
@@ -75,6 +76,7 @@ export async function runDocumentReminderSweep(notifications: NotificationServic
           providerName: provider?.name || "Provider",
           signingUrl: `${getBaseUrl()}/sign-w9/${guestToken}`,
           fallbackSigner: { userId: w.signerUserId, email: w.signerEmail || provider?.email || "", name: provider?.name || "" },
+          formLabel: TAX_FORM_LABELS[(w.formType || "W9") as TaxFormType],
         });
         // Reopen the Home-page task the same way the manual remind does.
         const { raiseW9Task } = await import("./w9.controller");

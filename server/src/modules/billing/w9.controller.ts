@@ -103,6 +103,9 @@ function formTypeOf(req: Request): "W9" | "W8BENE" {
 // (chat-router handleW9Webhook).
 export async function raiseW9Task(providerId: string, createdByUserId: string) {
   const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  // Name the form the provider was actually sent (W-9 vs W-8BEN-E).
+  const row = await (prisma as any).providerW9.findUnique({ where: { providerId }, select: { formType: true } });
+  const formLabel = TAX_FORM_LABELS[(row?.formType || "W9") as TaxFormType];
   await (prisma as any).parentTask.upsert({
     where: { systemKey: `w9:${providerId}` },
     create: {
@@ -112,8 +115,8 @@ export async function raiseW9Task(providerId: string, createdByUserId: string) {
       parentAccountId: providerId,
       scope: "PROVIDER",
       providerId,
-      title: "Complete your W-9 form",
-      notes: "GoStork needs your signed W-9 on file before payouts can be sent.",
+      title: `Complete your ${formLabel} form`,
+      notes: `GoStork needs your signed ${formLabel} on file before payouts can be sent.`,
       type: "TODO",
       priority: "HIGH",
       dueAt,
@@ -122,7 +125,13 @@ export async function raiseW9Task(providerId: string, createdByUserId: string) {
       deepLink: "/account/legal-identity",
       createdByUserId,
     },
-    update: { status: "OPEN", dueAt, completedAt: null, completedByUserId: null },
+    // Title/notes refresh too: a task first raised as W-9 can be re-raised as
+    // W-8BEN-E after the provider's legal country changes.
+    update: {
+      status: "OPEN", dueAt, completedAt: null, completedByUserId: null,
+      title: `Complete your ${formLabel} form`,
+      notes: `GoStork needs your signed ${formLabel} on file before payouts can be sent.`,
+    },
   });
 }
 
@@ -331,6 +340,7 @@ export class W9Controller {
           providerName: provider.name || "Provider",
           signingUrl: `${appBaseUrl()}/sign-w9/${guestToken}`,
           fallbackSigner: { userId: w9.signerUserId, email: w9.signerEmail || provider.email || "", name: provider.name || "" },
+          formLabel: TAX_FORM_LABELS[(w9.formType || "W9") as TaxFormType],
         });
       } catch (notifErr: any) {
         this.logger.error(`[W-9] Reminder notification failed: ${notifErr?.message}`);
@@ -440,6 +450,7 @@ export class W9Controller {
           providerName: provider?.name || "Provider",
           signingUrl: `${appBaseUrl()}/sign-w9/${guestToken}`,
           fallbackSigner: { userId: signer.userId, email: signer.email, name: signer.name || signer.email },
+          formLabel: TAX_FORM_LABELS[(w9.formType || "W9") as TaxFormType],
         });
       } catch (notifErr: any) {
         this.logger.error(`[W-9] Request notification failed: ${notifErr?.message}`);
