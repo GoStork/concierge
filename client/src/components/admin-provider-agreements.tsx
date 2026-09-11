@@ -504,10 +504,16 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
                   })}
                   {!sorted.length && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">
-                        {agreements.length
-                          ? "No contracts match your search or filter."
-                          : "No agreements sent yet. Pick a provider above to send the first one."}
+                      {/* The table scrolls sideways on phones: a colSpan cell
+                          centres over the full table width and its text gets
+                          clipped. Stick the message to the visible edge and
+                          size it to the scroll viewport instead. */}
+                      <TableCell colSpan={6} className="p-0">
+                        <div className="sticky left-0 w-[min(100%,calc(100vw-4rem))] max-w-full text-center text-sm text-muted-foreground py-6 px-4">
+                          {agreements.length
+                            ? "No contracts match your search or filter."
+                            : "No agreements sent yet. Pick a provider above to send the first one."}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}
