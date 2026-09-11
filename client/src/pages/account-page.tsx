@@ -1868,7 +1868,7 @@ export default function AccountPage() {
   ];
   // GoStork admins have no legal-identity form to fill first: for them the
   // legal-identity route is the global W-9 template + tracking view, which
-  // belongs with the contracts, right after GoStork Contracts.
+  // belongs with the contracts, right after Contracts.
   const adminTabOrder = [
     '/account', '/account/company', '/account/calendar', '/account/team',
     '/account/documents', '/account/legal-identity',
@@ -1905,7 +1905,7 @@ export default function AccountPage() {
     // identity form - name the tab for what it actually holds for them.
     if (tab.to === '/account/legal-identity') return { ...tab, label: 'W-9' };
     // For GoStork the house-provider "agreements" are its own contracts.
-    if (tab.to === '/account/documents') return { ...tab, label: 'GoStork Contracts' };
+    if (tab.to === '/account/documents') return { ...tab, label: 'Contracts' };
     return tab;
   });
 
