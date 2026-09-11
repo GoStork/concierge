@@ -1751,12 +1751,20 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
   }
   const signerRole = roles[0];
 
+  // Pre-fill what the Legal tab already knows (name, address, tax ID) so
+  // the signer only types what is missing - and a NIT/EIN already on file
+  // lands on the form instead of being asked for again.
+  const { buildTaxFormPrefill } = await import("./src/modules/billing/w9-extractor");
+  const legalIdentity = await (prisma as any).providerLegalIdentity.findUnique({ where: { providerId } }).catch(() => null);
+  const prefill = buildTaxFormPrefill(tpl.formType, legalIdentity);
+
   const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
     method: "POST",
     headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       name: `${tpl.label} - ${(await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } }))?.name || "Provider"}`,
       template_uuid: tpl.templateId,
+      ...(Object.keys(prefill).length ? { fields: prefill } : {}),
       recipients: [{
         email: signer.email,
         first_name: signer.firstName,

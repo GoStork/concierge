@@ -230,6 +230,7 @@ export default function AdminHomePage() {
     onboardingRows.length +
     (data?.pendingServiceRequests?.length || 0) +
     (((data as any)?.signedProviderAgreements?.length as number) || 0) +
+    (((data as any)?.completedTaxForms?.length as number) || 0) +
     (data?.escalations.length || 0) +
     (data?.pendingMeetings?.length || 0) +
     (data?.dueInvoices.filter(i => i.overdue).length || 0) +
@@ -319,6 +320,18 @@ export default function AdminHomePage() {
                 cta="Open"
                 onClick={() => navigate(`/account/documents?agreement=${a.id}`)}
                 onDismiss={() => dismiss.mutate(a.taskKey)}
+              />
+            ))}
+            {/* A provider completed their tax form (W-9 / W-8BEN-E). */}
+            {((data as any)?.completedTaxForms || []).map((w: any) => (
+              <QueueRow
+                key={w.taskKey}
+                icon={<FileSignature className="w-4 h-4" />}
+                title={`${w.providerName} completed their ${w.formLabel}`}
+                detail={`Signed ${fmtWhen(w.completedAt)} - the form and the details it filled in are on their Legal tab`}
+                cta={`View ${w.formLabel}`}
+                onClick={() => navigate(`/admin/providers/${w.providerId}?tab=legal-identity`)}
+                onDismiss={() => dismiss.mutate(w.taskKey)}
               />
             ))}
             {((data as any)?.flaggedReviews || []).map((r: any) => (

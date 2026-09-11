@@ -317,3 +317,44 @@ export async function extractW8BeneFields(pandaDocDocumentId: string): Promise<L
     businessAddressCountry,
   };
 }
+
+/**
+ * The reverse direction: values PandaDoc should pre-fill when GoStork
+ * creates a provider's tax-form document, keyed by the template field
+ * names above. Anything already on the Legal tab (name, address, tax ID)
+ * shows up typed-in, so the signer only fills what is missing. Never
+ * pre-fills a blank - PandaDoc rejects null values.
+ */
+export function buildTaxFormPrefill(
+  formType: "W9" | "W8BENE",
+  li: Partial<LegalIdentityFormData> | null | undefined,
+): Record<string, { value: string }> {
+  const out: Record<string, { value: string }> = {};
+  if (!li) return out;
+  const set = (name: string, v: string | null | undefined) => {
+    const s = (v || "").trim();
+    if (s) out[name] = { value: s };
+  };
+  const street = [li.businessAddressLine1, li.businessAddressLine2].filter(Boolean).join(", ");
+  if (formType === "W9") {
+    set("Full_Name", li.legalName);
+    set("Company_Name", li.businessName);
+    set("Address", street);
+    const cityLine = [li.businessAddressCity, [li.businessAddressState, li.businessAddressPostalCode].filter(Boolean).join(" ")]
+      .filter(Boolean).join(", ");
+    set("City_State_zipcode", cityLine);
+    if (li.taxIdType === "ssn") set("SSN", li.taxId);
+    else if (li.taxIdType === "ein") set("EIN", li.taxId);
+    return out;
+  }
+  set(`${W8_PAGE1}f1_1[0]`, li.legalName);
+  set(`${W8_PAGE1}f1_4[0]`, street);
+  set(`${W8_PAGE1}f1_5[0]`, [li.businessAddressCity, li.businessAddressState, li.businessAddressPostalCode].filter(Boolean).join(", "));
+  const country = li.businessAddressCountry
+    ? (() => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(li.businessAddressCountry!.toUpperCase()) || null; } catch { return null; } })()
+    : null;
+  set(`${W8_PAGE1}f1_6[0]`, country);
+  if (li.taxIdType === "ein") set(W8_US_TIN, li.taxId);
+  else if (li.taxIdType === "foreign") set(W8_FOREIGN_TIN, li.taxId);
+  return out;
+}

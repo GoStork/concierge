@@ -4864,6 +4864,16 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       select: { id: true, completedAt: true, provider: { select: { name: true } } },
     });
 
+    // Same for tax forms (W-9 / W-8BEN-E) completed in the last 7 days. The
+    // key carries completedAt so a re-requested form re-surfaces after the
+    // earlier one was dismissed.
+    const completedTaxFormRows = await (prisma as any).providerW9.findMany({
+      where: { status: "COMPLETED", completedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      orderBy: { completedAt: "desc" },
+      take: 10,
+      select: { id: true, providerId: true, formType: true, completedAt: true, provider: { select: { name: true } } },
+    });
+
     // Service lines providers asked GoStork to approve (status NEW). They
     // leave the queue on their own once an admin approves or declines.
     // Only providers with a real admin user count as "requested" - CDC-scraped
@@ -4927,6 +4937,16 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
           taskKey: `provider-agreement-signed:${a.id}`,
         }))
         .filter((a: any) => !dismissedKeys.has(a.taskKey)),
+      completedTaxForms: completedTaxFormRows
+        .map((w: any) => ({
+          id: w.id,
+          providerId: w.providerId,
+          providerName: w.provider?.name || "Provider",
+          formLabel: (w.formType || "W9") === "W8BENE" ? "W-8BEN-E" : "W-9",
+          completedAt: w.completedAt,
+          taskKey: `tax-form-completed:${w.id}:${w.completedAt ? new Date(w.completedAt).getTime() : 0}`,
+        }))
+        .filter((w: any) => !dismissedKeys.has(w.taskKey)),
       flaggedReviews: flaggedReviewRows
         .map(r => ({
           reviewId: r.id,
