@@ -606,6 +606,45 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  // A provider signed their W-9 / W-8BEN-E - the signed copy is on their
+  // Legal tab (and in Settings -> W-9 for all providers).
+  const handleTaxFormCompletedEvent = useCallback((data: any) => {
+    if (data.type !== "tax_form_completed") return;
+
+    const name = data.providerName || "A provider";
+    const form = data.formLabel || "tax form";
+    const title = `${name} completed their ${form}`;
+    const description = "The signed form is on their Legal tab.";
+
+    playNotificationChime();
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/w9/providers"] });
+
+    const { id: toastId } = toast({
+      title,
+      description,
+      variant: "success",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate(`/admin/providers/${data.providerId}?tab=legal-identity`); }}
+          data-testid="button-view-tax-form-from-toast"
+        >
+          View {form}
+        </Button>
+      ),
+      duration: 30000,
+    });
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(title, { body: description, icon: "/favicon.ico", tag: `tax-form-${data.providerId}` });
+      } catch {}
+    }
+  }, [toast, dismiss, navigate]);
+
   useEffect(() => {
     if (!user) return;
     if ("Notification" in window && Notification.permission === "default") {
@@ -639,6 +678,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleIpFormPhotocopyRequestEvent(data);
         handleServiceRequestedEvent(data);
         handleProviderOnboardedEvent(data);
+        handleTaxFormCompletedEvent(data);
       } catch {}
     };
 

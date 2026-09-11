@@ -6350,14 +6350,24 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
         });
       }
     }
-    for (const admin of admins) {
-      await prisma.inAppNotification.create({
-        data: {
-          userId: admin.id,
-          eventType: "W9_COMPLETED",
-          payload: { providerId: w9.providerId, message: `${w9.provider?.name || "A provider"} has completed their ${formLabel}` },
-        },
-      }).catch(() => {});
+    // Toast for admins who are online now; persisted for the rest so it
+    // replays on their next connect (same path as provider_onboarding_complete).
+    if (nestApp) {
+      const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+      let appEvents: any = null;
+      try { appEvents = nestApp.get(AppEventsService); } catch {}
+      if (appEvents) {
+        await appEvents.emit({
+          type: "tax_form_completed",
+          targetUserIds: admins.map((a: any) => a.id),
+          payload: {
+            providerId: w9.providerId,
+            providerName: w9.provider?.name || "A provider",
+            formLabel,
+            message: `${w9.provider?.name || "A provider"} has completed their ${formLabel}`,
+          },
+        });
+      }
     }
   } catch (err: any) {
     console.error(`[W-9 webhook] Notification failed: ${err.message}`);
