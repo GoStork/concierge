@@ -42,6 +42,7 @@ import {
   getW9SigningSession,
   fetchDocumentViewUrl,
 } from "../../../pandadoc-service";
+import { TAX_FORM_LABELS, type TaxFormType } from "../../../../shared/payout-countries";
 
 function isAdmin(user: any): boolean {
   return !!user?.roles?.includes("GOSTORK_ADMIN");
@@ -348,14 +349,16 @@ export class W9Controller {
     if (!token || token.length < 20) throw new HttpException("Invalid signing link", HttpStatus.NOT_FOUND);
     const row = await (prisma as any).providerW9.findUnique({
       where: { guestToken: token },
-      select: { id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true },
+      select: { id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true, formType: true },
     });
     if (!row) throw new HttpException("Invalid or expired signing link", HttpStatus.NOT_FOUND);
+    // The page header/loading copy names the actual form (W-9 vs W-8BEN-E).
+    const formLabel = TAX_FORM_LABELS[(row.formType || "W9") as TaxFormType];
     if (!row.guestOpenedAt) {
       await (prisma as any).providerW9.update({ where: { id: row.id }, data: { guestOpenedAt: new Date() } }).catch(() => {});
     }
     if (row.status === "COMPLETED") {
-      return { isCompletedView: true, status: row.status };
+      return { isCompletedView: true, status: row.status, formLabel };
     }
     if (!row.signerEmail || !row.pandaDocDocumentId) {
       throw new HttpException("W-9 has no signer on record", HttpStatus.BAD_REQUEST);
@@ -364,7 +367,7 @@ export class W9Controller {
     if (!apiKey) throw new HttpException("PandaDoc not configured", HttpStatus.INTERNAL_SERVER_ERROR);
     const signingUrl = await fetchDocumentViewUrl(apiKey, row.pandaDocDocumentId, row.signerEmail);
     if (!signingUrl) throw new HttpException("Could not create signing session - document may not be ready yet", HttpStatus.BAD_REQUEST);
-    return { isCompletedView: false, signingUrl };
+    return { isCompletedView: false, signingUrl, formLabel };
   }
 
   @Get("api/public/w9/:token/download")
@@ -545,9 +548,10 @@ export class W9Controller {
     try {
       const w9 = await (prisma as any).providerW9.findUnique({
         where: { id },
-        select: { id: true, providerId: true, status: true },
+        select: { id: true, providerId: true, status: true, formType: true },
       });
       if (!w9) throw new HttpException("W-9 not found", HttpStatus.NOT_FOUND);
+      const formLabel = TAX_FORM_LABELS[(w9.formType || "W9") as TaxFormType];
       const userRoles = user?.roles || [];
       const hasBillingRole = userRoles.includes("PROVIDER_ADMIN") || userRoles.includes("BILLING_MANAGER");
       if (!isAdmin(user) && (user.providerId !== w9.providerId || !hasBillingRole)) {
@@ -555,10 +559,10 @@ export class W9Controller {
       }
 
       if (w9.status === "COMPLETED") {
-        return { isCompletedView: true, status: w9.status, w9Id: w9.id, providerId: w9.providerId };
+        return { isCompletedView: true, status: w9.status, w9Id: w9.id, providerId: w9.providerId, formLabel };
       }
       const { signingUrl, providerId } = await getW9SigningSession(w9.id, user);
-      return { isCompletedView: false, signingUrl, w9Id: w9.id, providerId };
+      return { isCompletedView: false, signingUrl, w9Id: w9.id, providerId, formLabel };
     } catch (e: any) {
       if (e instanceof HttpException) throw e;
       this.logger.error(`W-9 signing session error: ${e.message}`);

@@ -6,9 +6,11 @@ import { ArrowLeft, Loader2, AlertCircle, Download, Baby } from "lucide-react";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
 
+// formLabel = "W-9" | "W-8BEN-E": the page serves both IRS forms, so every
+// bit of copy names the one this row actually is.
 type W9SigningSessionResponse =
-  | { isCompletedView: true; status: string; w9Id: string; providerId: string }
-  | { isCompletedView: false; signingUrl: string; w9Id: string; providerId: string };
+  | { isCompletedView: true; status: string; w9Id: string; providerId: string; formLabel?: string }
+  | { isCompletedView: false; signingUrl: string; w9Id: string; providerId: string; formLabel?: string };
 
 export default function W9SigningPage() {
   // Two routes, one page: /w9/:id (auth-guarded, in-app) and /sign-w9/:token
@@ -28,8 +30,8 @@ export default function W9SigningPage() {
     queryFn: async () => {
       const res = await fetch(sessionUrl, { credentials: "include" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Failed to load W-9" }));
-        throw new Error(err.message || "Failed to load W-9");
+        const err = await res.json().catch(() => ({ message: "Failed to load the tax form" }));
+        throw new Error(err.message || "Failed to load the tax form");
       }
       return res.json();
     },
@@ -38,6 +40,7 @@ export default function W9SigningPage() {
   });
 
   const isCompleted = data?.isCompletedView === true;
+  const formLabel = data?.formLabel || "tax form";
 
   // When the signer clicks Finish, PandaDoc's embedded session posts a
   // session_view.document.completed message - bounce back to where they
@@ -118,7 +121,7 @@ export default function W9SigningPage() {
         <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
 
         <span className="text-sm font-medium truncate">
-          {isCompleted ? "Signed W-9" : "Complete W-9"}
+          {isCompleted ? `Signed ${formLabel}` : `Complete ${formLabel}`}
         </span>
 
         {isCompleted && (
@@ -139,14 +142,14 @@ export default function W9SigningPage() {
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="t-helper">Loading W-9...</p>
+            <p className="t-helper">Loading tax form...</p>
           </div>
         )}
 
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
             <AlertCircle className="w-10 h-10 text-destructive" />
-            <p className="text-sm font-medium">Could not load the W-9</p>
+            <p className="text-sm font-medium">Could not load the tax form</p>
             <p className="t-helper max-w-sm">{(error as Error).message}</p>
             {!isGuest && (
               <Button variant="outline" size="sm" onClick={handleBack}>
@@ -161,7 +164,7 @@ export default function W9SigningPage() {
           <iframe
             src={downloadUrl}
             className="w-full h-full border-0"
-            title="Signed W-9"
+            title={`Signed ${formLabel}`}
           />
         )}
 
@@ -170,7 +173,7 @@ export default function W9SigningPage() {
           <iframe
             src={data.signingUrl}
             className="w-full h-full border-0"
-            title="Complete W-9"
+            title={`Complete ${formLabel}`}
             allow="camera; microphone; fullscreen; clipboard-write"
           />
         )}
