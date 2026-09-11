@@ -960,8 +960,8 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   Line 9b (Foreign TIN, field `Page2[0].Line9b_ReadOrder[0].f2_3`) must be
   marked *Required* in the PandaDoc editor on EACH template or signers skip
   it and the Legal tab NIT stays empty - the API cannot set it. [x] DEV
-  template kdwAyqiZhvwmGHYJSVZJBV done; [ ] PROD template
-  vmSsyZNZ97Kemr955b7eu3 (https://app.pandadoc.com/a/#/templates/vmSsyZNZ97Kemr955b7eu3). Built by trimming the IRS fillable PDF
+  template kdwAyqiZhvwmGHYJSVZJBV done; [x] PROD template
+  vmSsyZNZ97Kemr955b7eu3 done 2026-09-11 (https://app.pandadoc.com/a/#/templates/vmSsyZNZ97Kemr955b7eu3). Built by trimming the IRS fillable PDF
   (Rev. 10-2021) to the 33 needed AcroForm fields (Part I lines 1-4/6/7,
   lines 8/9a/9b/10, Part XXX capacity + signature + print + date - the
   IRS PDF's own /Sig field imports as a REAL PandaDoc signature field),
