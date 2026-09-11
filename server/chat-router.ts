@@ -6284,11 +6284,17 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
   if (!isCompleted) return true; // recognized W-9 event, nothing to do for this state
   if (w9.status === "COMPLETED") return true; // idempotent
 
-  await prisma.providerW9.update({
-    where: { id: w9.id },
+  // Atomic claim: PandaDoc delivers the event to EVERY webhook subscription
+  // (both dev Macs), and a read-then-write check let both process it 200ms
+  // apart, so the admin got the completion email twice. Only the instance
+  // whose update actually flips the status carries on to notify.
+  const claimed = await prisma.providerW9.updateMany({
+    where: { id: w9.id, status: { not: "COMPLETED" } },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
-  console.log(`[W-9 webhook] Provider ${w9.providerId} W-9 completed`);
+  if (claimed.count === 0) return true; // the other server won the race
+  const formLabel = (w9.formType || "W9") === "W9" ? "W-9" : "W-8BEN-E";
+  console.log(`[W-9 webhook] Provider ${w9.providerId} ${formLabel} completed`);
 
   // Close any open "Complete your W-9 form" reminder task the admin raised on
   // this provider's Home queue - the work is done the moment the doc completes.
@@ -6340,6 +6346,7 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
           adminName: admin.name,
           providerName: w9.provider?.name || "Provider",
           providerId: w9.providerId,
+          formLabel,
         });
       }
     }
@@ -6348,7 +6355,7 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
         data: {
           userId: admin.id,
           eventType: "W9_COMPLETED",
-          payload: { providerId: w9.providerId, message: `${w9.provider?.name || "A provider"} has completed their ${(w9.formType || "W9") === "W9" ? "W-9" : "W-8BEN-E"}` },
+          payload: { providerId: w9.providerId, message: `${w9.provider?.name || "A provider"} has completed their ${formLabel}` },
         },
       }).catch(() => {});
     }
@@ -6420,10 +6427,12 @@ async function handleProviderAgreementWebhook(eventType: string, documentId: str
   if (!isCompleted) return true;
   if (pa.status === "COMPLETED") return true; // idempotent
 
-  await (prisma as any).providerAgreement.update({
-    where: { id: pa.id },
+  // Atomic claim - same both-Macs race as handleW9Webhook.
+  const claimed = await (prisma as any).providerAgreement.updateMany({
+    where: { id: pa.id, status: { not: "COMPLETED" } },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
+  if (claimed.count === 0) return true; // the other server won the race
   console.log(`[ProviderAgreement webhook] Provider ${pa.providerId} agreement completed`);
 
   // Close the "Sign your GoStork agreement" task - the work is done.

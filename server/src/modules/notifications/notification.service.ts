@@ -3429,19 +3429,22 @@ export class NotificationService implements OnModuleInit {
     adminName: string | null;
     providerName: string;
     providerId: string;
+    /** "W-9" or "W-8BEN-E" - the form the provider actually signed. */
+    formLabel?: string;
   }) {
     const brandData = await this.getBrandData();
     const firstName = params.adminName ? getFirstName(params.adminName) : "there";
     const providerUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=billing`;
-    const subject = `W-9 completed - ${params.providerName}`;
+    const form = params.formLabel || "W-9";
+    const subject = `${form} completed - ${params.providerName}`;
 
     const html = buildBrandedEmail(brandData, {
-      title: "W-9 Completed",
+      title: `${form} Completed`,
       greeting: `Hi ${firstName},`,
-      body: `<strong>${this.escapeHtml(params.providerName)}</strong> has completed and signed their W-9 form. You can view and download it from the provider's Billing tab.`,
-      alertBox: { text: "The signed W-9 is ready to view and download.", type: "success" },
-      buttons: [{ label: "View W-9", url: providerUrl }],
-      footer: "You can download the signed W-9 from the provider's Billing tab at any time.",
+      body: `<strong>${this.escapeHtml(params.providerName)}</strong> has completed and signed their ${form} form. You can view and download it from the provider's Billing tab.`,
+      alertBox: { text: `The signed ${form} is ready to view and download.`, type: "success" },
+      buttons: [{ label: `View ${form}`, url: providerUrl }],
+      footer: `You can download the signed ${form} from the provider's Billing tab at any time.`,
     });
 
     await this.dispatchNotification({
@@ -3451,7 +3454,7 @@ export class NotificationService implements OnModuleInit {
       recipient: params.adminEmail,
       subject,
       body: html,
-    }).catch(e => this.logger.error(`Failed to send W-9 completed email to ${params.adminEmail}: ${e.message}`));
+    }).catch(e => this.logger.error(`Failed to send ${form} completed email to ${params.adminEmail}: ${e.message}`));
   }
 
   private async sendRawSms(to: string, body: string, opts?: { skipConsentGate?: boolean }) {
