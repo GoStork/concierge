@@ -245,6 +245,7 @@ export function OnboardingCoachBar() {
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey, sectionIdx, sections.length]);
+  const barRef = useRef<HTMLDivElement>(null);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!section) {
@@ -292,6 +293,11 @@ export function OnboardingCoachBar() {
   if (hidden) return null;
 
   const isLastSection = sectionIdx >= sections.length - 1;
+  // The flag must never ride up over the sticky bar (its "Done" button sits
+  // exactly where a centred flag lands on a phone): its ceiling is the bar's
+  // live bottom edge, re-read on every scroll via anchorRect updates.
+  const barBottom = barRef.current?.getBoundingClientRect().bottom ?? 0;
+  const flagCeiling = Math.max(76, barBottom + 10);
   // Only a self-markable, still-open step completes on the flag click.
   const canMarkHere = !!current && current.selfMarkable && current.status !== "done";
   // Centered above the section, straddling its top border - clear of the
@@ -306,7 +312,7 @@ export function OnboardingCoachBar() {
           <div
             className="fixed z-40"
             style={{
-              top: Math.min(Math.max(anchorRect.top - 18, 76), window.innerHeight - 56),
+              top: Math.min(Math.max(anchorRect.top - 18, flagCeiling), window.innerHeight - 56),
               left: anchorRect.left + anchorRect.width / 2,
               transform: "translateX(-50%)",
             }}
@@ -406,39 +412,44 @@ export function OnboardingCoachBar() {
   if (current) {
     return (
       <div
-        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[color-mix(in_srgb,hsl(var(--primary))_5%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
+        ref={barRef}
+        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3 py-2 md:px-3.5 md:py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[color-mix(in_srgb,hsl(var(--primary))_5%,hsl(var(--background)))] shadow-sm flex items-center gap-2 md:gap-3"
         data-testid="onboarding-coach-bar"
       >
-        <span className="w-8 h-8 rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] flex items-center justify-center shrink-0">
+        {/* Phones: no icon, one line per fact (title + meta / description /
+            section), a short Done button - the bar must stay a slim strip,
+            not a third of the screen. */}
+        <span className="hidden md:flex w-8 h-8 rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] items-center justify-center shrink-0">
           <ListChecks className="w-4 h-4" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
-            {current.label}
-            <span className="text-[11px] font-normal text-muted-foreground flex items-center gap-1">
+          <div className="text-sm font-medium flex items-center gap-2 min-w-0">
+            <span className="truncate">{current.label}</span>
+            <span className="text-[11px] font-normal text-muted-foreground flex items-center gap-1 shrink-0 whitespace-nowrap">
               <Clock className="w-3 h-3" /> ~{current.minutes} min · {data.doneCount}/{data.requiredCount} done
             </span>
           </div>
-          <div className="text-sm text-muted-foreground line-clamp-2">{current.description}</div>
+          <div className="text-xs md:text-sm text-muted-foreground truncate md:whitespace-normal md:line-clamp-2">{current.description}</div>
           {section && sections.length > 1 && (
-            <div className="mt-1 flex items-center gap-2 text-xs font-medium text-[hsl(var(--primary))]">
-              <span>
+            <div className="mt-0.5 md:mt-1 flex items-center gap-2 text-xs font-medium text-[hsl(var(--primary))] min-w-0">
+              <span className="truncate">
                 Section {sectionIdx + 1}/{sections.length}: {section.label}
               </span>
               {section.state === "open" && (
-                <span className="px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]">
-                  still needed - upload, or mark not applicable
+                <span className="shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]">
+                  <span className="md:hidden">still needed</span>
+                  <span className="hidden md:inline">still needed - upload, or mark not applicable</span>
                 </span>
               )}
               {section.state === "done" && (
-                <span className="flex items-center gap-1 text-[hsl(var(--brand-success))]">
+                <span className="shrink-0 flex items-center gap-1 text-[hsl(var(--brand-success))]">
                   <Check className="w-3 h-3" /> settled
                 </span>
               )}
               {sectionIdx > 0 && (
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:opacity-80"
+                  className="shrink-0 underline underline-offset-2 hover:opacity-80"
                   onClick={() => setSectionIdx((i) => Math.max(0, i - 1))}
                   data-testid="onboarding-coach-prev-section"
                 >
@@ -450,13 +461,15 @@ export function OnboardingCoachBar() {
         </div>
         {current.selfMarkable && current.status !== "done" && (
           <Button
-            className="shrink-0 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-primary-foreground shadow-md font-medium"
+            size="sm"
+            className="shrink-0 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-primary-foreground shadow-md font-medium md:h-10 md:px-4"
             disabled={markDone.isPending}
             onClick={() => markDone.mutate(current.key)}
             data-testid="onboarding-coach-mark-done"
           >
-            <Check className="w-4 h-4 mr-1.5" />
-            {markDone.isPending ? "Saving..." : "All good - mark as done"}
+            <Check className="w-4 h-4 md:mr-1.5" />
+            <span className="hidden md:inline">{markDone.isPending ? "Saving..." : "All good - mark as done"}</span>
+            <span className="md:hidden ml-1">{markDone.isPending ? "Saving" : "Done"}</span>
           </Button>
         )}
         {sectionFlag}
