@@ -370,7 +370,7 @@ export function OnboardingCoachBar() {
   if (celebrated && !current) {
     return (
       <div
-        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[color-mix(in_srgb,hsl(var(--brand-success))_8%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
+        className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3 py-2 md:px-3.5 md:py-2.5 rounded-[var(--radius)] border border-[hsl(var(--brand-success)/0.35)] bg-[color-mix(in_srgb,hsl(var(--brand-success))_8%,hsl(var(--background)))] shadow-sm flex flex-wrap items-center gap-x-3 gap-y-2"
         data-testid="onboarding-coach-done"
       >
         {/* Fireworks the moment the required setup completes (same show as
@@ -383,7 +383,10 @@ export function OnboardingCoachBar() {
           <CelebrationBurst messageId="onboarding-all-complete" createdAt={new Date().toISOString()} kind="match_confirmed" />
         )}
         <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success))] shrink-0" />
-        <div className="flex-1 min-w-0 text-sm">
+        {/* Phones: the text takes the full row and the Next button drops
+            to its own full-width row - side by side the button squeezed the
+            text to one word per line. */}
+        <div className="flex-1 min-w-0 basis-[calc(100%-2rem)] md:basis-auto text-sm">
           <span className="font-medium">{celebrated.label} - done!</span>
           {complete ? (
             <span className="text-muted-foreground"> Every page reviewed - your setup is complete and parents can find you.</span>
@@ -394,14 +397,14 @@ export function OnboardingCoachBar() {
           ) : null}
         </div>
         {complete && (
-          <Button size="sm" variant="outline" onClick={() => setCelebrateKey(null)} data-testid="onboarding-coach-finish">
+          <Button size="sm" variant="outline" className="w-full md:w-auto" onClick={() => setCelebrateKey(null)} data-testid="onboarding-coach-finish">
             Done
           </Button>
         )}
         {!complete && next && (
-          <Button size="sm" onClick={() => navigate(next.link)} data-testid="onboarding-coach-next">
-            Next: {next.label}
-            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+          <Button size="sm" className="w-full md:w-auto min-w-0" onClick={() => navigate(next.link)} data-testid="onboarding-coach-next">
+            <span className="truncate">Next: {next.label}</span>
+            <ArrowRight className="w-3.5 h-3.5 ml-1.5 shrink-0" />
           </Button>
         )}
       </div>
@@ -481,10 +484,10 @@ export function OnboardingCoachBar() {
   if (!next) return null;
   return (
     <div
-      className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3.5 py-2 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[color-mix(in_srgb,hsl(var(--primary))_3%,hsl(var(--background)))] shadow-sm flex items-center gap-3"
+      className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3 py-2 md:px-3.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[color-mix(in_srgb,hsl(var(--primary))_3%,hsl(var(--background)))] shadow-sm flex flex-wrap items-center gap-x-3 gap-y-2"
       data-testid="onboarding-coach-mirror"
     >
-      <div className="flex-1 min-w-0 flex items-center gap-3">
+      <div className="flex-1 min-w-0 basis-full md:basis-auto flex items-center gap-3">
         <span className="text-sm font-medium shrink-0">
           {requiredComplete ? "Setup complete" : `Getting started - ${data.doneCount}/${data.requiredCount}`}
         </span>
@@ -492,9 +495,9 @@ export function OnboardingCoachBar() {
           <span className="block h-full rounded-full bg-[hsl(var(--primary))] transition-all" style={{ width: `${data.percent}%` }} />
         </span>
       </div>
-      <Button size="sm" variant="outline" onClick={() => navigate(next.link)} data-testid="onboarding-coach-continue">
-        {next.isOptional ? `Optional: ${next.label}` : `Continue setup: ${next.label}`}
-        <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+      <Button size="sm" variant="outline" className="w-full md:w-auto min-w-0" onClick={() => navigate(next.link)} data-testid="onboarding-coach-continue">
+        <span className="truncate">{next.isOptional ? `Optional: ${next.label}` : `Continue setup: ${next.label}`}</span>
+        <ArrowRight className="w-3.5 h-3.5 ml-1.5 shrink-0" />
       </Button>
     </div>
   );
