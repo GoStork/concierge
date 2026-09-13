@@ -112,6 +112,14 @@ export function resolveSilenceConfig(orgRow: any, defaultsRow: any): SilenceConf
 
 const key2 = (acct: string, org: string) => `${acct}|${org}`;
 
+/**
+ * The Prisma `where` fragment for "a human wrote this": the family (role
+ * "user") or provider staff (senderType "provider" - stored as role
+ * "assistant"). Shared with the read-time reconcile in task-materializer so
+ * the two can never disagree on what ends a silence.
+ */
+export const HUMAN_MESSAGE = { OR: [{ role: "user" }, { senderType: "provider" }] } as const;
+
 export async function runSilenceSweep(db: Db, notifications?: any): Promise<void> {
   try {
     const now = new Date();
@@ -181,14 +189,15 @@ export async function runSilenceSweep(db: Db, notifications?: any): Promise<void
       sessionsOfPair.set(k, list);
     }
 
-    // Human messages either direction. role "user" covers both the family and
-    // provider staff (senderType "provider"); Eva's own sends are role
-    // "assistant" and deliberately NOT a touch - if her check-in reset the
-    // clock, the coordinator task could never fire.
+    // Human messages either direction: the family writes as role "user";
+    // provider staff write as role "assistant" with senderType "provider"
+    // (the provider send path). Eva's own sends (senderType "ai") and system
+    // cards are deliberately NOT a touch - if her check-in reset the clock,
+    // the coordinator task could never fire.
     const msgAgg = sessions.length
       ? await db.aiChatMessage.groupBy({
           by: ["sessionId"],
-          where: { sessionId: { in: sessions.map((s: any) => s.id) }, role: "user" },
+          where: { sessionId: { in: sessions.map((s: any) => s.id) }, ...HUMAN_MESSAGE },
           _max: { createdAt: true },
         })
       : [];

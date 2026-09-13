@@ -26,6 +26,7 @@
 import { serviceLineOfType } from "./service-lines";
 import { serviceLineOfSubject } from "./journey-timeline";
 import { PROVIDER_ROLES } from "../shared/roles";
+import { HUMAN_MESSAGE } from "./silence-sweep";
 
 type Db = any;
 
@@ -664,7 +665,9 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
  * Silence tasks (silence:<accountKey>:<line>:<nth>) have no artifact - their
  * "done" is the family or the team touching the thread again. Checked at
  * read time with the cheapest honest signal: any human message on the org's
- * threads after the task was raised. The 10-minute silence sweep is the
+ * threads after the task was raised - the family's reply OR the coordinator
+ * reaching out (provider messages are role "assistant"/senderType
+ * "provider", which is why a plain role:"user" check left these open). The 10-minute silence sweep is the
  * backstop with the full last-touch definition.
  */
 /**
@@ -818,7 +821,7 @@ async function reconcileSilenceTasks<T extends { id: string; source?: string; sy
       })).map((u: any) => u.id);
       const touched = await db.aiChatMessage.findFirst({
         where: {
-          role: "user",
+          ...HUMAN_MESSAGE,
           createdAt: { gt: t.createdAt },
           session: { userId: { in: memberIds }, providerId: t.providerId },
         },

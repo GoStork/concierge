@@ -190,10 +190,37 @@ export async function runPlaybookSweep(db: Db): Promise<void> {
     });
     const userIds = Array.from(new Set(sessions.map((s: any) => s.userId).filter(Boolean))) as string[];
     if (userIds.length === 0) return;
+    // Provider staff are never families: their pinned provider-assistant Eva
+    // thread carries their OWN org's providerId, and without this filter it
+    // read as a parent journey - a snapshot at "exploring", then a "No reply
+    // from <coordinator>" silence task on the coordinator's own desk.
     const users = await db.user.findMany({
-      where: { id: { in: userIds } },
+      where: { id: { in: userIds }, providerId: null },
       select: { id: true, parentAccountId: true },
     });
+    // Self-heal the rows that filter used to let through: phantom staff
+    // snapshots (and the silence tasks raised from them) go away on the
+    // next tick in every environment.
+    {
+      const staff = await db.user.findMany({
+        where: { id: { in: userIds }, providerId: { not: null } },
+        select: { id: true, parentAccountId: true },
+      });
+      const staffKeys = Array.from(new Set(staff.map((u: any) => u.parentAccountId || u.id))) as string[];
+      if (staffKeys.length) {
+        const [snaps, tasks] = await Promise.all([
+          db.parentStageSnapshot.deleteMany({ where: { parentAccountId: { in: staffKeys } } }),
+          db.parentTask.updateMany({
+            where: { parentAccountId: { in: staffKeys }, source: "SYSTEM", systemKey: { startsWith: "silence:" }, status: "OPEN" },
+            data: { status: "DONE", completedAt: new Date() },
+          }),
+        ]);
+        await db.silenceState.deleteMany({ where: { parentAccountId: { in: staffKeys } } }).catch(() => {});
+        if (snaps.count || tasks.count) {
+          console.log(`[playbooks] Removed ${snaps.count} staff snapshot(s), closed ${tasks.count} staff silence task(s)`);
+        }
+      }
+    }
     const accountKeys = Array.from(new Set(users.map((u: any) => u.parentAccountId || u.id))) as string[];
 
     const now = Date.now();
