@@ -515,7 +515,11 @@ export default function OnboardingPage() {
       return (brand as any)[key] || null;
     };
     return (
-      <div className="fixed inset-0 bg-background flex flex-col items-center justify-between py-12 px-6" data-testid="onboarding-ai-intro">
+      <div
+        className="fixed inset-0 bg-background flex flex-col items-center justify-between px-6"
+        style={{ paddingTop: "max(3rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(3rem, env(safe-area-inset-bottom, 0px))" }}
+        data-testid="onboarding-ai-intro"
+      >
         <div className="max-w-md w-full flex flex-col items-center flex-1">
           <h1 className="text-3xl md:text-4xl font-bold leading-tight text-center mb-8" style={{ fontFamily: "var(--font-display)" }} data-testid="text-ai-intro-title">
             Now let's meet your AI concierge
@@ -632,11 +636,17 @@ export default function OnboardingPage() {
   return (
     <div className="fixed inset-0 bg-background flex flex-col items-center" data-testid="onboarding-page">
       <div className="w-full max-w-lg flex flex-col flex-1 min-h-0">
-      <div className="flex items-center px-4 pt-4 pb-2">
+      {/* Top bar: the wizard is fixed inset-0 with viewport-fit=cover, so pad below the phone status bar / notch */}
+      <div
+        className="flex items-center min-h-12 px-4 pb-2"
+        style={{ paddingTop: "max(1rem, env(safe-area-inset-top, 0px))" }}
+      >
         {step > (isRegistration ? WELCOME_STEP : 1) && (
           <button
+            type="button"
             onClick={goBack}
-            className="p-2 -ml-2 rounded-full hover:bg-muted transition-colors"
+            aria-label="Back"
+            className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-foreground hover:bg-secondary transition-colors"
             data-testid="btn-onboarding-back"
           >
             <ChevronLeft className="w-6 h-6" />
