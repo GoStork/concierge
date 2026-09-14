@@ -8001,6 +8001,12 @@ async function runSyncJob(
         if (isJobCancelled(job.id)) break;
         collected++;
         if (slugSkip.has(slug)) {
+          // An unchanged card is still a donor we saw on the listing tonight.
+          // Record it in both sets or (a) the zero-discovered login guard below
+          // flags a quiet all-unchanged night as FAILED, and (b) stale detection
+          // treats every skipped donor as gone and marks them INACTIVE.
+          globalSeen.add(slug);
+          allScrapedIds.add(slug);
           slugUnchanged++;
           job.processed++;
           continue;
