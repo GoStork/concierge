@@ -987,7 +987,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // min-h-screen containers and drops the fixed mobile bottom nav on top of the
   // Reschedule/Cancel row, making those actions unclickable.
   const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge", "/w9", "/book/", "/booking/"];
-  if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{reminderPopup}{children}</>;
+  // children stay at index 0 in BOTH the signed-out branch above and this one.
+  // Onboarding logs the parent in mid-wizard; if the page moved from index 0 to
+  // index 1 here, React remounted it and dropped the "creating your account"
+  // state, flashing the code step and skipping the "meet your concierge" screen.
+  if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{children}{reminderPopup}</>;
 
   const ALL_MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },

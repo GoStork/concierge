@@ -351,8 +351,10 @@ export default function OnboardingPage() {
   // A deep link or a stale draft can name a step the answers do not support
   // (draft cleared, ?step=5 with no phone). Clamp to the first step that is
   // still incomplete so the parent never lands on a screen that cannot proceed.
+  const clampedOnceRef = useRef(false);
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || clampedOnceRef.current) return;
+    clampedOnceRef.current = true;
     const firstIncomplete = (() => {
       if (data.goals.length === 0) return 1;
       if (!(data.firstName.trim() && data.lastName.trim())) return 2;
@@ -361,7 +363,9 @@ export default function OnboardingPage() {
       return 5;
     })();
     if (step > firstIncomplete) setStep(firstIncomplete, { replace: true });
-    // Only on mount / auth resolution: later navigation is driven by goNext.
+    // Once, on the first settled render: later navigation is driven by goNext,
+    // and the login inside handleSubmit must never re-run this (it would pull
+    // the parent back to the code step while their account is being created).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 

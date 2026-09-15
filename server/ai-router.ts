@@ -11681,7 +11681,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // member, the speaker can add members (IP1), and no earlier message in this
     // lifetime session carried the card. Dismissal is client-side; adding the
     // partner makes the card resolve itself via the members query.
-    if (coupleSavedThisTurn && currentSessionId) {
+    // The Phase 1 family-type answer is usually served by the intake state
+    // machine, which never emits a [[SAVE]] tag - so also read the answer off
+    // the parent's own message (quick-reply labels and natural phrasings).
+    const coupleSaidThisTurn =
+      coupleSavedThisTurn ||
+      /\b(two dads|two moms|man and a woman|a woman and a man|woman and a man)\b/i.test(userMessage || "") ||
+      /\b(my (husband|wife|partner|spouse) and i|we('re| are) (married|a couple|partners|engaged))\b/i.test(userMessage || "");
+    if (coupleSaidThisTurn && currentSessionId) {
       try {
         const me = await prisma.user.findUnique({
           where: { id: userId },
