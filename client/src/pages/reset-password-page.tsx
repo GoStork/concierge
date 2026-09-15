@@ -97,12 +97,14 @@ export default function ResetPasswordPage() {
         <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
           <CardHeader className="text-center pb-4">
             <CardTitle className="font-display text-2xl font-heading text-destructive" data-testid="text-page-title">
-              Invalid Reset Link
+              {isInvite ? "This invitation link has expired" : "Invalid Reset Link"}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="t-helper">
-              This password reset link is invalid or has expired. Please request a new one.
+              {isInvite
+                ? "Invitation links work for 7 days. Request a new link with the email address you were invited on and you can still set your password."
+                : "This password reset link is invalid or has expired. Please request a new one."}
             </p>
             <Button
               onClick={() => navigate("/forgot-password")}
