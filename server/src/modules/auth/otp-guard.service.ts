@@ -90,6 +90,17 @@ export class OtpGuardService {
     // premium-range number walks through.
     const forceWhatsapp = policy === "WHATSAPP_ONLY" || !isoCode;
 
+    // DEV-ONLY test numbers: repeated signup testing from one phone trips the
+    // per-phone and per-IP caps within an hour. Numbers listed in
+    // OTP_TEST_NUMBERS (comma-separated E.164) skip the RATE checks only, and
+    // only when the server is not in production - the country policy above and
+    // Turnstile still apply, and the attempt is still logged by record().
+    // Production ignores the variable entirely, so a leaked .env cannot open it.
+    if (process.env.NODE_ENV !== "production" && OtpGuardService.isTestNumber(e164)) {
+      this.logger.warn(`[otp-guard] DEV test number ${e164.slice(0, 5)}... - rate limits skipped`);
+      return { ok: true, forceWhatsapp };
+    }
+
     const hourAgo = new Date(Date.now() - 3_600_000);
     const dayAgo = new Date(Date.now() - 86_400_000);
     const phoneHash = OtpGuardService.hashPhone(e164);
@@ -115,6 +126,14 @@ export class OtpGuardService {
     }
 
     return { ok: true, forceWhatsapp };
+  }
+
+  /** True when the number is in OTP_TEST_NUMBERS (dev machines only; see check()). */
+  static isTestNumber(e164: string): boolean {
+    const raw = process.env.OTP_TEST_NUMBERS || "";
+    if (!raw.trim()) return false;
+    const wanted = e164.replace(/[^\d+]/g, "");
+    return raw.split(",").map((n) => n.trim().replace(/[^\d+]/g, "")).filter(Boolean).includes(wanted);
   }
 
   /** Append to the abuse log. Never throws - logging must not break signup. */

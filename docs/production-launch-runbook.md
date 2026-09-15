@@ -538,6 +538,9 @@ Useful context for the executing session:
 - [ ] Turnstile: the site key is domain-scoped. Add app.gostork.com to the
   Turnstile widget's allowed hostnames (or mint a production site key) and set
   the production secret in the prod env. Signup OTP send breaks without this.
+- `OTP_TEST_NUMBERS` (dev-only allowlist that skips OTP rate limits for listed
+  phones) must NOT be set in the prod env. The guard ignores it when
+  NODE_ENV=production, but keep the variable out of prod anyway.
 - [ ] www.gostork.com (WordPress marketing site) stays as-is - separate origin.
 
 ## 2. Environment (production host .env / secrets)
