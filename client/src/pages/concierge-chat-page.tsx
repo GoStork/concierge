@@ -158,7 +158,7 @@ interface ChatMessage {
   comparisonCards?: ComparisonCardData[];
   prepDoc?: boolean;
   /** One-time "add your partner" offer attached by the server (uiCardData.partnerInvite). */
-  partnerInvite?: { offered: boolean };
+  partnerInvite?: { offered: boolean; asked?: boolean; form?: boolean };
   consultationCard?: ConsultationCardData;
   /** Hydrated Booking objects for existing-meeting questions (join/reschedule/cancel). */
   meetingCards?: any[];
@@ -5472,11 +5472,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     </div>
                   )}
 
-                  {/* One-time "add your partner" offer, attached to the reply in
-                      which the parent said they are a couple. */}
-                  {msg.partnerInvite?.offered && (
+                  {/* In-chat partner invite form: Eva asked "add your partner?"
+                      as its own turn, the parent said yes, this is the answer
+                      surface. Submitting sends the invitation and posts the
+                      parent's "Invitation sent" message so the intake resumes. */}
+                  {msg.partnerInvite?.form && (
                     <div className="mt-3">
-                      <PartnerInviteCard messageId={msg.id} brandColor={brandColor} />
+                      <PartnerInviteCard brandColor={brandColor} onDone={(text) => sendMessage(text)} />
                     </div>
                   )}
 

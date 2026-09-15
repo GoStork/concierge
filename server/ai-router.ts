@@ -4739,6 +4739,10 @@ IMPORTANT RULES:
 
     const userMessage = req.body.message || "";
     const ragProviderId = req.body.providerId || undefined;
+    // PARTNER INVITE step state for this turn (see the bypass before the
+    // intake state machine). { offered, asked } = the question turn;
+    // { offered, form } = the in-chat invite form turn.
+    let partnerInviteExtras: { offered: true; asked?: true; form?: true } | null = null;
 
     // Tier 2-only expensive lookups - ALREADY RUNNING since right after the
     // session load (tier2LookupsPromise kicked off ~1s of pre-work earlier);
@@ -7628,6 +7632,64 @@ ${phase0Section}`;
         if (offScriptIntentDetected) {
           console.log(`[INTAKE BYPASS] Standing down - off-script intent detected, the model handles this turn with its directive`);
         }
+
+        // -----------------------------------------------------------------------
+        // PARTNER INVITE STEP - one question per turn, entirely inside the chat.
+        // Turn 1: the parent has just told us they are a couple (Two dads / Two
+        //   moms / Man and a woman, or the gender follow-up that closes the
+        //   straight-couple branch) -> Eva asks ONE question: add your partner?
+        //   The next intake question waits for the answer.
+        // Turn 2: "Yes" -> Eva asks for the partner's name + email and the reply
+        //   carries the in-chat invite form (PartnerInviteCard). Submitting it
+        //   sends the invitation and posts "Invitation sent" as the parent's
+        //   message, which lets the state machine resume. "Not now" -> nothing
+        //   is served here and the state machine continues as usual.
+        // Once per lifetime Eva session; only for the account admin (IP1) while
+        // the account still has a single member.
+        // -----------------------------------------------------------------------
+        const PARTNER_QUESTION_RE = /add your partner to your account/i;
+        const lastAiAskedPartner = PARTNER_QUESTION_RE.test(lastAiContent || "");
+        if (!serverBypassServed && !useTier2 && !offScriptIntentDetected && lastAiAskedPartner) {
+          const saidYes = /\b(yes|yeah|yep|sure|add|please|ok|okay)\b/i.test(userMessage) && !/\b(not now|no\b|later|skip|don't|dont)\b/i.test(userMessage);
+          if (saidYes) {
+            finalContent = "Great. Tell me your partner's name and email below and I'll send them a link to set their own password. You'll both see the same conversations, Match Calls and documents.";
+            partnerInviteExtras = { offered: true, form: true };
+            sse.sendToken(finalContent);
+            serverBypassServed = true; mark("bypass_served");
+            console.log(`[PARTNER INVITE] Serving in-chat invite form in session ${currentSessionId}`);
+          } else {
+            console.log(`[PARTNER INVITE] Parent declined or moved on - state machine continues`);
+          }
+        }
+        const lastAiAskedGenderFollowUp = /are you the woman or the man in this journey/i.test(lastAiContent || "");
+        const coupleSaidThisTurn =
+          /\b(two dads|two moms)\b/i.test(userMessage) ||
+          (/\b(man and a woman|a woman and a man|woman and a man)\b/i.test(userMessage) && !straightCoupleFollowUpNeeded) ||
+          (lastAiAskedGenderFollowUp && /\b(woman|man)\b/i.test(userMessage)) ||
+          /\b(my (husband|wife|partner|spouse) and i|we('re| are) (married|a couple|partners|engaged))\b/i.test(userMessage);
+        if (!serverBypassServed && !useTier2 && !offScriptIntentDetected && coupleSaidThisTurn && !lastAiAskedPartner && currentSessionId) {
+          try {
+            const me = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true, parentAccountRole: true } });
+            if (me?.parentAccountId && (!me.parentAccountRole || me.parentAccountRole === "INTENDED_PARENT_1")) {
+              const [memberCount, offeredBefore] = await Promise.all([
+                prisma.user.count({ where: { parentAccountId: me.parentAccountId } }),
+                prisma.aiChatMessage.findFirst({
+                  where: { sessionId: currentSessionId, uiCardData: { path: ["partnerInvite", "offered"], equals: true } },
+                  select: { id: true },
+                }),
+              ]);
+              if (memberCount <= 1 && !offeredBefore) {
+                finalContent = "Since you're doing this together, would you like to add your partner to your account? You'd both see the same conversations, Match Calls and documents, and they get their own login. [[QUICK_REPLY:Yes, add my partner|Not now]]";
+                partnerInviteExtras = { offered: true, asked: true };
+                sse.sendToken(finalContent);
+                serverBypassServed = true; mark("bypass_served");
+                console.log(`[PARTNER INVITE] Asking the add-your-partner question in session ${currentSessionId}`);
+              }
+            }
+          } catch (e: any) {
+            console.error("[PARTNER INVITE] gate failed:", e?.message);
+          }
+        }
         if (!serverBypassServed && !useTier2 && !offScriptIntentDetected) {
           // Pre-fetch real DB country costs in case the intake state machine
           // decides to serve the D1 international education message - the
@@ -8716,10 +8778,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
     // Collect ALL [[SAVE:]] tags from the response (AI sometimes emits multiple)
     const saveTagMatches = [...finalContent.matchAll(/\[\[SAVE:(.*?)\]\]/g)];
-    // Set when THIS turn's save says the parent is on the journey with a
-    // partner (Phase 1 family type). Drives the one-time "add your partner"
-    // card attached to this same reply - see PARTNER INVITE below.
-    let coupleSavedThisTurn = false;
     if (saveTagMatches.length > 0) {
       // Merge all SAVE tags into one object (later tags override earlier ones for the same key)
       const fieldsToSave: any = {};
@@ -8729,12 +8787,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         } catch (e) {
           console.error("Failed to parse SAVE block:", m[1], e);
         }
-      }
-      if (
-        /couple|married|partner/i.test(String(fieldsToSave.relationshipStatus || "")) ||
-        /couple/i.test(String(fieldsToSave.familyType || ""))
-      ) {
-        coupleSavedThisTurn = true;
       }
 
       // Fields saved to IntendedParentProfile - every DB column that the AI can set
@@ -11673,44 +11725,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
     if (multiSelect) uiExtras.multiSelect = true;
 
-    // PARTNER INVITE: the moment the parent says they are on this journey as a
-    // couple, offer to add the partner to the shared account - once. The card
-    // rides on THIS reply (not a trailing message) so Eva's follow-up question
-    // and its quick replies stay last on screen. Deterministic, not prompted:
-    // the model never has to remember to offer it. Gates: the account has one
-    // member, the speaker can add members (IP1), and no earlier message in this
-    // lifetime session carried the card. Dismissal is client-side; adding the
-    // partner makes the card resolve itself via the members query.
-    // The Phase 1 family-type answer is usually served by the intake state
-    // machine, which never emits a [[SAVE]] tag - so also read the answer off
-    // the parent's own message (quick-reply labels and natural phrasings).
-    const coupleSaidThisTurn =
-      coupleSavedThisTurn ||
-      /\b(two dads|two moms|man and a woman|a woman and a man|woman and a man)\b/i.test(userMessage || "") ||
-      /\b(my (husband|wife|partner|spouse) and i|we('re| are) (married|a couple|partners|engaged))\b/i.test(userMessage || "");
-    if (coupleSaidThisTurn && currentSessionId) {
-      try {
-        const me = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { parentAccountId: true, parentAccountRole: true },
-        });
-        if (me?.parentAccountId && (!me.parentAccountRole || me.parentAccountRole === "INTENDED_PARENT_1")) {
-          const [memberCount, offeredBefore] = await Promise.all([
-            prisma.user.count({ where: { parentAccountId: me.parentAccountId } }),
-            prisma.aiChatMessage.findFirst({
-              where: { sessionId: currentSessionId, uiCardData: { path: ["partnerInvite", "offered"], equals: true } },
-              select: { id: true },
-            }),
-          ]);
-          if (memberCount <= 1 && !offeredBefore) {
-            uiExtras.partnerInvite = { offered: true };
-            console.log(`[partner-invite] Attaching add-your-partner card in session ${currentSessionId}`);
-          }
-        }
-      } catch (e: any) {
-        console.error("[partner-invite] gate failed:", e?.message);
-      }
-    }
+    if (partnerInviteExtras) uiExtras.partnerInvite = partnerInviteExtras;
 
     const replySessionId = currentSessionId;
 
