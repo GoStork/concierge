@@ -277,8 +277,8 @@ export default function AdminUserEditPage() {
       toast({ title: "Passwords do not match", variant: "destructive" });
       return;
     }
-    if (password && password.length < 6) {
-      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+    if (password && password.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
       return;
     }
 
@@ -478,8 +478,8 @@ export default function AdminUserEditPage() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {password && password.length < 6 && (
-                  <p className="text-xs text-destructive">Minimum 6 characters</p>
+                {password && password.length < 8 && (
+                  <p className="text-xs text-destructive">Minimum 8 characters</p>
                 )}
                 {password && (
                   <div className="space-y-2 mt-4">

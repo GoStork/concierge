@@ -680,8 +680,8 @@ function AccountTab() {
       toast({ title: "Passwords do not match", variant: "destructive" });
       return;
     }
-    if (editPassword && editPassword.length < 6) {
-      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+    if (editPassword && editPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
       return;
     }
     // Partner's full name / age are never required at profile save time.
@@ -788,7 +788,7 @@ function AccountTab() {
           payload.currentAttorneyName = editCurrentAttorneyName || null;
         }
       }
-      if (editPassword && editPassword.length >= 6) {
+      if (editPassword && editPassword.length >= 8) {
         payload.password = editPassword;
       }
       await apiRequest("PUT", "/api/user/profile", payload);
@@ -1080,8 +1080,8 @@ function AccountTab() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {editPassword && editPassword.length < 6 && (
-                  <p className="text-xs text-destructive">Minimum 6 characters</p>
+                {editPassword && editPassword.length < 8 && (
+                  <p className="text-xs text-destructive">Minimum 8 characters</p>
                 )}
                 {editPassword && (
                   <div className="space-y-2 mt-4">

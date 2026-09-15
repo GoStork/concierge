@@ -1036,7 +1036,7 @@ function StepAccount({
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={e => onPasswordChange(e.target.value)}
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
               data-testid="input-register-password"
               className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors pr-10"
             />
