@@ -36,6 +36,8 @@ type Props = {
   variant?: "default" | "onboarding";
   showCurrentLocation?: boolean;
   autoFocus?: boolean;
+  /** id for the onboarding text input so a visible <label htmlFor> can name it. */
+  id?: string;
   "data-testid"?: string;
 };
 
@@ -57,7 +59,7 @@ function buildDisplayQuery(value: LocationInput, isOnboarding: boolean): string 
   return [value.address, value.city, value.state, value.zip].filter(Boolean).join(", ");
 }
 
-export default function LocationAutocomplete({ value, onChange, placeholder, className, variant = "default", showCurrentLocation = false, autoFocus, ...props }: Props) {
+export default function LocationAutocomplete({ value, onChange, placeholder, className, variant = "default", showCurrentLocation = false, autoFocus, id, ...props }: Props) {
   const isOnboarding = variant === "onboarding";
   const [query, setQuery] = useState(() => buildDisplayQuery(value, isOnboarding));
   const [results, setResults] = useState<LocationResult[]>([]);
@@ -276,6 +278,11 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
             placeholder={placeholder || "Start typing your city..."}
             className={inputClasses}
             autoFocus={autoFocus}
+            id={id}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={isOpen && results.length > 0}
+            aria-controls={id ? `${id}-listbox` : undefined}
             data-testid={props["data-testid"]}
           />
         ) : (

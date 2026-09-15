@@ -190,7 +190,7 @@ function PillButton({
       onClick={onClick}
       aria-pressed={selected}
       data-testid={testId}
-      className={`hover-elevate active-elevate-2 w-full py-4 px-6 rounded-full text-lg font-medium border flex items-center justify-between ${
+      className={`hover-elevate active-elevate-2 w-full py-4 px-6 rounded-full text-lg font-medium border flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
         selected
           ? "bg-primary text-primary-foreground border-primary shadow-md"
           : "bg-card text-foreground border-border hover:border-primary/50"
@@ -541,16 +541,35 @@ export default function OnboardingPage() {
 
   const lastStep = isRegistration ? ACCOUNT_STEP : TOTAL_STEPS_AUTHENTICATED;
 
+  // Enter advances ONLY from a text field, and only when nothing else owns
+  // the key: buttons (goal pills) keep their native toggle, an open list
+  // (city suggestions, country picker) keeps its selection, and a child
+  // that already handled Enter (defaultPrevented) is left alone. A previous
+  // window-level listener advanced from anywhere, which made keyboard
+  // multi-select impossible and skipped the parent's city pick.
+  const handleStepKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" || e.defaultPrevented) return;
+    const el = e.target as HTMLElement;
+    if (!(el instanceof HTMLInputElement)) return;
+    if (el.type === "checkbox" || el.type === "radio") return;
+    if (el.getAttribute("aria-expanded") === "true") return;
+    if (el.closest('[role="listbox"]')) return;
+    if (!canContinue() || submitting || otpSending) return;
+    e.preventDefault();
+    handleContinue();
+  };
+
+  // Focus management: after a step change, if nothing claimed focus (steps
+  // with an autofocused field already did), move it to the step's heading so
+  // keyboard and screen-reader users land on the new question, not the body.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && canContinue() && !submitting && !otpSending) {
-        e.preventDefault();
-        handleContinue();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  });
+    const t = setTimeout(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      document.querySelector<HTMLElement>('[data-testid="text-step-title"]')?.focus();
+    }, 350);
+    return () => clearTimeout(t);
+  }, [step]);
 
   const handleContinue = async () => {
     if (step === WELCOME_STEP) {
@@ -768,8 +787,12 @@ export default function OnboardingPage() {
   // Welcome step - full-screen, no progress bar
   if (step === WELCOME_STEP) {
     return (
-      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center px-6" data-testid="onboarding-welcome">
-        <div className="max-w-md text-center space-y-6">
+      <div className="fixed inset-0 bg-background overflow-y-auto px-6" data-testid="onboarding-welcome">
+        <div
+          className="min-h-full flex flex-col items-center justify-center"
+          style={{ paddingTop: "max(2.5rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 0px))" }}
+        >
+        <div className="max-w-md w-full text-center space-y-6">
           {/* Brand logo or fallback */}
           <div className="flex justify-center">
             {(brand?.logoWithNameUrl || brand?.logoUrl) ? (
@@ -833,6 +856,7 @@ export default function OnboardingPage() {
             Get started
           </Button>
         </div>
+        </div>
       </div>
     );
   }
@@ -850,14 +874,14 @@ export default function OnboardingPage() {
             type="button"
             onClick={goBack}
             aria-label="Back"
-            className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-foreground hover:bg-secondary transition-colors"
+            className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-foreground hover:bg-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             data-testid="btn-onboarding-back"
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
         )}
         <div className="flex-1" />
-        <span className="t-micro-label" data-testid="text-step-count">
+        <span className="t-micro-label" role="status" aria-live="polite" data-testid="text-step-count">
           {stepNumber} of {totalVisibleSteps}
         </span>
       </div>
@@ -883,6 +907,7 @@ export default function OnboardingPage() {
         <div
           key={step}
           className="animate-in fade-in slide-in-from-right-4 duration-300"
+          onKeyDown={handleStepKeyDown}
         >
           {step === 1 && (
             <StepGoals goals={data.goals} onChange={g => update({ goals: g })} />
@@ -966,6 +991,13 @@ export default function OnboardingPage() {
           )}
           {step === ACCOUNT_STEP && isRegistration && (
             <StepAccount
+              summary={[
+                { step: 1, label: "Looking for", value: data.goals.join(", ") },
+                { step: 2, label: "Name", value: `${data.firstName.trim()} ${data.lastName.trim()}`.trim() },
+                { step: 3, label: "Location", value: [data.city, data.state].filter(Boolean).join(", ") },
+                { step: 4, label: "Mobile", value: data.phoneDisplay || data.phoneE164 },
+              ]}
+              onEditStep={(n) => { setDirection("back"); setStep(n); }}
               email={data.email}
               password={data.password}
               confirmPassword={data.confirmPassword}
@@ -1025,6 +1057,8 @@ export default function OnboardingPage() {
 }
 
 function StepAccount({
+  summary,
+  onEditStep,
   email,
   password,
   confirmPassword,
@@ -1034,6 +1068,9 @@ function StepAccount({
   error,
   onLoginRedirect,
 }: {
+  /** Read-back of the earlier answers; each row links to its step. */
+  summary: { step: number; label: string; value: string }[];
+  onEditStep: (step: number) => void;
   email: string;
   password: string;
   confirmPassword: string;
@@ -1049,39 +1086,64 @@ function StepAccount({
   return (
     <div>
       <h1
-        className="text-3xl font-bold mb-2 leading-tight"
+        className="text-3xl font-bold mb-2 leading-tight focus:outline-none"
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
+        tabIndex={-1}
       >
         Create your account
       </h1>
-      <p className="t-helper mb-8">Enter your email and choose a password to get started.</p>
+      <p className="t-helper mb-6">Enter your email and choose a password to get started.</p>
+
+      {/* Read-back: the parent commits five answers here, so show them once
+          more with a way back to each. Linen recedes under the form. */}
+      <div className="rounded-[var(--radius)] border border-border bg-secondary/60 px-4 py-3 mb-8 space-y-2" data-testid="account-summary">
+        <p className="t-micro-label">What you told us</p>
+        {summary.filter(r => r.value).map(r => (
+          <div key={r.step} className="flex items-baseline justify-between gap-3">
+            <div className="min-w-0">
+              <span className="t-helper">{r.label}: </span>
+              <span className="t-field-value" data-testid={`summary-${r.step}`}>{r.value}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onEditStep(r.step)}
+              className="t-helper text-primary hover:underline shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+              data-testid={`summary-edit-${r.step}`}
+            >
+              Edit
+            </button>
+          </div>
+        ))}
+      </div>
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Email</label>
+          <label htmlFor="ob-email" className="t-form-label block mb-1">Email</label>
           <input
+            id="ob-email"
             type="email"
             value={email}
             onChange={e => onEmailChange(e.target.value)}
             placeholder="you@example.com"
             autoFocus
             data-testid="input-register-email"
-            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
+            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/60 transition-colors"
           />
           {email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
             <p className="text-sm text-destructive mt-1" data-testid="text-email-hint">Please enter a valid email address</p>
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Password</label>
+          <label htmlFor="ob-password" className="t-form-label block mb-1">Password</label>
           <div className="relative">
             <input
+              id="ob-password"
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={e => onPasswordChange(e.target.value)}
               placeholder="At least 8 characters"
               data-testid="input-register-password"
-              className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors pr-10"
+              className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/60 transition-colors pr-10"
             />
             <button
               type="button"
@@ -1097,15 +1159,16 @@ function StepAccount({
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Confirm Password</label>
+          <label htmlFor="ob-confirm-password" className="t-form-label block mb-1">Confirm password</label>
           <div className="relative">
             <input
+              id="ob-confirm-password"
               type={showConfirm ? "text" : "password"}
               value={confirmPassword}
               onChange={e => onConfirmPasswordChange(e.target.value)}
               placeholder="Re-enter your password"
               data-testid="input-register-confirm-password"
-              className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors pr-10"
+              className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/60 transition-colors pr-10"
             />
             <button
               type="button"
@@ -1155,9 +1218,10 @@ function StepGoals({ goals, onChange }: { goals: string[]; onChange: (g: string[
   return (
     <div>
       <h1
-        className="text-3xl font-bold mb-8 leading-tight"
+        className="text-3xl font-bold mb-8 leading-tight focus:outline-none"
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
+        tabIndex={-1}
       >
         What are you looking for?
       </h1>
@@ -1192,31 +1256,42 @@ function StepName({
   return (
     <div>
       <h1
-        className="text-3xl font-bold mb-2 leading-tight"
+        className="text-3xl font-bold mb-2 leading-tight focus:outline-none"
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
+        tabIndex={-1}
       >
         What's your name?
       </h1>
       <p className="t-helper mb-8">Please use your real name - providers see it only after you book a Match Call with them</p>
       <div className="space-y-6">
+        <div>
+        <label htmlFor="ob-first-name" className="t-form-label block mb-1">First name</label>
         <input
+          id="ob-first-name"
           type="text"
           value={firstName}
           onChange={e => onFirstNameChange(e.target.value)}
-          placeholder="First name"
+          autoComplete="given-name"
+          placeholder="e.g. Jordan"
           autoFocus
           data-testid="input-first-name"
-          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
+          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/60 transition-colors"
         />
+        </div>
+        <div>
+        <label htmlFor="ob-last-name" className="t-form-label block mb-1">Last name</label>
         <input
+          id="ob-last-name"
           type="text"
           value={lastName}
           onChange={e => onLastNameChange(e.target.value)}
-          placeholder="Last name"
+          autoComplete="family-name"
+          placeholder="e.g. Rivera"
           data-testid="input-last-name"
-          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
+          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/60 transition-colors"
         />
+        </div>
       </div>
     </div>
   );
@@ -1232,14 +1307,17 @@ function StepLocation({
   return (
     <div>
       <h1
-        className="text-3xl font-bold mb-8 leading-tight"
+        className="text-3xl font-bold mb-8 leading-tight focus:outline-none"
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
+        tabIndex={-1}
       >
         Where are you currently living?
       </h1>
       <p className="t-helper mb-8 -mt-6">We use this to find providers near you</p>
+      <label htmlFor="ob-city" className="t-form-label block mb-1">City</label>
       <LocationAutocomplete
+        id="ob-city"
         value={value}
         onChange={onChange}
         placeholder="Start typing your city..."
@@ -1285,9 +1363,10 @@ function StepPhone({
   return (
     <div>
       <h1
-        className="text-3xl font-bold mb-2 leading-tight"
+        className="text-3xl font-bold mb-2 leading-tight focus:outline-none"
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
+        tabIndex={-1}
       >
         {memberFirstName ? `Welcome, ${memberFirstName}. One quick step.` : "What's your phone number?"}
       </h1>
@@ -1298,7 +1377,9 @@ function StepPhone({
       </p>
 
       <div className="mb-6">
+        <label htmlFor="ob-phone" className="t-form-label block mb-1">Mobile number</label>
         <PhoneInput
+          inputId="ob-phone"
           variant="onboarding"
           value={value}
           displayValue={displayValue}
@@ -1332,7 +1413,7 @@ function StepPhone({
           onChange={e => onSmsOptInChange(e.target.checked)}
           aria-labelledby="sms-opt-in-title"
           aria-describedby="sms-opt-in-detail"
-          className="mt-0.5 h-5 w-5 shrink-0 accent-[hsl(var(--primary))]"
+          className="mt-0.5 h-5 w-5 shrink-0 accent-[hsl(var(--primary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
           data-testid="checkbox-sms-opt-in"
         />
         <SmsNotificationsOptIn titleId="sms-opt-in-title" detailId="sms-opt-in-detail" />
@@ -1374,9 +1455,10 @@ function StepVerification({
   return (
     <div>
       <h1
-        className="text-3xl font-bold mb-2 leading-tight"
+        className="text-3xl font-bold mb-2 leading-tight focus:outline-none"
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
+        tabIndex={-1}
       >
         Enter the code you received
       </h1>
