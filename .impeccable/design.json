@@ -1,0 +1,600 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-15T19:07:45+00:00",
+  "title": "Design System: GoStork",
+  "extensions": {
+    "colorMeta": {
+      "stork-teal": {
+        "role": "primary",
+        "displayName": "Stork Teal",
+        "canonical": "#08726F",
+        "tonalRamp": [
+          "hsl(178 87% 15%)",
+          "hsl(178 87% 25%)",
+          "hsl(178 87% 35%)",
+          "hsl(178 87% 45%)",
+          "hsl(178 87% 55%)",
+          "hsl(178 87% 65%)",
+          "hsl(178 87% 80%)",
+          "hsl(178 87% 95%)"
+        ]
+      },
+      "orchid": {
+        "role": "secondary",
+        "displayName": "Orchid",
+        "canonical": "#8F51A3",
+        "tonalRamp": [
+          "hsl(285 34% 15%)",
+          "hsl(285 34% 25%)",
+          "hsl(285 34% 35%)",
+          "hsl(285 34% 45%)",
+          "hsl(285 34% 55%)",
+          "hsl(285 34% 65%)",
+          "hsl(285 34% 80%)",
+          "hsl(285 34% 95%)"
+        ]
+      },
+      "linen": {
+        "role": "secondary",
+        "displayName": "Linen",
+        "canonical": "#F3EBE1",
+        "tonalRamp": [
+          "hsl(33 43% 15%)",
+          "hsl(33 43% 25%)",
+          "hsl(33 43% 35%)",
+          "hsl(33 43% 45%)",
+          "hsl(33 43% 55%)",
+          "hsl(33 43% 65%)",
+          "hsl(33 43% 80%)",
+          "hsl(33 43% 95%)"
+        ]
+      },
+      "warm-sand": {
+        "role": "neutral",
+        "displayName": "Warm Sand",
+        "canonical": "#F6F3EE",
+        "tonalRamp": [
+          "hsl(37 31% 15%)",
+          "hsl(37 31% 25%)",
+          "hsl(37 31% 35%)",
+          "hsl(37 31% 45%)",
+          "hsl(37 31% 55%)",
+          "hsl(37 31% 65%)",
+          "hsl(37 31% 80%)",
+          "hsl(37 31% 95%)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "hsl(0 0% 15%)",
+          "hsl(0 0% 25%)",
+          "hsl(0 0% 35%)",
+          "hsl(0 0% 45%)",
+          "hsl(0 0% 55%)",
+          "hsl(0 0% 65%)",
+          "hsl(0 0% 80%)",
+          "hsl(0 0% 95%)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0F172A",
+        "tonalRamp": [
+          "hsl(222 47% 15%)",
+          "hsl(222 47% 25%)",
+          "hsl(222 47% 35%)",
+          "hsl(222 47% 45%)",
+          "hsl(222 47% 55%)",
+          "hsl(222 47% 65%)",
+          "hsl(222 47% 80%)",
+          "hsl(222 47% 95%)"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Ink Soft",
+        "canonical": "#0A0A0A",
+        "tonalRamp": [
+          "hsl(0 0% 15%)",
+          "hsl(0 0% 25%)",
+          "hsl(0 0% 35%)",
+          "hsl(0 0% 45%)",
+          "hsl(0 0% 55%)",
+          "hsl(0 0% 65%)",
+          "hsl(0 0% 80%)",
+          "hsl(0 0% 95%)"
+        ]
+      },
+      "slate-label": {
+        "role": "neutral",
+        "displayName": "Slate Label",
+        "canonical": "#475569",
+        "tonalRamp": [
+          "hsl(215 19% 15%)",
+          "hsl(215 19% 25%)",
+          "hsl(215 19% 35%)",
+          "hsl(215 19% 45%)",
+          "hsl(215 19% 55%)",
+          "hsl(215 19% 65%)",
+          "hsl(215 19% 80%)",
+          "hsl(215 19% 95%)"
+        ]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "#64748B",
+        "tonalRamp": [
+          "hsl(215 16% 15%)",
+          "hsl(215 16% 25%)",
+          "hsl(215 16% 35%)",
+          "hsl(215 16% 45%)",
+          "hsl(215 16% 55%)",
+          "hsl(215 16% 65%)",
+          "hsl(215 16% 80%)",
+          "hsl(215 16% 95%)"
+        ]
+      },
+      "fog": {
+        "role": "neutral",
+        "displayName": "Fog",
+        "canonical": "#F4F4F5",
+        "tonalRamp": [
+          "hsl(240 5% 15%)",
+          "hsl(240 5% 25%)",
+          "hsl(240 5% 35%)",
+          "hsl(240 5% 45%)",
+          "hsl(240 5% 55%)",
+          "hsl(240 5% 65%)",
+          "hsl(240 5% 80%)",
+          "hsl(240 5% 95%)"
+        ]
+      },
+      "warm-hairline": {
+        "role": "neutral",
+        "displayName": "Warm Hairline",
+        "canonical": "#D9D2C6",
+        "tonalRamp": [
+          "hsl(38 20% 15%)",
+          "hsl(38 20% 25%)",
+          "hsl(38 20% 35%)",
+          "hsl(38 20% 45%)",
+          "hsl(38 20% 55%)",
+          "hsl(38 20% 65%)",
+          "hsl(38 20% 80%)",
+          "hsl(38 20% 95%)"
+        ]
+      },
+      "success-green": {
+        "role": "status",
+        "displayName": "Success Green",
+        "canonical": "#10B981",
+        "tonalRamp": [
+          "hsl(160 84% 15%)",
+          "hsl(160 84% 25%)",
+          "hsl(160 84% 35%)",
+          "hsl(160 84% 45%)",
+          "hsl(160 84% 55%)",
+          "hsl(160 84% 65%)",
+          "hsl(160 84% 80%)",
+          "hsl(160 84% 95%)"
+        ]
+      },
+      "warning-amber": {
+        "role": "status",
+        "displayName": "Warning Amber",
+        "canonical": "#F59E0B",
+        "tonalRamp": [
+          "hsl(38 92% 15%)",
+          "hsl(38 92% 25%)",
+          "hsl(38 92% 35%)",
+          "hsl(38 92% 45%)",
+          "hsl(38 92% 55%)",
+          "hsl(38 92% 65%)",
+          "hsl(38 92% 80%)",
+          "hsl(38 92% 95%)"
+        ]
+      },
+      "error-red": {
+        "role": "status",
+        "displayName": "Error Red",
+        "canonical": "#EF4444",
+        "tonalRamp": [
+          "hsl(0 84% 15%)",
+          "hsl(0 84% 25%)",
+          "hsl(0 84% 35%)",
+          "hsl(0 84% 45%)",
+          "hsl(0 84% 55%)",
+          "hsl(0 84% 65%)",
+          "hsl(0 84% 80%)",
+          "hsl(0 84% 95%)"
+        ]
+      },
+      "legacy-ring-green": {
+        "role": "status",
+        "displayName": "Legacy Ring Green (drift)",
+        "canonical": "#26584A",
+        "tonalRamp": [
+          "hsl(163 40% 15%)",
+          "hsl(163 40% 25%)",
+          "hsl(163 40% 35%)",
+          "hsl(163 40% 45%)",
+          "hsl(163 40% 55%)",
+          "hsl(163 40% 65%)",
+          "hsl(163 40% 80%)",
+          "hsl(163 40% 95%)"
+        ]
+      },
+      "service-surrogacy": {
+        "role": "service",
+        "displayName": "Surrogacy",
+        "canonical": "#8F51A3",
+        "tonalRamp": [
+          "hsl(285 34% 15%)",
+          "hsl(285 34% 25%)",
+          "hsl(285 34% 35%)",
+          "hsl(285 34% 45%)",
+          "hsl(285 34% 55%)",
+          "hsl(285 34% 65%)",
+          "hsl(285 34% 80%)",
+          "hsl(285 34% 95%)"
+        ]
+      },
+      "service-egg-donation": {
+        "role": "service",
+        "displayName": "Egg Donation",
+        "canonical": "#B97D10",
+        "tonalRamp": [
+          "hsl(39 84% 15%)",
+          "hsl(39 84% 25%)",
+          "hsl(39 84% 35%)",
+          "hsl(39 84% 45%)",
+          "hsl(39 84% 55%)",
+          "hsl(39 84% 65%)",
+          "hsl(39 84% 80%)",
+          "hsl(39 84% 95%)"
+        ]
+      },
+      "service-sperm-donation": {
+        "role": "service",
+        "displayName": "Sperm Donation",
+        "canonical": "#3E7BC0",
+        "tonalRamp": [
+          "hsl(212 51% 15%)",
+          "hsl(212 51% 25%)",
+          "hsl(212 51% 35%)",
+          "hsl(212 51% 45%)",
+          "hsl(212 51% 55%)",
+          "hsl(212 51% 65%)",
+          "hsl(212 51% 80%)",
+          "hsl(212 51% 95%)"
+        ]
+      },
+      "service-ivf": {
+        "role": "service",
+        "displayName": "IVF",
+        "canonical": "#0B7C74",
+        "tonalRamp": [
+          "hsl(176 84% 15%)",
+          "hsl(176 84% 25%)",
+          "hsl(176 84% 35%)",
+          "hsl(176 84% 45%)",
+          "hsl(176 84% 55%)",
+          "hsl(176 84% 65%)",
+          "hsl(176 84% 80%)",
+          "hsl(176 84% 95%)"
+        ]
+      },
+      "service-legal": {
+        "role": "service",
+        "displayName": "Legal",
+        "canonical": "#9E3B5E",
+        "tonalRamp": [
+          "hsl(339 46% 15%)",
+          "hsl(339 46% 25%)",
+          "hsl(339 46% 35%)",
+          "hsl(339 46% 45%)",
+          "hsl(339 46% 55%)",
+          "hsl(339 46% 65%)",
+          "hsl(339 46% 80%)",
+          "hsl(339 46% 95%)"
+        ]
+      },
+      "deck-night": {
+        "role": "neutral",
+        "displayName": "Deck Night",
+        "canonical": "#17181C",
+        "tonalRamp": [
+          "hsl(228 10% 15%)",
+          "hsl(228 10% 25%)",
+          "hsl(228 10% 35%)",
+          "hsl(228 10% 45%)",
+          "hsl(228 10% 55%)",
+          "hsl(228 10% 65%)",
+          "hsl(228 10% 80%)",
+          "hsl(228 10% 95%)"
+        ]
+      },
+      "deck-night-raised": {
+        "role": "neutral",
+        "displayName": "Deck Night Raised",
+        "canonical": "#23252A",
+        "tonalRamp": [
+          "hsl(223 9% 15%)",
+          "hsl(223 9% 25%)",
+          "hsl(223 9% 35%)",
+          "hsl(223 9% 45%)",
+          "hsl(223 9% 55%)",
+          "hsl(223 9% 65%)",
+          "hsl(223 9% 80%)",
+          "hsl(223 9% 95%)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Page title",
+        "purpose": "The one title at the top of a page."
+      },
+      "headline": {
+        "displayName": "Card heading",
+        "purpose": "A card's title."
+      },
+      "title": {
+        "displayName": "Section title",
+        "purpose": "Section headers inside a page or card."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text. 16px base, 1.25 scale ratio."
+      },
+      "value": {
+        "displayName": "Field value",
+        "purpose": "The answer in a label/value pair; one step larger than body so it anchors."
+      },
+      "label": {
+        "displayName": "Field label",
+        "purpose": "The key in a label/value pair. Recedes in Slate Label."
+      },
+      "eyebrow": {
+        "displayName": "Prompt eyebrow",
+        "purpose": "The question above a prose answer, uppercase in Orchid."
+      },
+      "micro": {
+        "displayName": "Micro label",
+        "purpose": "Uppercase keys in dense cards and tables."
+      },
+      "ui": {
+        "displayName": "UI / Button",
+        "purpose": "Buttons, badges, chips, nav links. Sentence case."
+      },
+      "chat-mobile": {
+        "displayName": "Chat (phone)",
+        "purpose": "Message bubbles on phones."
+      },
+      "chat-desktop": {
+        "displayName": "Chat (desktop)",
+        "purpose": "Message bubbles on desktop."
+      }
+    },
+    "shadows": [
+      {
+        "name": "rest",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Default card and the active nav pill. The hairline does the work."
+      },
+      {
+        "name": "raised",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Popovers, dropdowns, the swipe card's floating expand button."
+      },
+      {
+        "name": "floating",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "The swipe deck card, sheets and drawers."
+      },
+      {
+        "name": "glow",
+        "value": "0 0 12px color-mix(in srgb, var(--swipe-color) 30%, transparent)",
+        "purpose": "Swipe action buttons on hover, in their own action color."
+      },
+      {
+        "name": "selection-ring",
+        "value": "0 0 0 2px hsl(var(--primary) / 0.2)",
+        "purpose": "A selected calendar event."
+      }
+    ],
+    "motion": [
+      {
+        "name": "color-transition",
+        "value": "200ms ease",
+        "purpose": "Nav link and bottom bar color changes."
+      },
+      {
+        "name": "accordion",
+        "value": "200ms ease-out",
+        "purpose": "Accordion and collapsible height."
+      },
+      {
+        "name": "page-enter",
+        "value": "500ms fade + 16px rise",
+        "purpose": "Every routed page mounts with animate-in fade-in slide-in-from-bottom-4."
+      },
+      {
+        "name": "cover-fade",
+        "value": "200ms opacity",
+        "purpose": "Swipe card cover sheet and top gradient while expanding."
+      },
+      {
+        "name": "event-hover",
+        "value": "150ms ease",
+        "purpose": "Calendar event opacity and shadow."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ],
+    "sourceOfTruth": {
+      "note": "Live values come from the SiteSettings row (Brand Settings page) via applyBrandToDocument(); client/src/index.css :root and BRAND_DEFAULTS are pre-JS fallbacks only. Recorded drift: fallbacks still name Playfair Display + DM Sans and 0.5rem radius while live is the system stack and 2rem; ring color is still #26584A; hover-elevate / active-elevate-2 are applied but undefined.",
+      "liveSampledAt": "2026-09-15",
+      "database": "bryzqwfzvgjenijciwaa (DEV)"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one call-to-action color. Stork Teal pill, sentence case, weight 500.",
+      "html": "<button class=\"ds-btn-primary\">Book a Match Call</button>",
+      "css": ".ds-btn-primary{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:8px 16px;border-radius:var(--radius,2rem);background:hsl(var(--primary,178 87% 24%));color:hsl(var(--primary-foreground,0 0% 100%));font-size:14px;font-weight:500;border:1px solid transparent;cursor:pointer;transition:filter .15s,transform .15s} .ds-btn-primary:hover{filter:brightness(1.06);transform:translateY(-1px)} .ds-btn-primary:active{transform:translateY(0);filter:brightness(.96)} .ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 1px hsl(var(--ring,163 40% 25%))} .ds-btn-primary:disabled{opacity:.5;pointer-events:none}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The recede button. Linen fill under a primary action.",
+      "html": "<button class=\"ds-btn-secondary\">Maybe later</button>",
+      "css": ".ds-btn-secondary{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:8px 16px;border-radius:var(--radius,2rem);background:hsl(var(--secondary,33 43% 92%));color:hsl(var(--secondary-foreground,0 0% 4%));font-size:14px;font-weight:500;border:1px solid transparent;cursor:pointer;transition:filter .15s,transform .15s} .ds-btn-secondary:hover{filter:brightness(.97);transform:translateY(-1px)} .ds-btn-secondary:focus-visible{outline:none;box-shadow:0 0 0 1px hsl(var(--ring,163 40% 25%))}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Transparent pill that inherits its text color and shows the surface behind it.",
+      "html": "<button class=\"ds-btn-outline\">View profile</button>",
+      "css": ".ds-btn-outline{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:8px 16px;border-radius:var(--radius,2rem);background:transparent;color:hsl(var(--foreground,222 47% 11%));font-size:14px;font-weight:500;border:1px solid hsl(var(--border,38 20% 81%));box-shadow:0 1px 2px rgb(0 0 0/.05);cursor:pointer} .ds-btn-outline:hover{background:hsl(var(--secondary,33 43% 92%))} .ds-btn-outline:active{box-shadow:none} .ds-btn-outline:focus-visible{outline:none;box-shadow:0 0 0 1px hsl(var(--ring,163 40% 25%))}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Paper pill with a warm hairline. 16px on phones so iOS never zooms.",
+      "html": "<input class=\"ds-input\" placeholder=\"Enter your email\" />",
+      "css": ".ds-input{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:flex;width:100%;height:36px;padding:8px 12px;border-radius:var(--container-radius,2rem);border:1px solid hsl(var(--border,38 20% 81%));background:hsl(var(--input,0 0% 100%));color:hsl(var(--card-foreground,0 0% 4%));font-size:16px} .ds-input::placeholder{color:hsl(var(--muted-foreground,215 16% 47%))} .ds-input:focus-visible{outline:none;box-shadow:0 0 0 2px hsl(var(--background,37 31% 95%)),0 0 0 4px hsl(var(--ring,163 40% 25%))} .ds-input:disabled{opacity:.5;cursor:not-allowed}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A sheet of paper on the sand desk: white tray, warm hairline, rest shadow only.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Your Match Call</div><div class=\"ds-card-desc\">Friday at 9:30 AM with Dr. Lin</div><div class=\"ds-card-body\"><p class=\"ds-field-label\">Clinic</p><p class=\"ds-field-value\">Pacific Fertility Center</p></div></div>",
+      "css": ".ds-card{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;border-radius:var(--container-radius,2rem);overflow:hidden;border:1px solid hsl(var(--border,38 20% 81%));background:hsl(var(--card,0 0% 100%));color:hsl(var(--card-foreground,0 0% 4%));box-shadow:0 1px 2px rgb(0 0 0/.05);padding:24px;max-width:360px} .ds-card-title{font-size:24px;font-weight:700;line-height:1.2;margin-bottom:6px} .ds-card-desc{font-size:13px;color:hsl(var(--muted-foreground,215 16% 47%));line-height:1.5;margin-bottom:22px} .ds-field-label{margin:0 0 3px;font-size:14px;font-weight:500;color:var(--field-label-color,#475569);line-height:1.35} .ds-field-value{margin:0;font-size:17px;font-weight:400;line-height:1.45}"
+    },
+    {
+      "name": "Attribute Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Linen pill for a value whose key is obvious. Selected filter pills switch to a 10% teal tint.",
+      "html": "<span class=\"ds-chip\">Non-smoker</span> <span class=\"ds-chip ds-chip-selected\">Age 25-32</span>",
+      "css": ".ds-chip{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;background:hsl(var(--secondary,33 43% 92%));color:hsl(var(--secondary-foreground,0 0% 4%));font-size:13px;font-weight:500;white-space:nowrap} .ds-chip-selected{background:hsl(var(--primary,178 87% 24%)/.1);color:hsl(var(--primary,178 87% 24%));font-size:12px;padding:2px 8px}"
+    },
+    {
+      "name": "Service Tag",
+      "kind": "chip",
+      "refersTo": "badge-primary",
+      "description": "One hue per service line, platform-wide. Approval is a check inside the tag; the tag never turns green.",
+      "html": "<span class=\"ds-svc\" style=\"--svc:var(--service-surrogacy,285 34% 48%)\">Surrogacy</span> <span class=\"ds-svc\" style=\"--svc:var(--service-egg-donation,39 84% 39%)\">Egg Donation</span> <span class=\"ds-svc\" style=\"--svc:var(--service-ivf,176 84% 26%)\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg>IVF</span> <span class=\"ds-svc\" style=\"--svc:var(--service-legal,338 45% 43%)\">Legal</span>",
+      "css": ".ds-svc{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;background:hsl(var(--svc)/.12);color:hsl(var(--svc));font-size:12px;font-weight:500;white-space:nowrap;border:1px solid hsl(var(--svc)/.25)}"
+    },
+    {
+      "name": "Header Nav Pills",
+      "kind": "nav",
+      "refersTo": "nav-pill-active",
+      "description": "Desktop header links. Teal text at rest, Linen pill on hover, solid teal pill when active.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-link ds-nav-active\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z\"/></svg>Chat</a><a class=\"ds-nav-link\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z\"/></svg>Explore</a><a class=\"ds-nav-link\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M16 2v4M8 2v4M3 10h18\"/></svg>Calendar</a></nav>",
+      "css": ".ds-nav{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:flex;gap:4px;align-items:center;height:64px;padding:0 16px;background:hsl(var(--card,0 0% 100%));border-bottom:1px solid hsl(var(--border,38 20% 81%)/.4);box-shadow:0 1px 2px rgb(0 0 0/.05)} .ds-nav-link{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;font-size:14px;font-weight:500;color:hsl(var(--primary,178 87% 24%));text-decoration:none;border-radius:9999px;transition:all .2s} .ds-nav-link:hover{background:hsl(var(--secondary,33 43% 92%));color:hsl(var(--secondary-foreground,0 0% 4%))} .ds-nav-active,.ds-nav-active:hover{background:hsl(var(--primary,178 87% 24%));color:hsl(var(--primary-foreground,0 0% 100%));box-shadow:0 1px 2px rgb(0 0 0/.05)}"
+    },
+    {
+      "name": "Chat Bubbles",
+      "kind": "custom",
+      "refersTo": "chat-bubble-own",
+      "description": "The parent's own messages in Stork Teal, Eva in Fog, a provider in Linen. 20px corners so tall messages stay readable.",
+      "html": "<div class=\"ds-chat\"><div class=\"ds-bubble ds-bubble-eva\">Hi Eran, I'm Eva. Tell me a little about where you are in your journey and I'll narrow the field for you.</div><div class=\"ds-bubble ds-bubble-own\">We're looking at surrogacy, probably with an egg donor too.</div><div class=\"ds-qr-row\"><button class=\"ds-qr\">We have embryos</button><button class=\"ds-qr\">Not yet</button></div></div>",
+      "css": ".ds-chat{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;display:flex;flex-direction:column;gap:8px;max-width:420px} .ds-bubble{max-width:85%;padding:6px 16px;border-radius:20px;font-size:15px;line-height:1.25;border:1px solid transparent} .ds-bubble-eva{align-self:flex-start;background:var(--chat-bubble-ai-bg,#F4F4F5);color:var(--chat-bubble-ai-fg,#1F2937)} .ds-bubble-own{align-self:flex-end;background:var(--chat-bubble-own-bg,#08726F);color:var(--chat-bubble-own-fg,#fff)} .ds-qr-row{display:flex;gap:8px;flex-wrap:wrap} .ds-qr{font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;padding:6px 14px;border-radius:999px;border:1px solid hsl(var(--primary,178 87% 24%));background:transparent;color:hsl(var(--primary,178 87% 24%));font-size:13px;font-weight:500;cursor:pointer;transition:background .15s} .ds-qr:hover{background:hsl(var(--primary,178 87% 24%)/.08)} .ds-qr:focus-visible{outline:none;box-shadow:0 0 0 2px hsl(var(--primary,178 87% 24%)/.3)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm Concierge Desk",
+    "overview": "GoStork is a fertility matching concierge, and the interface is built to feel like sitting at a calm, sunlit front desk with someone who already knows your file. The page is warm sand, not white; white is reserved for the cards that hold real content, so every card reads as a sheet of paper placed on the desk. One voice speaks throughout: Stork Teal on every primary action, every active tab, and every message the parent sends. A second, softer voice, Orchid, marks the parts of the product that are not the parent's own doing: Eva's prompts, alternate emphasis, and the surrogacy service line. Nothing shouts. Green, amber, and red are kept out of decoration entirely so that when they appear they mean status.\n\nThe form language is soft to the point of being a signature: controls and containers share a single 2rem radius, so 48px inputs and buttons become full pills and cards become deeply rounded trays. Type is the platform's own system stack (SF Pro on Apple devices), set generously with a 1.6 body line height, because parents read this app on a phone at night. Density is loose on parent surfaces and tightens on provider work surfaces, where the same tokens carry a CRM, a calendar, and a document queue.\n\nThe founder's stated intent for how the system should feel is **playful and tactile**: lift on hover, a visible press, chips with a little life. The current code declares that intent (`hover-elevate` and `active-elevate-2` on every button and badge) but the utilities are not defined anywhere, so today the controls are static at rest and on hover. Treat the intent as the target and the static state as the incumbent gap, recorded in Do's and Don'ts.",
+    "keyCharacteristics": [
+      "Warm sand page with white paper cards separated by a visible warm hairline, not by shadow.",
+      "One accent voice (Stork Teal) for action; Orchid for Eva and alternate emphasis; status hues never decorate.",
+      "A single 2rem radius makes every control a pill and every card a tray.",
+      "System font stack, 700-weight headings, 500-weight UI labels, 1.6 body leading.",
+      "Every visual value is a brand CSS variable driven by the Brand Settings page; nothing is hardcoded.",
+      "Full pages and inline expansion instead of modals; tab state lives in the URL."
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Stork Teal is the only color that asks the parent to act. If two teal elements compete on one screen, one of them is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Is Not Decoration Rule",
+        "body": "Green, amber, and red appear only when something is approved, needs attention, or failed. Reach for Linen or Orchid for any tinted surface before touching a status hue or a gray.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm Hairline Rule",
+        "body": "Cards separate from the page by Paper-on-Sand plus a 1px Warm Hairline. Shadow is not how a resting card earns its edge.",
+        "section": "colors"
+      },
+      {
+        "name": "The Value Leads Rule",
+        "body": "In any label/value pair the value is larger and darker than its label. Never style a label to compete.",
+        "section": "typography"
+      },
+      {
+        "name": "The Brand Variable Rule",
+        "body": "Content text renders through the Field, PromptBlock, MicroField, and AttributeChip primitives or the `.t-*` classes. A Tailwind `text-*` size at a call site is a bug.",
+        "section": "typography"
+      },
+      {
+        "name": "The Shadow On Lift Rule",
+        "body": "A surface earns a shadow by floating above the page, not by being important. Cards at rest keep the hairline and lose the shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put every color, radius, font, weight, and size through a brand CSS variable or the content typography primitives; the Brand Settings page must be able to restyle it.",
+      "Do reach for Linen (bg-secondary) or Orchid (bg-accent) for any tinted surface before Fog or a gray.",
+      "Do keep the 2rem pill geometry on every control and container; it is the system's signature.",
+      "Do separate resting cards with Paper-on-Sand plus the 1px Warm Hairline, and spend shadows only on floating surfaces.",
+      "Do render every service name through ServiceTag and every attachment through the shared attachment card.",
+      "Do address each reader in second person in any shared parent-provider message.",
+      "Do keep 16px input text on phones so iOS does not zoom, and 44px or larger tap targets on the bottom bar.",
+      "Do meet WCAG 2.1 AA contrast: Ink on Warm Sand, Ink Soft on Paper and Linen, Paper on Stork Teal and Orchid all pass; Slate Muted is for text 13px and up only."
+    ],
+    "donts": [
+      "Don't hardcode a hex, a Tailwind color utility, a font family, or a radius at a call site.",
+      "Don't use green, amber, or red to decorate; they are status-only.",
+      "Don't introduce a second CTA color; Orchid is emphasis, never action.",
+      "Don't open a dialog, modal, or popup for anything but a destructive confirmation; use a full page or inline expansion.",
+      "Don't store tab or view state in local component state; it belongs in the URL.",
+      "Don't describe a donor or surrogate in plain chat text without the match card.",
+      "Don't use em dashes or en dashes anywhere in UI text.",
+      "Don't treat the missing hover and press feedback as intended: `hover-elevate` and `active-elevate-2` are applied everywhere but defined nowhere, and the focus ring still uses the legacy green. Both are recorded drift, to be fixed as their own task."
+    ]
+  }
+}
