@@ -320,7 +320,11 @@ export class UsersController {
     const user = req.user as any;
     const firstName = typeof body.firstName === "string" ? body.firstName.trim() : "";
     const lastName = typeof body.lastName === "string" ? body.lastName.trim() : "";
-    if (!firstName || !lastName) {
+    // An invited family member already has a name from the invitation and only
+    // verifies their phone; a name is required only when the account has none.
+    const existingUser = await this.prisma.user.findUnique({ where: { id: user.id }, select: { name: true } });
+    const hasExistingName = !!existingUser?.name?.trim();
+    if ((!firstName || !lastName) && !hasExistingName) {
       throw new BadRequestException("First name and last name are required");
     }
 
@@ -347,12 +351,12 @@ export class UsersController {
       if (!Number.isInteger(age) || age < 18 || age > 120) throw new BadRequestException("Invalid partner age");
     }
 
-    const name = `${firstName} ${lastName}`;
-    const updateData: any = {
-      firstName,
-      lastName,
-      name,
-    };
+    const updateData: any = {};
+    if (firstName && lastName) {
+      updateData.firstName = firstName;
+      updateData.lastName = lastName;
+      updateData.name = `${firstName} ${lastName}`;
+    }
 
     if (body.dateOfBirth) updateData.dateOfBirth = new Date(body.dateOfBirth);
     if (body.gender) updateData.gender = body.gender;
