@@ -23,7 +23,6 @@ public/
 !server/personas/*.webp
 /generated/prisma
 dump.rdb
-.mcp.json
 .test-runner-state.json
 graphify-out/
 scripts/test-results/
