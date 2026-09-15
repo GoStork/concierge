@@ -99,10 +99,34 @@ function clearDraft() {
   try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
 }
 
+/**
+ * Steps are named in the URL (?step=phone), not numbered: a name survives
+ * reordering, reads in analytics and support screenshots, and the numbering
+ * already differs between new visitors (6 steps) and returning ones (5).
+ * Names are not secrets - the screens are in the bundle - and the clamp
+ * below decides what may be shown, so a URL is a bookmark, never a permission.
+ * Never put an answer (phone, code, email, name) in the URL: it would land
+ * in history, referrers, analytics and logs.
+ */
+const STEP_SLUGS: Record<number, string> = {
+  1: "goals",
+  2: "name",
+  3: "location",
+  4: "phone",
+  5: "code",
+  [ACCOUNT_STEP]: "account",
+};
+const SLUG_TO_STEP: Record<string, number> = Object.fromEntries(
+  Object.entries(STEP_SLUGS).map(([n, slug]) => [slug, Number(n)]),
+);
+
 function parseStepParam(raw: string | null): number | null {
   if (raw === null) return null;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= WELCOME_STEP && n <= ACCOUNT_STEP ? n : null;
+  const slug = raw.trim().toLowerCase();
+  if (slug in SLUG_TO_STEP) return SLUG_TO_STEP[slug];
+  // Legacy numeric links (?step=4) shared before steps were named.
+  const n = Number(slug);
+  return Number.isInteger(n) && n > WELCOME_STEP && n <= ACCOUNT_STEP ? n : null;
 }
 
 function mapOtpSendError(code: string): string {
@@ -225,8 +249,9 @@ export default function OnboardingPage() {
       const current = parseStepParam(prev.get("step")) ?? WELCOME_STEP;
       const resolved = typeof next === "function" ? next(current) : next;
       const params = new URLSearchParams(prev);
-      if (resolved === WELCOME_STEP) params.delete("step");
-      else params.set("step", String(resolved));
+      const slug = STEP_SLUGS[resolved];
+      if (resolved === WELCOME_STEP || !slug) params.delete("step");
+      else params.set("step", slug);
       return params;
     }, { replace: opts?.replace ?? true });
   }, [setSearchParams]);
