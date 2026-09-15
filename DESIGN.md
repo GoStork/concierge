@@ -226,7 +226,7 @@ GoStork is a fertility matching concierge, and the interface is built to feel li
 
 The form language is soft to the point of being a signature: controls and containers share a single 2rem radius, so 48px inputs and buttons become full pills and cards become deeply rounded trays. Type is the platform's own system stack (SF Pro on Apple devices), set generously with a 1.6 body line height, because parents read this app on a phone at night. Density is loose on parent surfaces and tightens on provider work surfaces, where the same tokens carry a CRM, a calendar, and a document queue.
 
-The founder's stated intent for how the system should feel is **playful and tactile**: lift on hover, a visible press, chips with a little life. The current code declares that intent (`hover-elevate` and `active-elevate-2` on every button and badge) but the utilities are not defined anywhere, so today the controls are static at rest and on hover. Treat the intent as the target and the static state as the incumbent gap, recorded in Do's and Don'ts.
+The system's feel is **playful and tactile**: pressable things lift 1px and brighten slightly on hover, and press down with a 2% scale. The `hover-elevate` and `active-elevate-2` classes on every button and badge carry this, and they fire only on elements that can actually be pressed, so a badge in a sentence never jumps. Reduced-motion users get the color change without the movement.
 
 **Key Characteristics:**
 - Warm sand page with white paper cards separated by a visible warm hairline, not by shadow.
@@ -258,7 +258,7 @@ The palette is a warm neutral ground with one saturated teal voice, one muted pu
 
 ### Status (reserved)
 - **Success Green** (#10B981), **Warning Amber** (#F59E0B), **Error Red** (#EF4444): approval, warnings, cancellations, destructive buttons, the calendar's current-time line. They never tint a surface for decoration.
-- **Legacy Ring Green** (#26584A): the focus ring is still the pre-teal brand green in the live settings. It is documented because it renders; it is drift, not intent.
+- **Focus ring**: Stork Teal. (The pre-teal green #26584A was still the live ring until 2026-09-15; it is kept in the token list only so old screenshots can be read.)
 
 ### Service identity (fixed)
 One hue per service line, rendered only through the shared ServiceTag: **Surrogacy** Orchid (#8F51A3), **Egg Donation** gold (#B97D10), **Sperm Donation** blue (#3E7BC0), **IVF** teal (#0B7C74), **Legal** burgundy (#9E3B5E). Approval renders as a small check inside the tag; the tag is never dyed green.
@@ -277,7 +277,7 @@ One hue per service line, rendered only through the shared ServiceTag: **Surroga
 **Body Font:** the same system stack
 **Label/UI Font:** the same stack at weight 500
 
-**Character:** Native, unobtrusive, and fast. The live brand deliberately uses the platform's own face so the app feels installed rather than visited, which matters for the planned native mobile apps. Hierarchy is carried by weight and size, not by a second family. (The CSS and code fallbacks still name Playfair Display and DM Sans; the live Brand Settings row overrides them, so the system stack is the truth.)
+**Character:** Native, unobtrusive, and fast. The live brand deliberately uses the platform's own face so the app feels installed rather than visited, which matters for the planned native mobile apps. Hierarchy is carried by weight and size, not by a second family. The CSS, client, and server fallbacks mirror the live row so the first paint matches.
 
 ### Hierarchy
 - **Display / Page title** (700, 30px, 1.2): the one title at the top of a page.
@@ -340,8 +340,8 @@ Controls are pills, cards are trays, and both carry the brand's variables so the
 - **Ghost:** transparent with a transparent border so toggling a border later never shifts layout
 - **Destructive:** Error Red fill, Paper text
 - **Sizes:** sm 32px min height and 12px text; icon 36px square; svg icons 16px
-- **Focus:** 1px ring in the ring color (currently Legacy Ring Green)
-- **Hover / Active:** the classes `hover-elevate` and `active-elevate-2` are applied but undefined, so there is no lift today. The intended feel is a subtle lift on hover and a visible press.
+- **Focus:** 1px ring in Stork Teal
+- **Hover:** brightness 1.04 and a 1px lift over 150ms. **Active:** brightness 0.96 and scale 0.98. Both through the elevate utilities; nothing per-button.
 - **Disabled:** 50% opacity, pointer events off
 - **Case:** sentence case, never uppercase
 
@@ -406,4 +406,4 @@ The marketplace card fills its slot with a 3px transparent gutter, container rad
 - **Don't** store tab or view state in local component state; it belongs in the URL.
 - **Don't** describe a donor or surrogate in plain chat text without the match card.
 - **Don't** use em dashes or en dashes anywhere in UI text.
-- **Don't** treat the missing hover and press feedback as intended: `hover-elevate` and `active-elevate-2` are applied everywhere but defined nowhere, and the focus ring still uses the legacy green. Both are recorded drift, to be fixed as their own task.
+- **Don't** add per-component hover or press styles; the shared elevate utilities are the one source of tactile feedback.

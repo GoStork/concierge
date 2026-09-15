@@ -216,7 +216,7 @@
       },
       "legacy-ring-green": {
         "role": "status",
-        "displayName": "Legacy Ring Green (drift)",
+        "displayName": "Legacy Ring Green (retired 2026-09-15)",
         "canonical": "#26584A",
         "tonalRamp": [
           "hsl(163 40% 15%)",
@@ -454,7 +454,7 @@
       }
     ],
     "sourceOfTruth": {
-      "note": "Live values come from the SiteSettings row (Brand Settings page) via applyBrandToDocument(); client/src/index.css :root and BRAND_DEFAULTS are pre-JS fallbacks only. Recorded drift: fallbacks still name Playfair Display + DM Sans and 0.5rem radius while live is the system stack and 2rem; ring color is still #26584A; hover-elevate / active-elevate-2 are applied but undefined.",
+      "note": "Live values come from the SiteSettings row (Brand Settings page) via applyBrandToDocument(); client/src/index.css :root, BRAND_DEFAULTS and the server DEFAULTS are pre-JS fallbacks kept in sync with it (synced 2026-09-15). Focus ring is primary. hover-elevate / active-elevate-2 are defined in index.css and fire only on pressable elements.",
       "liveSampledAt": "2026-09-15",
       "database": "bryzqwfzvgjenijciwaa (DEV)"
     }
@@ -535,7 +535,7 @@
   ],
   "narrative": {
     "northStar": "The Warm Concierge Desk",
-    "overview": "GoStork is a fertility matching concierge, and the interface is built to feel like sitting at a calm, sunlit front desk with someone who already knows your file. The page is warm sand, not white; white is reserved for the cards that hold real content, so every card reads as a sheet of paper placed on the desk. One voice speaks throughout: Stork Teal on every primary action, every active tab, and every message the parent sends. A second, softer voice, Orchid, marks the parts of the product that are not the parent's own doing: Eva's prompts, alternate emphasis, and the surrogacy service line. Nothing shouts. Green, amber, and red are kept out of decoration entirely so that when they appear they mean status.\n\nThe form language is soft to the point of being a signature: controls and containers share a single 2rem radius, so 48px inputs and buttons become full pills and cards become deeply rounded trays. Type is the platform's own system stack (SF Pro on Apple devices), set generously with a 1.6 body line height, because parents read this app on a phone at night. Density is loose on parent surfaces and tightens on provider work surfaces, where the same tokens carry a CRM, a calendar, and a document queue.\n\nThe founder's stated intent for how the system should feel is **playful and tactile**: lift on hover, a visible press, chips with a little life. The current code declares that intent (`hover-elevate` and `active-elevate-2` on every button and badge) but the utilities are not defined anywhere, so today the controls are static at rest and on hover. Treat the intent as the target and the static state as the incumbent gap, recorded in Do's and Don'ts.",
+    "overview": "**Creative North Star: \"The Warm Concierge Desk\"**\n\nGoStork is a fertility matching concierge, and the interface is built to feel like sitting at a calm, sunlit front desk with someone who already knows your file. The page is warm sand, not white; white is reserved for the cards that hold real content, so every card reads as a sheet of paper placed on the desk. One voice speaks throughout: Stork Teal on every primary action, every active tab, and every message the parent sends. A second, softer voice, Orchid, marks the parts of the product that are not the parent's own doing: Eva's prompts, alternate emphasis, and the surrogacy service line. Nothing shouts. Green, amber, and red are kept out of decoration entirely so that when they appear they mean status.\n\nThe form language is soft to the point of being a signature: controls and containers share a single 2rem radius, so 48px inputs and buttons become full pills and cards become deeply rounded trays. Type is the platform's own system stack (SF Pro on Apple devices), set generously with a 1.6 body line height, because parents read this app on a phone at night. Density is loose on parent surfaces and tightens on provider work surfaces, where the same tokens carry a CRM, a calendar, and a document queue.\n\nThe system's feel is **playful and tactile**: pressable things lift 1px and brighten slightly on hover, and press down with a 2% scale. The `hover-elevate` and `active-elevate-2` classes on every button and badge carry this, and they fire only on elements that can actually be pressed, so a badge in a sentence never jumps. Reduced-motion users get the color change without the movement.",
     "keyCharacteristics": [
       "Warm sand page with white paper cards separated by a visible warm hairline, not by shadow.",
       "One accent voice (Stork Teal) for action; Orchid for Eva and alternate emphasis; status hues never decorate.",
@@ -594,7 +594,7 @@
       "Don't store tab or view state in local component state; it belongs in the URL.",
       "Don't describe a donor or surrogate in plain chat text without the match card.",
       "Don't use em dashes or en dashes anywhere in UI text.",
-      "Don't treat the missing hover and press feedback as intended: `hover-elevate` and `active-elevate-2` are applied everywhere but defined nowhere, and the focus ring still uses the legacy green. Both are recorded drift, to be fixed as their own task."
+      "Don't add per-component hover or press styles; the shared elevate utilities are the one source of tactile feedback."
     ]
   }
 }

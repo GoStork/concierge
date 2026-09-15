@@ -33,9 +33,9 @@
   --primary: 178 87% 24%; /* #08726F - Hinge teal (GoStork Teal template) */
   --primary-foreground: 0 0% 100%;
   
-  /* Secondary: Soft Sage/Mint */
-  --secondary: 160 30% 96%;
-  --secondary-foreground: 183 100% 25%;
+  /* Secondary: Linen (cream) - the recede surface */
+  --secondary: 33 43% 92%; /* #F3EBE1 Linen - mirrors SiteSettings.secondaryColor */
+  --secondary-foreground: 0 0% 4%; /* #0A0A0A */
   
   /* Accent: Hinge orchid purple. Brand accent for alternate emphasis /
      non-CTA surfaces (see CLAUDE.md "Use the FULL brand palette"). This is
@@ -46,12 +46,13 @@
   
   /* Backgrounds */
   --background: 38 31% 95%; /* Warm sand #F6F3EE - lifts pure-white cards (Option B, Aug 2026) */
+  --foreground: 222 47% 11%; /* #0F172A Ink - mirrors SiteSettings.foregroundColor */
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 0 0% 4%; /* #0A0A0A */
   
   /* UI Elements */
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted: 240 5% 96%; /* #F4F4F5 Fog */
+  --muted-foreground: 215 16% 47%; /* #64748B */
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 47.4% 11.2%;
   --border: 38 20% 81%; /* Warm gray #D9D2C6 - visible card separation (Option B) */
@@ -69,9 +70,13 @@
      distinct from surrogacy's mauve - the service it most often appears
      beside, since surrogacy journeys need a lawyer. */
   --service-legal: 338 45% 43%;          /* #9E3B5E burgundy */
-  --input: 214.3 31.8% 91.4%;
-  --ring: 183 100% 25%;
-  --radius: 0.5rem;
+  --input: 0 0% 100%; /* inputs are Paper */
+  --ring: 178 87% 24%; /* focus ring = primary (was the legacy #26584A green) */
+  /* One radius token: 2rem turns 36-48px controls into full pills and cards
+     into trays. Mirrors SiteSettings.borderRadius / containerRadius = 2. */
+  --radius: 2rem;
+  --container-radius: 2rem;
+  --bottom-nav-radius: 2rem;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
@@ -81,8 +86,11 @@
   --brand-error: 0 84% 60%;
 
   /* Fonts */
-  --font-body: 'DM Sans', sans-serif;
-  --font-display: 'Playfair Display', serif;
+  /* Live brand uses the platform's own face (SiteSettings.headingFont /
+     bodyFont are the system stack). Keep these in sync or the first paint
+     flashes a web font before /api/brand/settings resolves. */
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
 
   /* Typography Scale & Weights */
   --type-scale-ratio: 1.25;
@@ -302,6 +310,32 @@
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
   }
+}
+
+/* ---------------------------------------------------------------------
+   Tactile feedback. Every Button and Badge carries `hover-elevate` and
+   `active-elevate-2` (shadcn's elevate convention); these are their
+   definitions. The lift only fires on things that can be pressed - a
+   badge sitting in a sentence must not jump when the cursor crosses it.
+   Filters, not colors, so the effect follows whatever brand fill the
+   element already has and never introduces a hardcoded tint.
+   --------------------------------------------------------------------- */
+.hover-elevate,
+.active-elevate-2 {
+  transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+}
+:is(button, a, [role="button"], label, summary).hover-elevate:hover:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+:is(button, a, [role="button"], label, summary).active-elevate-2:active:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(0.96);
+  transform: translateY(0) scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-elevate, .active-elevate-2 { transition: none; }
+  :is(button, a, [role="button"], label, summary).hover-elevate:hover,
+  :is(button, a, [role="button"], label, summary).active-elevate-2:active { transform: none; }
 }
 
 .gallery-scroll::-webkit-scrollbar {
