@@ -243,6 +243,12 @@ export default function OnboardingPage() {
   const { toast } = useToast();
   const { data: brand } = useBrandSettings();
   const isRegistration = !user;
+  // An invited family member (Intended Parent 2 / Viewer). Their family already
+  // answered goals, name and location; the only thing they owe is their own
+  // phone verification, so the wizard is two steps for them: phone, code.
+  const memberRole = (user as any)?.parentAccountRole as string | null | undefined;
+  const isInvitedMember = !!user && !!memberRole && memberRole !== "INTENDED_PARENT_1";
+  const FIRST_MEMBER_STEP = 4;
   const [searchParams, setSearchParams] = useSearchParams();
   const urlStep = parseStepParam(searchParams.get("step"));
   const step = urlStep ?? WELCOME_STEP;
@@ -273,12 +279,16 @@ export default function OnboardingPage() {
     }
   }, [isLoading, user, navigate, showLoading, submitting, showAiIntro]);
 
-  // Authenticated users skip welcome and start at goals
+  // Authenticated users skip welcome and start at goals; invited members
+  // start at the phone step.
   useEffect(() => {
-    if (!isLoading && user && user.mustCompleteProfile && step === WELCOME_STEP) {
+    if (isLoading || !user || !user.mustCompleteProfile) return;
+    if (isInvitedMember) {
+      if (step < FIRST_MEMBER_STEP) setStep(FIRST_MEMBER_STEP);
+    } else if (step === WELCOME_STEP) {
       setStep(1);
     }
-  }, [isLoading, user, step]);
+  }, [isLoading, user, step, isInvitedMember]);
 
   const [otpSending, setOtpSending] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
@@ -361,6 +371,10 @@ export default function OnboardingPage() {
     if (isLoading || clampedOnceRef.current) return;
     clampedOnceRef.current = true;
     const firstIncomplete = (() => {
+      // Members always re-enter their phone after a reload: the code was sent
+      // in a session that no longer exists, and a stale draft must never carry
+      // another household member's answers into this one.
+      if (isInvitedMember) return FIRST_MEMBER_STEP;
       if (data.goals.length === 0) return 1;
       if (!(data.firstName.trim() && data.lastName.trim())) return 2;
       if (!data.city.trim()) return 3;
@@ -421,7 +435,7 @@ export default function OnboardingPage() {
   const goBack = () => {
     setDirection("back");
     setStep(prev => {
-      const minStep = isRegistration ? WELCOME_STEP : 1;
+      const minStep = isRegistration ? WELCOME_STEP : isInvitedMember ? FIRST_MEMBER_STEP : 1;
       let next = prev - 1;
       if (next < minStep) return prev;
       return next;
@@ -478,20 +492,41 @@ export default function OnboardingPage() {
         queryClient.setQueryData([api.auth.me.path], loggedInUser);
       }
 
-      await apiRequest("PUT", "/api/user/onboarding", {
-        firstName: data.firstName.trim(),
-        lastName: data.lastName.trim(),
-        city: data.city.trim(),
-        state: data.state.trim(),
-        country: data.country.trim() || null,
-        mobileNumber: data.phoneE164,
-        mobileNumberDisplay: data.phoneDisplay,
-        smsNotificationsOptIn: data.smsOptIn,
-        interestedServices: data.goals,
-      });
+      // Invited members only verify their own phone. Their family's goals,
+      // location and profile are already on the shared account - never send
+      // empty values that could overwrite them.
+      await apiRequest("PUT", "/api/user/onboarding", isInvitedMember
+        ? {
+            mobileNumber: data.phoneE164,
+            mobileNumberDisplay: data.phoneDisplay,
+            smsNotificationsOptIn: data.smsOptIn,
+          }
+        : {
+            firstName: data.firstName.trim(),
+            lastName: data.lastName.trim(),
+            city: data.city.trim(),
+            state: data.state.trim(),
+            country: data.country.trim() || null,
+            mobileNumber: data.phoneE164,
+            mobileNumberDisplay: data.phoneDisplay,
+            smsNotificationsOptIn: data.smsOptIn,
+            interestedServices: data.goals,
+          });
 
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       clearDraft();
+
+      if (isInvitedMember) {
+        // The family already met their concierge and chose a persona; the
+        // member joins the conversation in progress instead of re-running
+        // the intro and the persona picker.
+        setTimeout(() => {
+          setShowLoading(false);
+          setSubmitting(false);
+          navigate("/chat", { replace: true });
+        }, 2000);
+        return;
+      }
 
       setTimeout(() => {
         setShowLoading(false);
@@ -618,10 +653,10 @@ export default function OnboardingPage() {
   // Progress bar: steps 1-N (welcome step doesn't count). The bar reaches 100%
   // only on the "Welcome to the family" screen, never while a step is still
   // open, so it cannot claim the account exists before it does.
-  const stepsCompleted = Math.max(0, step - 1);
-  const totalVisibleSteps = lastStep;
+  const stepsCompleted = Math.max(0, isInvitedMember ? step - FIRST_MEMBER_STEP : step - 1);
+  const totalVisibleSteps = isInvitedMember ? 2 : lastStep;
   const progress = totalVisibleSteps > 0 ? (stepsCompleted / totalVisibleSteps) * 100 : 0;
-  const stepNumber = Math.max(1, step);
+  const stepNumber = Math.max(1, isInvitedMember ? step - FIRST_MEMBER_STEP + 1 : step);
 
   const brandName = brand?.companyName || "GoStork";
 
@@ -641,7 +676,9 @@ export default function OnboardingPage() {
             Welcome to the family{data.firstName ? `, ${data.firstName}` : ""}.
           </h1>
           <p className="text-muted-foreground text-lg">
-            We've saved your preferences. Now let's meet your concierge.
+            {isInvitedMember
+              ? "You're on your family's account. Taking you to the conversation."
+              : "We've saved your preferences. Now let's meet your concierge."}
           </p>
         </div>
         <div className="mt-8 animate-[fadeIn_1.2s_ease-out_forwards] opacity-0">
@@ -866,6 +903,7 @@ export default function OnboardingPage() {
           )}
           {step === 4 && (
             <StepPhone
+              memberFirstName={isInvitedMember ? (user?.name || "").split(" ")[0] || null : null}
               value={data.phoneE164}
               displayValue={data.phoneDisplay}
               isoCode={data.phoneIsoCode}
@@ -1215,6 +1253,7 @@ function StepLocation({
 }
 
 function StepPhone({
+  memberFirstName,
   value,
   displayValue,
   isoCode,
@@ -1226,6 +1265,8 @@ function StepPhone({
   onSmsOptInChange,
   error,
 }: {
+  /** Set for an invited family member: the step is their whole onboarding. */
+  memberFirstName?: string | null;
   value: string;
   displayValue: string;
   isoCode: string;
@@ -1248,10 +1289,12 @@ function StepPhone({
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
       >
-        What's your phone number?
+        {memberFirstName ? `Welcome, ${memberFirstName}. One quick step.` : "What's your phone number?"}
       </h1>
       <p className="t-helper mb-8">
-        We'll text a code to this number to confirm it's really you. It keeps the parents and providers here real.
+        {memberFirstName
+          ? "Your family has already set everything up. Verify your own phone and you're in."
+          : "We'll text a code to this number to confirm it's really you. It keeps the parents and providers here real."}
       </p>
 
       <div className="mb-6">
