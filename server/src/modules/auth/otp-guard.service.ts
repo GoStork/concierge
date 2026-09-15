@@ -92,11 +92,13 @@ export class OtpGuardService {
 
     // DEV-ONLY test numbers: repeated signup testing from one phone trips the
     // per-phone and per-IP caps within an hour. Numbers listed in
-    // OTP_TEST_NUMBERS (comma-separated E.164) skip the RATE checks only, and
-    // only when the server is not in production - the country policy above and
-    // Turnstile still apply, and the attempt is still logged by record().
-    // Production ignores the variable entirely, so a leaked .env cannot open it.
-    if (process.env.NODE_ENV !== "production" && OtpGuardService.isTestNumber(e164)) {
+    // OTP_TEST_NUMBERS (comma-separated E.164) skip the RATE checks only - the
+    // country policy above and Turnstile still apply, and the attempt is still
+    // logged by record(). "Dev" is decided by APP_URL, not NODE_ENV: both dev
+    // Macs run the built server with NODE_ENV=production, so NODE_ENV cannot
+    // tell them apart from the real thing. Only app.gostork.com is production,
+    // and there the variable is ignored entirely, so a leaked .env cannot open it.
+    if (!OtpGuardService.isProductionHost() && OtpGuardService.isTestNumber(e164)) {
       this.logger.warn(`[otp-guard] DEV test number ${e164.slice(0, 5)}... - rate limits skipped`);
       return { ok: true, forceWhatsapp };
     }
@@ -126,6 +128,16 @@ export class OtpGuardService {
     }
 
     return { ok: true, forceWhatsapp };
+  }
+
+  /** Production is exactly app.gostork.com (see docs/production-launch-runbook.md). */
+  static isProductionHost(): boolean {
+    try {
+      return new URL(process.env.APP_URL || "").hostname.toLowerCase() === "app.gostork.com";
+    } catch {
+      // No usable APP_URL: assume production so the allowlist stays closed.
+      return true;
+    }
   }
 
   /** True when the number is in OTP_TEST_NUMBERS (dev machines only; see check()). */
