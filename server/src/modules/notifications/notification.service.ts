@@ -1811,25 +1811,27 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /**
+   * Family-account invitation. The invited partner sets their OWN password
+   * through a one-time link (7 days) - no credential ever travels by email,
+   * and their phone is verified by the onboarding wizard on first login.
+   */
   async sendMemberInvitation(
     inviterName: string,
     newUser: { id: string; email: string; name?: string | null; mobileNumber?: string | null },
-    tempPassword: string,
+    setPasswordLink: string,
   ) {
-    const base = getBaseUrl();
-    const loginLink = `${base}/login`;
     const brandData = await this.getBrandData();
 
     const html = buildBrandedEmail(brandData, {
       title: "You've Been Invited",
       greeting: `Hi ${esc(getFirstName(newUser.name) || "there")},`,
-      body: `<strong>${esc(inviterName)}</strong> has invited you to join ${esc(brandData.companyName)}. Use the credentials below to log in.`,
+      body: `<strong>${esc(inviterName)}</strong> invited you to join their family account on ${esc(brandData.companyName)}, so you both see the same conversations, Match Calls and documents. Choose a password to get started.`,
       detailRows: [
-        { label: "Email", value: esc(newUser.email) },
-        { label: "Password", value: esc(tempPassword) },
+        { label: "Your login email", value: esc(newUser.email) },
       ],
-      alertBox: { text: "Please change your password after your first login.", type: "info" },
-      buttons: [{ label: "Log In", url: loginLink }],
+      alertBox: { text: "This link works for 7 days. If it expires, ask the person who invited you to send a new invitation.", type: "info" },
+      buttons: [{ label: "Set my password", url: setPasswordLink }],
     });
 
     await this.dispatchNotification({ userId: newUser.id, type: "EMAIL", channel: "member_invitation", recipient: newUser.email,
@@ -1838,7 +1840,7 @@ export class NotificationService implements OnModuleInit {
 
     if (newUser.mobileNumber) {
       await this.dispatchSmsTemplate({ userId: newUser.id, channel: "member_invitation", recipient: newUser.mobileNumber,
-        contentSid: TWILIO_TEMPLATES.MEMBER_INVITATION, contentVars: { "1": inviterName, "2": loginLink },
+        contentSid: TWILIO_TEMPLATES.MEMBER_INVITATION, contentVars: { "1": inviterName, "2": setPasswordLink },
       });
     }
   }

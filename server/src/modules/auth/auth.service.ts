@@ -79,12 +79,17 @@ export class AuthService {
     });
   }
 
-  async createPasswordResetToken(email: string): Promise<{ token: string; userName: string | null } | null> {
+  /**
+   * One-time set-password token. Default TTL is one hour (forgot-password);
+   * member invitations pass a longer TTL because the partner may open the
+   * email days later.
+   */
+  async createPasswordResetToken(email: string, ttlMs = 60 * 60 * 1000): Promise<{ token: string; userName: string | null } | null> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) return null;
 
     const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + ttlMs);
 
     await this.prisma.passwordResetToken.create({
       data: {

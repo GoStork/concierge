@@ -138,7 +138,13 @@ export default function AdminUserAddPage() {
           queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId, "users"] });
         }
       }
-      toast({ title: isParentAccountMode ? "Member invited" : "User created", description: `${newUser.name || newUser.email} has been added.`, variant: "success" });
+      toast({
+        title: isParentAccountMode ? "Invitation sent" : "User created",
+        description: isParentAccountMode
+          ? `We emailed ${newUser.email} a link to set their password. It works for 7 days.`
+          : `${newUser.name || newUser.email} has been added.`,
+        variant: "success",
+      });
       navigate(-1);
     },
     onError: (err: Error) => {
@@ -165,17 +171,25 @@ export default function AdminUserAddPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast({ title: "Missing fields", description: "Email and password are required.", variant: "destructive" });
+    if (!email) {
+      toast({ title: "Missing fields", description: "Email is required.", variant: "destructive" });
       return;
     }
-    if (password !== confirmPassword) {
-      toast({ title: "Passwords do not match", variant: "destructive" });
-      return;
-    }
-    if (password.length < 6) {
-      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
-      return;
+    // Family-account invites carry no password: the member sets their own
+    // through the emailed link.
+    if (!isParentAccountMode) {
+      if (!password) {
+        toast({ title: "Missing fields", description: "Email and password are required.", variant: "destructive" });
+        return;
+      }
+      if (password !== confirmPassword) {
+        toast({ title: "Passwords do not match", variant: "destructive" });
+        return;
+      }
+      if (password.length < 8) {
+        toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+        return;
+      }
     }
 
     const selectedTeamMember = teamMembers?.find(m => m.id === selectedMemberId);
@@ -188,7 +202,7 @@ export default function AdminUserAddPage() {
 
     if (isParentAccountMode) {
       createMutation.mutate({
-        name, email, password, parentAccountRole,
+        name, email, parentAccountRole,
         mobileNumber: mobileNumber || undefined,
         ...locationFields,
       });
@@ -227,7 +241,7 @@ export default function AdminUserAddPage() {
         </h1>
         <p className="text-muted-foreground">
           {isParentAccountMode
-            ? "Add a new member to your account."
+            ? "They get an email with a link to choose their own password, then verify their phone on first login."
             : isProviderMode
               ? `Add a new team member for ${providerData?.name || "this provider"}.`
               : isGostorkTeamMode
@@ -310,13 +324,14 @@ export default function AdminUserAddPage() {
           </div>
         </div>
 
+        {!isParentAccountMode && (
         <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
           <h2 className="t-micro-label font-heading">Security</h2>
 
           <div className="space-y-2">
             <Label>Password</Label>
             <div className="flex gap-2">
-              <Input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimum 6 characters" required minLength={6} data-testid="input-staff-password" className="flex-1" />
+              <Input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimum 8 characters" required minLength={8} data-testid="input-staff-password" className="flex-1" />
               <Button type="button" variant="outline" size="sm" onClick={() => { const p = generateTempPassword(); setPassword(p); setConfirmPassword(p); }} data-testid="button-generate-password" className="whitespace-nowrap">
                 <RefreshCw className="w-3 h-3 mr-1" /> Generate
               </Button>
@@ -325,12 +340,13 @@ export default function AdminUserAddPage() {
 
           <div className="space-y-2">
             <Label>Confirm Password</Label>
-            <Input type="text" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter password" required minLength={6} data-testid="input-staff-confirm-password" />
+            <Input type="text" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter password" required minLength={8} data-testid="input-staff-confirm-password" />
             {confirmPassword && password !== confirmPassword && (
               <p className="text-xs text-destructive">Passwords do not match</p>
             )}
           </div>
         </div>
+        )}
 
         {isParentAccountMode && (
           <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
@@ -416,7 +432,7 @@ export default function AdminUserAddPage() {
         <div className="flex items-center justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => navigate(-1)} data-testid="button-cancel">Cancel</Button>
           <Button type="submit" disabled={createMutation.isPending} data-testid="button-create-user">
-            {createMutation.isPending ? "Creating..." : isParentAccountMode ? "Invite Member" : (isProviderMode || isGostorkTeamMode ? "Add Team Member" : "Add Parent")}
+            {createMutation.isPending ? (isParentAccountMode ? "Sending..." : "Creating...") : isParentAccountMode ? "Send invitation" : (isProviderMode || isGostorkTeamMode ? "Add Team Member" : "Add Parent")}
           </Button>
         </div>
       </form>

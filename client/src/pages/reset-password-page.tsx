@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,10 @@ import { Loader2, Eye, EyeOff, Check, X } from "lucide-react";
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const { token } = useParams<{ token: string }>();
+  // Family-account invitations reuse this page with ?invite=1: same token
+  // mechanics, different words - the reader has never had a password here.
+  const [searchParams] = useSearchParams();
+  const isInvite = searchParams.get("invite") === "1";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -118,10 +122,12 @@ export default function ResetPasswordPage() {
       <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
         <CardHeader className="space-y-2 text-center pb-4">
           <CardTitle className="font-display t-page-title text-primary" data-testid="text-page-title">
-            Reset your password
+            {isInvite ? "Welcome - set your password" : "Reset your password"}
           </CardTitle>
           <p className="t-helper">
-            Please enter your new password.
+            {isInvite
+              ? "You've been invited to join a family account. Choose a password, then sign in to finish setting up."
+              : "Please enter your new password."}
           </p>
         </CardHeader>
         <CardContent>

@@ -272,7 +272,7 @@ export const insertProviderLocationSchema = z.object({
 
 export const insertUserSchema = z.object({
   email: z.string().email("Valid email is required"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   name: z.string().optional(),
   photoUrl: z.string().nullable().optional(),
   mobileNumber: z.string().nullable().optional(),

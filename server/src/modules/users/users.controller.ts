@@ -1,3 +1,4 @@
+import { getBaseUrl } from "../../lib/get-base-url";
 import {
   Controller,
   Get,
@@ -2814,8 +2815,13 @@ export class UsersController {
     if (!isParentAccountAdmin(currentUser?.parentAccountRole)) throw new ForbiddenException("Only Intended Parent 1 can add members");
     if (!currentUser?.parentAccountId) throw new NotFoundException("No parent account found");
 
-    const input = insertUserSchema.parse(body);
-    const existing = await this.prisma.user.findUnique({ where: { email: input.email } });
+    // No password from the inviter: the member sets their own through a
+    // one-time link, so no credential is typed by someone else or emailed
+    // in plain text. Until they do, the account has no password and cannot
+    // log in (validateUser rejects password-less users).
+    const input = insertUserSchema.omit({ password: true }).parse(body);
+    const email = input.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new BadRequestException("Email already in use");
 
     const parentAccountRole = body.parentAccountRole || "INTENDED_PARENT_2";
@@ -2823,11 +2829,10 @@ export class UsersController {
       throw new BadRequestException("Invalid parent account role");
     }
 
-    const hashedPassword = await this.authService.hashPassword(input.password);
     const created = await this.prisma.user.create({
       data: {
-        email: input.email,
-        password: hashedPassword,
+        email,
+        password: null,
         name: input.name || null,
         mobileNumber: input.mobileNumber || null,
         city: body.city || null,
@@ -2836,14 +2841,20 @@ export class UsersController {
         roles: ["PARENT"],
         parentAccountId: currentUser.parentAccountId,
         parentAccountRole,
+        // First login lands in the authenticated onboarding, which verifies
+        // the member's own phone - same fraud posture as the first parent.
         mustCompleteProfile: true,
       },
     });
 
+    const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    const reset = await this.authService.createPasswordResetToken(email, INVITE_TTL_MS);
+    const setPasswordLink = `${getBaseUrl()}/reset-password/${reset?.token}?invite=1`;
+
     this.notificationService.sendMemberInvitation(
       currentUser.name || "Your partner",
       { id: created.id, email: created.email, name: created.name, mobileNumber: created.mobileNumber },
-      input.password,
+      setPasswordLink,
     ).catch((e) => console.error("[notify] Member invitation failed:", e.message));
 
     const { password: _, ...safe } = created;
