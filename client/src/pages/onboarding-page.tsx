@@ -429,7 +429,7 @@ export default function OnboardingPage() {
       case 3: return data.city.trim().length > 0;
       case 4: return data.phoneIsValid === true;
       case 5: return data.otp.every(d => d !== "");
-      case ACCOUNT_STEP: return isValidEmail(data.email) && data.password.length >= 6 && data.confirmPassword === data.password;
+      case ACCOUNT_STEP: return isValidEmail(data.email) && data.password.length >= 8 && data.confirmPassword === data.password;
       default: return false;
     }
   };
@@ -516,8 +516,8 @@ export default function OnboardingPage() {
         setRegistrationError({ type: "message", message: "Passwords do not match." });
         return;
       }
-      if (data.password.length < 6) {
-        setRegistrationError({ type: "message", message: "Password must be at least 6 characters." });
+      if (data.password.length < 8) {
+        setRegistrationError({ type: "message", message: "Password must be at least 8 characters." });
         return;
       }
       setRegistrationError(null);
@@ -571,6 +571,40 @@ export default function OnboardingPage() {
       goNext();
     }
   };
+
+  // Why Continue is disabled, said out loud. A 40%-opacity button on its own
+  // reads as decoration; one plain line under it names the missing piece.
+  const continueHint = (() => {
+    if (canContinue()) return null;
+    switch (step) {
+      case 1: return "Pick at least one to continue";
+      case 2: return "Enter your first and last name";
+      case 3: return "Choose your city from the list";
+      case 4: return "Enter a mobile number we can text";
+      case 5: return "Enter the 6-digit code from the text";
+      case ACCOUNT_STEP: return "Enter your email and a password of 8 or more characters, twice";
+      default: return null;
+    }
+  })();
+
+  // Browser tab / recent-tabs title per step. The app otherwise leaves it empty.
+  const stepTitleForTab = (() => {
+    switch (step) {
+      case WELCOME_STEP: return "Get started";
+      case 1: return "What are you looking for?";
+      case 2: return "Your name";
+      case 3: return "Where you live";
+      case 4: return "Your phone";
+      case 5: return "Enter the code";
+      case ACCOUNT_STEP: return "Create your account";
+      default: return "Get started";
+    }
+  })();
+  useEffect(() => {
+    const prev = document.title;
+    document.title = `${stepTitleForTab} - ${brand?.companyName || "GoStork"}`;
+    return () => { document.title = prev; };
+  }, [stepTitleForTab, brand?.companyName]);
 
   // Progress bar: steps 1-N (welcome step doesn't count). The bar reaches 100%
   // only on the "Welcome to the family" screen, never while a step is still
@@ -906,6 +940,7 @@ export default function OnboardingPage() {
             disabled={!canContinue() || submitting || otpSending}
             data-testid="btn-onboarding-continue"
             className="w-full h-auto py-4 text-lg disabled:opacity-40"
+            aria-describedby={continueHint ? "onboarding-continue-hint" : undefined}
           >
             {submitting || otpSending ? (
               <Loader2 className="w-5 h-5 animate-spin mx-auto" />
@@ -917,6 +952,11 @@ export default function OnboardingPage() {
               "Continue"
             )}
           </Button>
+          {continueHint && (
+            <p id="onboarding-continue-hint" className="t-helper text-center mt-3" aria-live="polite" data-testid="text-continue-hint">
+              {continueHint}
+            </p>
+          )}
           {step === ACCOUNT_STEP && isRegistration && (
             <p className="t-helper text-center mt-4">
               Already have an account?{" "}
@@ -1006,7 +1046,7 @@ function StepAccount({
             </button>
           </div>
           {password.length > 0 && password.length < 6 && (
-            <p className="text-sm text-destructive mt-1" data-testid="text-password-hint">Password must be at least 6 characters</p>
+            <p className="text-sm text-destructive mt-1" data-testid="text-password-hint">Password must be at least 8 characters</p>
           )}
         </div>
         <div>
@@ -1213,6 +1253,7 @@ function StepPhone({
           defaultIsoCode={effectiveDefault}
           loadingCountry={detectingCountry && !isoCode && !isoFromLocation}
           onChange={onChange}
+          autoFocus
           data-testid="input-phone"
         />
       </div>

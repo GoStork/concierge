@@ -8716,6 +8716,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
     // Collect ALL [[SAVE:]] tags from the response (AI sometimes emits multiple)
     const saveTagMatches = [...finalContent.matchAll(/\[\[SAVE:(.*?)\]\]/g)];
+    // Set when THIS turn's save says the parent is on the journey with a
+    // partner (Phase 1 family type). Drives the one-time "add your partner"
+    // card attached to this same reply - see PARTNER INVITE below.
+    let coupleSavedThisTurn = false;
     if (saveTagMatches.length > 0) {
       // Merge all SAVE tags into one object (later tags override earlier ones for the same key)
       const fieldsToSave: any = {};
@@ -8725,6 +8729,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         } catch (e) {
           console.error("Failed to parse SAVE block:", m[1], e);
         }
+      }
+      if (
+        /couple|married|partner/i.test(String(fieldsToSave.relationshipStatus || "")) ||
+        /couple/i.test(String(fieldsToSave.familyType || ""))
+      ) {
+        coupleSavedThisTurn = true;
       }
 
       // Fields saved to IntendedParentProfile - every DB column that the AI can set
@@ -11663,6 +11673,38 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
     if (multiSelect) uiExtras.multiSelect = true;
 
+    // PARTNER INVITE: the moment the parent says they are on this journey as a
+    // couple, offer to add the partner to the shared account - once. The card
+    // rides on THIS reply (not a trailing message) so Eva's follow-up question
+    // and its quick replies stay last on screen. Deterministic, not prompted:
+    // the model never has to remember to offer it. Gates: the account has one
+    // member, the speaker can add members (IP1), and no earlier message in this
+    // lifetime session carried the card. Dismissal is client-side; adding the
+    // partner makes the card resolve itself via the members query.
+    if (coupleSavedThisTurn && currentSessionId) {
+      try {
+        const me = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { parentAccountId: true, parentAccountRole: true },
+        });
+        if (me?.parentAccountId && (!me.parentAccountRole || me.parentAccountRole === "INTENDED_PARENT_1")) {
+          const [memberCount, offeredBefore] = await Promise.all([
+            prisma.user.count({ where: { parentAccountId: me.parentAccountId } }),
+            prisma.aiChatMessage.findFirst({
+              where: { sessionId: currentSessionId, uiCardData: { path: ["partnerInvite", "offered"], equals: true } },
+              select: { id: true },
+            }),
+          ]);
+          if (memberCount <= 1 && !offeredBefore) {
+            uiExtras.partnerInvite = { offered: true };
+            console.log(`[partner-invite] Attaching add-your-partner card in session ${currentSessionId}`);
+          }
+        }
+      } catch (e: any) {
+        console.error("[partner-invite] gate failed:", e?.message);
+      }
+    }
+
     const replySessionId = currentSessionId;
 
     // Sanitize: replace em-dashes and en-dashes with regular hyphens
@@ -11858,6 +11900,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       doctorCards: doctorCards.length > 0 ? doctorCards : undefined,
       comparisonCards: comparisonCards.length > 0 ? comparisonCards : undefined,
       prepDoc: sendPrepDoc || undefined,
+      partnerInvite: uiExtras.partnerInvite || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
       meetingCards: meetingCards.length > 0 ? meetingCards : undefined,

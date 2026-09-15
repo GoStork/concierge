@@ -27,6 +27,8 @@ export interface PhoneInputProps {
   placeholder?: string;
   variant?: "default" | "onboarding";
   loadingCountry?: boolean;
+  /** Raise the keyboard on arrival (onboarding phone step). */
+  autoFocus?: boolean;
   "data-testid"?: string;
 }
 
@@ -92,6 +94,7 @@ export function PhoneInput({
   placeholder,
   variant = "default",
   loadingCountry,
+  autoFocus,
   "data-testid": dataTestId,
 }: PhoneInputProps) {
   const isOnboarding = variant === "onboarding";
@@ -347,6 +350,7 @@ export function PhoneInput({
             className={inputClasses}
             data-testid={dataTestId ? `${dataTestId}-input` : "phone-input"}
             autoComplete="tel"
+            autoFocus={autoFocus}
           />
         ) : (
           <Input

@@ -14,6 +14,7 @@ import { ComparisonCard } from "@/components/chat/comparison-card";
 import { createPortal } from "react-dom";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
+import { PartnerInviteCard } from "@/components/chat/partner-invite-card";
 import { DonorReleaseWarningButtons } from "@/components/chat/special-message-card";
 import { ReviewPromptCard } from "@/components/reviews/reviews-ui";
 import { IpFormPromptCard } from "@/components/chat/ip-form-prompt-card";
@@ -156,6 +157,8 @@ interface ChatMessage {
   doctorCards?: DoctorCard[];
   comparisonCards?: ComparisonCardData[];
   prepDoc?: boolean;
+  /** One-time "add your partner" offer attached by the server (uiCardData.partnerInvite). */
+  partnerInvite?: { offered: boolean };
   consultationCard?: ConsultationCardData;
   /** Hydrated Booking objects for existing-meeting questions (join/reschedule/cancel). */
   meetingCards?: any[];
@@ -3406,6 +3409,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             comparisonCards: extras.comparisonCards,
             meetingCards: extras.meetingCards,
             prepDoc: extras.prepDoc,
+            partnerInvite: extras.partnerInvite,
             consultationCard: extras.consultationCard,
             agreementCard: extras.agreementCard,
             // Restore quick replies for the last message so buttons reappear on navigation
@@ -3480,6 +3484,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   comparisonCards: extras.comparisonCards,
                   meetingCards: extras.meetingCards,
                   prepDoc: extras.prepDoc,
+                  partnerInvite: extras.partnerInvite,
                   consultationCard: extras.consultationCard,
                   quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
                   uiCardType: m.uiCardType,
@@ -3788,6 +3793,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 comparisonCards: extras.comparisonCards,
                 meetingCards: extras.meetingCards,
                 prepDoc: extras.prepDoc,
+                partnerInvite: extras.partnerInvite,
                 consultationCard: extras.consultationCard,
                 agreementCard: extras.agreementCard,
                 quickReplies: extras.quickReplies,
@@ -4272,6 +4278,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               comparisonCards: data.comparisonCards,
               meetingCards: data.meetingCards,
               prepDoc: data.prepDoc,
+              partnerInvite: data.partnerInvite,
               consultationCard: data.consultationCard,
               agreementCard: data.agreementCard,
               senderType: data.message?.senderType,
@@ -4727,6 +4734,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 comparisonCards: data.comparisonCards,
                 meetingCards: data.meetingCards,
                 prepDoc: data.prepDoc,
+                partnerInvite: data.partnerInvite,
                 consultationCard: data.consultationCard,
                 agreementCard: data.agreementCard,
                 senderType: data.message?.senderType,
@@ -5461,6 +5469,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {msg.prepDoc && (
                     <div className="mt-3">
                       <PrepDocCard brandColor={brandColor} />
+                    </div>
+                  )}
+
+                  {/* One-time "add your partner" offer, attached to the reply in
+                      which the parent said they are a couple. */}
+                  {msg.partnerInvite?.offered && (
+                    <div className="mt-3">
+                      <PartnerInviteCard messageId={msg.id} brandColor={brandColor} />
                     </div>
                   )}
 
