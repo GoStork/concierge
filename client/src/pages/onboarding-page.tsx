@@ -1049,7 +1049,7 @@ function StepAccount({
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
-          {password.length > 0 && password.length < 6 && (
+          {password.length > 0 && password.length < 8 && (
             <p className="text-sm text-destructive mt-1" data-testid="text-password-hint">Password must be at least 8 characters</p>
           )}
         </div>
