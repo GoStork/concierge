@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
@@ -11,14 +11,18 @@ import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { SmsTransactionalNotice, SmsNotificationsOptIn } from "@/components/ui/sms-consent-disclosure";
 import { TurnstileWidget } from "@/components/ui/turnstile-widget";
+import { Button } from "@/components/ui/button";
 import { countryNameToIsoCode } from "@/lib/country-flag";
 
 // AI Intro service-to-visual config (inline version of OnboardingAiIntroPage)
-const AI_INTRO_SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; gradient: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
-  "Fertility Clinic": { icon: Stethoscope, gradient: "from-primary/20 to-primary/5", label: "Top Clinics", imageKey: "onboardingClinicImageUrl", chatText: "I found a great match for you! A top-rated fertility clinic near you", replyText: "Tell me more about the clinic!" },
-  "Egg Donor": { icon: FlaskConical, gradient: "from-pink-100 to-rose-50", label: "Egg Donors", imageKey: "onboardingEggDonorImageUrl", chatText: "I found an amazing egg donor that matches your preferences!", replyText: "She sounds great!" },
-  "Surrogate": { icon: Baby, gradient: "from-amber-100 to-orange-50", label: "Surrogates", imageKey: "onboardingSurrogateImageUrl", chatText: "I found a wonderful surrogate who's a perfect fit for your journey!", replyText: "Tell me more about her!" },
-  "Sperm Donor": { icon: Heart, gradient: "from-blue-100 to-sky-50", label: "Sperm Donors", imageKey: "onboardingSpermDonorImageUrl", chatText: "I found a great sperm donor that matches what you're looking for!", replyText: "Tell me more!" },
+// Card tints come from the platform-wide service hues (index.css --service-*),
+// the same identity the ServiceTag uses everywhere else. Never pink-for-eggs /
+// blue-for-sperm: that is gendered color coding and the brand forbids it.
+const AI_INTRO_SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; hue: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
+  "Fertility Clinic": { icon: Stethoscope, hue: "--service-ivf", label: "Top Clinics", imageKey: "onboardingClinicImageUrl", chatText: "I found a great match for you! A top-rated fertility clinic near you", replyText: "Tell me more about the clinic!" },
+  "Egg Donor": { icon: FlaskConical, hue: "--service-egg-donation", label: "Egg Donors", imageKey: "onboardingEggDonorImageUrl", chatText: "I found an amazing egg donor that matches your preferences!", replyText: "She sounds great!" },
+  "Surrogate": { icon: Baby, hue: "--service-surrogacy", label: "Surrogates", imageKey: "onboardingSurrogateImageUrl", chatText: "I found a wonderful surrogate who's a perfect fit for your journey!", replyText: "Tell me more about her!" },
+  "Sperm Donor": { icon: Heart, hue: "--service-sperm-donation", label: "Sperm Donors", imageKey: "onboardingSpermDonorImageUrl", chatText: "I found a great sperm donor that matches what you're looking for!", replyText: "Tell me more!" },
 };
 
 function AiIntroServiceCard({ service, imageUrl, style }: { service: string; imageUrl: string | null; style: React.CSSProperties }) {
@@ -27,7 +31,13 @@ function AiIntroServiceCard({ service, imageUrl, style }: { service: string; ima
   const Icon = config.icon;
   const resolvedUrl = imageUrl ? (getPhotoSrc(imageUrl) || imageUrl) : null;
   return (
-    <div className={`absolute w-48 h-60 rounded-2xl border border-border shadow-lg overflow-hidden ${!resolvedUrl ? `bg-gradient-to-br ${config.gradient}` : ""}`} style={style}>
+    <div
+      className="absolute w-48 h-60 rounded-[var(--container-radius)] border border-border shadow-lg overflow-hidden"
+      style={{
+        ...style,
+        ...(resolvedUrl ? {} : { background: `linear-gradient(135deg, hsl(var(${config.hue}) / 0.18), hsl(var(${config.hue}) / 0.04))` }),
+      }}
+    >
       {resolvedUrl ? (
         <>
           <img src={resolvedUrl} alt={config.label} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -37,8 +47,8 @@ function AiIntroServiceCard({ service, imageUrl, style }: { service: string; ima
         </>
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-          <div className="w-16 h-16 rounded-full bg-background/80 flex items-center justify-center">
-            <Icon className="w-8 h-8 text-primary" />
+          <div className="w-16 h-16 rounded-full bg-card/80 flex items-center justify-center">
+            <Icon className="w-8 h-8" style={{ color: `hsl(var(${config.hue}))` }} />
           </div>
           <span className="text-sm font-semibold text-foreground/80">{config.label}</span>
         </div>
@@ -53,6 +63,47 @@ const ACCOUNT_STEP = 6;
 const WELCOME_STEP = 0;
 
 const GOALS = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
+
+/**
+ * Draft persistence. Step 5 is exactly when the parent leaves this tab to read
+ * the SMS code, and iOS Safari evicts background tabs, so a reload must not
+ * dump them back to the welcome screen. The step lives in ?step= (browser Back
+ * walks the wizard, reload keeps the place) and the answers live in
+ * sessionStorage for the life of the tab. Password, confirm and the code are
+ * never written; they are the secrets the draft exists to protect.
+ */
+const DRAFT_KEY = "gostork:onboarding-draft:v1";
+type DraftData = Omit<OnboardingData, "password" | "confirmPassword" | "otp">;
+
+function readDraft(): Partial<DraftData> | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(data: OnboardingData) {
+  try {
+    const { password: _p, confirmPassword: _c, otp: _o, ...draft } = data;
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // storage unavailable (private mode quota) - the URL step still survives
+  }
+}
+
+function clearDraft() {
+  try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
+}
+
+function parseStepParam(raw: string | null): number | null {
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= WELCOME_STEP && n <= ACCOUNT_STEP ? n : null;
+}
 
 function mapOtpSendError(code: string): string {
   switch (code) {
@@ -110,10 +161,10 @@ function PillButton({
       onClick={onClick}
       aria-pressed={selected}
       data-testid={testId}
-      className={`w-full py-4 px-6 rounded-full text-lg font-medium transition-all duration-200 flex items-center justify-between ${
+      className={`hover-elevate active-elevate-2 w-full py-4 px-6 rounded-full text-lg font-medium border flex items-center justify-between ${
         selected
-          ? "bg-primary text-primary-foreground shadow-md"
-          : "bg-muted text-foreground hover:bg-muted/80"
+          ? "bg-primary text-primary-foreground border-primary shadow-md"
+          : "bg-card text-foreground border-border hover:border-primary/50"
       }`}
     >
       <span className="flex-1 text-center">{label}</span>
@@ -163,7 +214,22 @@ export default function OnboardingPage() {
   const { toast } = useToast();
   const { data: brand } = useBrandSettings();
   const isRegistration = !user;
-  const [step, setStep] = useState(WELCOME_STEP);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlStep = parseStepParam(searchParams.get("step"));
+  const step = urlStep ?? WELCOME_STEP;
+  // Step is derived from the URL so reload and browser Back keep the parent's
+  // place. replace:true keeps the history stack to one entry per wizard visit
+  // except when the parent moves forward, so Back walks steps in order.
+  const setStep = useCallback((next: number | ((prev: number) => number), opts?: { replace?: boolean }) => {
+    setSearchParams(prev => {
+      const current = parseStepParam(prev.get("step")) ?? WELCOME_STEP;
+      const resolved = typeof next === "function" ? next(current) : next;
+      const params = new URLSearchParams(prev);
+      if (resolved === WELCOME_STEP) params.delete("step");
+      else params.set("step", String(resolved));
+      return params;
+    }, { replace: opts?.replace ?? true });
+  }, [setSearchParams]);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [submitting, setSubmitting] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
@@ -234,7 +300,7 @@ export default function OnboardingPage() {
     return awaitTurnstileToken(needsReset ? 30000 : 8000);
   };
 
-  const [data, setData] = useState<OnboardingData>({
+  const [data, setData] = useState<OnboardingData>(() => ({
     email: "",
     password: "",
     confirmPassword: "",
@@ -251,7 +317,28 @@ export default function OnboardingPage() {
     // A2P: must start unticked. A pre-checked box is its own campaign violation.
     smsOptIn: false,
     otp: ["", "", "", "", "", ""],
-  });
+    ...(readDraft() ?? {}),
+  }));
+
+  // Persist every answer as it changes (secrets excluded, see writeDraft).
+  useEffect(() => { writeDraft(data); }, [data]);
+
+  // A deep link or a stale draft can name a step the answers do not support
+  // (draft cleared, ?step=5 with no phone). Clamp to the first step that is
+  // still incomplete so the parent never lands on a screen that cannot proceed.
+  useEffect(() => {
+    if (isLoading) return;
+    const firstIncomplete = (() => {
+      if (data.goals.length === 0) return 1;
+      if (!(data.firstName.trim() && data.lastName.trim())) return 2;
+      if (!data.city.trim()) return 3;
+      if (!data.phoneIsValid) return 4;
+      return 5;
+    })();
+    if (step > firstIncomplete) setStep(firstIncomplete, { replace: true });
+    // Only on mount / auth resolution: later navigation is driven by goNext.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
   const [detectingCountry, setDetectingCountry] = useState(true);
@@ -294,7 +381,7 @@ export default function OnboardingPage() {
       const lastStep = isRegistration ? ACCOUNT_STEP : TOTAL_STEPS_AUTHENTICATED;
       if (next > lastStep) return prev;
       return next;
-    });
+    }, { replace: false });
   };
 
   const goBack = () => {
@@ -370,6 +457,7 @@ export default function OnboardingPage() {
       });
 
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      clearDraft();
 
       setTimeout(() => {
         setShowLoading(false);
@@ -459,10 +547,13 @@ export default function OnboardingPage() {
     }
   };
 
-  // Progress bar: steps 1-N (welcome step doesn't count)
+  // Progress bar: steps 1-N (welcome step doesn't count). The bar reaches 100%
+  // only on the "Welcome to the family" screen, never while a step is still
+  // open, so it cannot claim the account exists before it does.
   const stepsCompleted = Math.max(0, step - 1);
-  const totalVisibleSteps = lastStep - 1;
+  const totalVisibleSteps = lastStep;
   const progress = totalVisibleSteps > 0 ? (stepsCompleted / totalVisibleSteps) * 100 : 0;
+  const stepNumber = Math.max(1, step);
 
   const brandName = brand?.companyName || "GoStork";
 
@@ -482,7 +573,7 @@ export default function OnboardingPage() {
             Welcome to the family{data.firstName ? `, ${data.firstName}` : ""}.
           </h1>
           <p className="text-muted-foreground text-lg">
-            We've saved your preferences. Now, let's meet your AI concierge.
+            We've saved your preferences. Now let's meet your concierge.
           </p>
         </div>
         <div className="mt-8 animate-[fadeIn_1.2s_ease-out_forwards] opacity-0">
@@ -504,6 +595,7 @@ export default function OnboardingPage() {
       .filter((m: Matchmaker) => m.isActive)
       .sort((a: Matchmaker, b: Matchmaker) => a.sortOrder - b.sortOrder);
     const concierge = matchmakers[0];
+    const conciergeName = concierge?.name?.trim() || null;
     const visibleServices = data.goals.filter(g => AI_INTRO_SERVICE_CONFIG[g]).slice(0, 2);
     if (visibleServices.length === 0) visibleServices.push("Fertility Clinic", "Egg Donor");
     if (visibleServices.length === 1) {
@@ -523,7 +615,7 @@ export default function OnboardingPage() {
       >
         <div className="max-w-md w-full flex flex-col items-center flex-1">
           <h1 className="text-3xl md:text-4xl font-bold leading-tight text-center mb-8" style={{ fontFamily: "var(--font-display)" }} data-testid="text-ai-intro-title">
-            Now let's meet your AI concierge
+            {conciergeName ? `Now let's meet ${conciergeName}` : "Now let's meet your concierge"}
           </h1>
           <div className="relative w-72 h-72 mx-auto mb-6">
             <AiIntroServiceCard service={visibleServices[1]} imageUrl={getImageUrl(visibleServices[1])} style={{ left: "8px", top: "16px", transform: "rotate(-6deg)", zIndex: 1 }} />
@@ -532,8 +624,12 @@ export default function OnboardingPage() {
               {concierge?.avatarUrl ? (
                 <img src={getPhotoSrc(concierge.avatarUrl) || undefined} alt={concierge.name} className="w-10 h-10 rounded-full object-cover border-2 border-background flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 border-2 border-background">
-                  <span className="text-primary-foreground text-sm font-bold">AI</span>
+                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 border-2 border-background" aria-hidden="true">
+                  {conciergeName ? (
+                    <span className="text-primary-foreground text-sm font-bold">{conciergeName.charAt(0).toUpperCase()}</span>
+                  ) : (
+                    <Sparkles className="w-5 h-5 text-primary-foreground" />
+                  )}
                 </div>
               )}
               <div className="bg-muted rounded-[var(--radius)] rounded-bl-none px-4 py-3 shadow-sm max-w-[220px]">
@@ -547,17 +643,18 @@ export default function OnboardingPage() {
             </div>
           </div>
           <p className="t-helper text-center leading-relaxed max-w-sm mx-auto">
-            Our AI is not perfect yet. It can have some glitches.
+            {conciergeName ?? "Your concierge"} can answer most questions right away. When something needs a person, the {brandName} team steps in.
           </p>
         </div>
         <div className="w-full max-w-md mt-6">
-          <button
+          <Button
+            size="lg"
             onClick={() => navigate("/matchmaker-selection", { replace: true })}
             data-testid="btn-ai-intro-continue"
-            className="w-full py-4 rounded-full text-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all duration-200"
+            className="w-full h-auto py-4 text-lg"
           >
             Continue
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -606,7 +703,7 @@ export default function OnboardingPage() {
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                 <Sparkles className="w-5 h-5 text-primary" />
               </div>
-              <span className="text-foreground font-medium">AI finds your best matches</span>
+              <span className="text-foreground font-medium">Your concierge narrows the field for you</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -618,17 +715,18 @@ export default function OnboardingPage() {
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                 <CalendarCheck className="w-5 h-5 text-primary" />
               </div>
-              <span className="text-foreground font-medium">Book a free consultation</span>
+              <span className="text-foreground font-medium">Book a free Match Call</span>
             </div>
           </div>
 
-          <button
+          <Button
+            size="lg"
             onClick={() => goNext()}
             data-testid="btn-welcome-start"
-            className="w-full py-4 rounded-full text-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all duration-200"
+            className="w-full h-auto py-4 text-lg"
           >
-            Get Started
-          </button>
+            Get started
+          </Button>
         </div>
       </div>
     );
@@ -654,10 +752,20 @@ export default function OnboardingPage() {
           </button>
         )}
         <div className="flex-1" />
+        <span className="t-micro-label" data-testid="text-step-count">
+          {stepNumber} of {totalVisibleSteps}
+        </span>
       </div>
 
       <div className="px-6 mb-6">
-        <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
+        <div
+          className="w-full h-1 bg-border rounded-full overflow-hidden"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={totalVisibleSteps}
+          aria-valuenow={stepsCompleted}
+          aria-label={`Step ${stepNumber} of ${totalVisibleSteps}`}
+        >
           <div
             className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
@@ -767,26 +875,23 @@ export default function OnboardingPage() {
 
       {step <= lastStep && (
         <div className="px-6 pb-8 pt-2">
-          <button
+          <Button
+            size="lg"
             onClick={handleContinue}
             disabled={!canContinue() || submitting || otpSending}
             data-testid="btn-onboarding-continue"
-            className={`w-full py-4 rounded-full text-lg font-semibold transition-all duration-200 ${
-              canContinue()
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98]"
-                : "bg-muted text-muted-foreground cursor-not-allowed"
-            }`}
+            className="w-full h-auto py-4 text-lg disabled:opacity-40"
           >
             {submitting || otpSending ? (
               <Loader2 className="w-5 h-5 animate-spin mx-auto" />
             ) : step === 4 ? (
-              "Verify phone number"
+              "Text me a code"
             ) : step === ACCOUNT_STEP ? (
-              "Create Account & Finish"
+              "Create account and finish"
             ) : (
               "Continue"
             )}
-          </button>
+          </Button>
           {step === ACCOUNT_STEP && isRegistration && (
             <p className="t-helper text-center mt-4">
               Already have an account?{" "}
@@ -981,7 +1086,7 @@ function StepName({
       >
         What's your name?
       </h1>
-      <p className="t-helper mb-8">Please use your real name - providers will see it when you connect</p>
+      <p className="t-helper mb-8">Please use your real name - providers see it only after you book a Match Call with them</p>
       <div className="space-y-6">
         <input
           type="text"
@@ -1021,6 +1126,7 @@ function StepLocation({
       >
         Where are you currently living?
       </h1>
+      <p className="t-helper mb-8 -mt-6">We use this to find providers near you</p>
       <LocationAutocomplete
         value={value}
         onChange={onChange}
@@ -1071,7 +1177,7 @@ function StepPhone({
         What's your phone number?
       </h1>
       <p className="t-helper mb-8">
-        We will send you a verification code on this number. We make sure our users are real people
+        We'll text a code to this number to confirm it's really you. It keeps the parents and providers here real.
       </p>
 
       <div className="mb-6">
@@ -1099,7 +1205,7 @@ function StepPhone({
           consent. The box starts unticked and the Verify button works either way -
           if declining ever blocks signup, the campaign fails on error 30923 again. */}
       <label
-        className="flex items-start gap-3 rounded-[var(--radius)] border-2 border-primary/40 bg-accent/10 p-4 cursor-pointer transition-colors hover:border-primary has-[:checked]:border-primary has-[:checked]:bg-accent/20"
+        className="flex items-start gap-3 rounded-[var(--radius)] border border-border bg-secondary p-4 cursor-pointer transition-colors hover:border-primary/60 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
         data-testid="label-sms-opt-in"
       >
         <input
