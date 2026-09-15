@@ -44,6 +44,8 @@ GoStork is a personal matchmaker, not a marketplace. Copy and product framing mu
 - Multi-tenant with strict tenant isolation. Provider data, knowledge bases, and RAG are scoped per organization.
 - Stripe Connect handles provider payouts; history includes a 1.0 account-takeover breach, so payment surfaces carry extra guardrails.
 - Terminology: "Intended Parents" or "parents", never "customers". "Providers" for the supply side. "Eva" or "AI Concierge" for the assistant. "Match Call" for the first parent-provider consultation. "Tasks" not "Next step".
+- Signup order is a security decision, not a UX one: phone verification (OTP) happens BEFORE email and account creation. The 1.0 platform was abused by bots that created accounts with email first; the phone gate is the fraud control (see the SMS toll-fraud defences in the security memory). Do not propose "email first, phone later" as a UX improvement.
+- Shared parent accounts are built by invitation from inside the app: an existing parent adds a partner or family member on the Invite Member page (`/users/new?parentAccount=true`) with a role of Intended Parent 2 (full access) or Viewer. Invited members do not go through the public onboarding wizard. The open question is discovery, not capability: nothing during onboarding or in Eva's chat tells a partnered parent that inviting their partner is possible.
 - Undecided: launch date for 2.0 and the exact set of providers live at launch.
 
 ## Brand Commitments
