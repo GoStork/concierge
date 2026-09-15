@@ -2799,10 +2799,44 @@ export class UsersController {
         id: true, email: true, name: true, photoUrl: true, mobileNumber: true,
         city: true, state: true, country: true,
         parentAccountRole: true, createdAt: true, isDisabled: true,
+        password: true,
       },
       orderBy: { createdAt: "asc" },
     });
-    return members;
+    // An invited member has no password until they open their link; the hash
+    // itself never leaves the server.
+    return members.map(({ password, ...m }) => ({ ...m, invitePending: !password }));
+  }
+
+  @Post("parent-account/members/:userId/resend-invite")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Re-send the set-password invitation to a member who has not accepted yet (IP1 only)" })
+  @ApiParam({ name: "userId", type: String })
+  async resendParentAccountInvite(@Param("userId") userId: string, @Req() req: Request) {
+    const user = req.user as any;
+    if (!user.roles?.includes("PARENT")) throw new ForbiddenException("Parent users only");
+    const currentUser = await this.prisma.user.findUnique({ where: { id: user.id }, select: { name: true, parentAccountId: true, parentAccountRole: true } });
+    if (!isParentAccountAdmin(currentUser?.parentAccountRole)) throw new ForbiddenException("Only Intended Parent 1 can resend invitations");
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, mobileNumber: true, password: true, parentAccountId: true },
+    });
+    if (!target || target.parentAccountId !== currentUser?.parentAccountId) throw new NotFoundException("Member not found");
+    if (target.password) throw new BadRequestException("This member has already set their password");
+
+    const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    const reset = await this.authService.createPasswordResetToken(target.email, INVITE_TTL_MS);
+    if (!reset) throw new NotFoundException("Member not found");
+    const setPasswordLink = `${getBaseUrl()}/reset-password/${reset.token}?invite=1`;
+    await this.notificationService.sendMemberInvitation(
+      currentUser?.name || "Your partner",
+      { id: target.id, email: target.email, name: target.name, mobileNumber: target.mobileNumber },
+      setPasswordLink,
+    );
+    return { ok: true, email: target.email };
   }
 
   @Post("parent-account/members")

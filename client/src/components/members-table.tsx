@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Ban, UserCheck } from "lucide-react";
+import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Ban, UserCheck, Send } from "lucide-react";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +62,8 @@ type MemberData = {
   country?: string | null;
   parentAccountRole?: string;
   isDisabled?: boolean;
+  /** Parent context: invited but has not opened their set-password link yet. */
+  invitePending?: boolean;
   assignedLocations?: { id: string; locationId: string; location: { id: string; city: string; state: string; address?: string; zip?: string } }[];
 };
 
@@ -174,6 +176,19 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
 
   // Disable/enable a team member's login. Mirrors the delete endpoint routing:
   // GoStork admins hit the global /api/users/:id, provider admins hit their
+  const resendInviteMutation = useMutation({
+    mutationFn: async (member: Member) => {
+      const res = await apiRequest("POST", `/api/parent-account/members/${member.id}/resend-invite`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Invitation re-sent", description: `A fresh link is on its way to ${data?.email || "them"}. It works for 7 days.`, variant: "success" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not resend", description: err.message, variant: "destructive" });
+    },
+  });
+
   // scoped /api/providers/:providerId/users/:id. Both PUTs accept isDisabled.
   const toggleDisabledMutation = useMutation({
     mutationFn: async (member: MemberData) => {
@@ -320,6 +335,9 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                       {member.isDisabled && (
                         <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-member-${member.id}`}>Disabled</span>
                       )}
+                      {member.invitePending && !member.isDisabled && (
+                        <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]" data-testid={`badge-invite-pending-${member.id}`}>Invitation pending</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-sm whitespace-nowrap hidden sm:table-cell" data-testid={`text-member-email-${member.id}`}>
@@ -415,6 +433,18 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                   {showActionsColumn && (
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        {context === "parent" && canManage && member.invitePending && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => resendInviteMutation.mutate(member)}
+                            disabled={resendInviteMutation.isPending}
+                            data-testid={`button-resend-invite-${member.id}`}
+                          >
+                            {resendInviteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                            <span className="hidden sm:inline">Resend invitation</span>
+                          </Button>
+                        )}
                         {canEditMember(member) && (
                           <Button variant="ghost" size="sm" onClick={() => handleEdit(member)} data-testid={`button-edit-member-${member.id}`}>
                             <Pencil className="w-4 h-4" />
