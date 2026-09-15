@@ -127,7 +127,7 @@
       "slate-muted": {
         "role": "neutral",
         "displayName": "Slate Muted",
-        "canonical": "#64748B",
+        "canonical": "#57667B",
         "tonalRamp": [
           "hsl(215 16% 15%)",
           "hsl(215 16% 25%)",

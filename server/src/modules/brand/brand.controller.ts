@@ -51,7 +51,7 @@ const DEFAULTS = {
   cardColor: null,
   cardForegroundColor: null,
   mutedColor: null,
-  mutedForegroundColor: null,
+  mutedForegroundColor: "#57667B",
   borderColor: null,
   inputColor: null,
   ringColor: "#08726F",

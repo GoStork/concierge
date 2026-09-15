@@ -235,7 +235,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   cardColor: "#FFFFFF",
   cardForegroundColor: null,
   mutedColor: null,
-  mutedForegroundColor: null,
+  mutedForegroundColor: "#57667B",
   borderColor: "#D9D2C6",
   inputColor: null,
   ringColor: "#08726F",

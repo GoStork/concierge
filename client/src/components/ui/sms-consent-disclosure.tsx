@@ -64,16 +64,21 @@ export function SmsTransactionalNotice({ className = "" }: { className?: string 
  * The optional ongoing-notifications consent. Rendered as the label of an
  * unticked checkbox; also shown on the public /sms-consent evidence page.
  */
-export function SmsNotificationsOptIn({ className = "" }: { className?: string }) {
+/**
+ * titleId / detailId let a wrapping checkbox point at this copy with
+ * aria-labelledby / aria-describedby, so a screen reader announces the
+ * consent sentence rather than the input's value ("on").
+ */
+export function SmsNotificationsOptIn({ className = "", titleId, detailId }: { className?: string; titleId?: string; detailId?: string }) {
   const { data: brand } = useBrandSettings();
   const brandName = brand?.companyName || "GoStork";
 
   return (
     <div className={className} data-testid="sms-notifications-opt-in">
-      <p className="t-body font-medium text-foreground">
+      <p id={titleId} className="t-body font-medium text-foreground">
         Yes, text me updates about my journey
       </p>
-      <p className="t-helper mt-1">
+      <p id={detailId} className="t-helper mt-1">
         Match updates, appointment reminders, and messages from providers you connect
         with, by text from {brandName}. Optional. Frequency varies, msg &amp; data rates
         may apply. Reply STOP to cancel, HELP for help.{" "}

@@ -52,7 +52,9 @@
   
   /* UI Elements */
   --muted: 240 5% 96%; /* #F4F4F5 Fog */
-  --muted-foreground: 215 16% 47%; /* #64748B */
+  /* #57667B - darkened from #64748B on 2026-09-15 so helper/muted text clears
+     WCAG AA (4.5:1) on Warm Sand as well as on Paper. Mirrors SiteSettings. */
+  --muted-foreground: 215 17% 41%;
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 47.4% 11.2%;
   --border: 38 20% 81%; /* Warm gray #D9D2C6 - visible card separation (Option B) */

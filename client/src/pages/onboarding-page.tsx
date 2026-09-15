@@ -108,6 +108,7 @@ function PillButton({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={selected}
       data-testid={testId}
       className={`w-full py-4 px-6 rounded-full text-lg font-medium transition-all duration-200 flex items-center justify-between ${
         selected
@@ -1105,10 +1106,12 @@ function StepPhone({
           type="checkbox"
           checked={smsOptIn}
           onChange={e => onSmsOptInChange(e.target.checked)}
+          aria-labelledby="sms-opt-in-title"
+          aria-describedby="sms-opt-in-detail"
           className="mt-0.5 h-5 w-5 shrink-0 accent-[hsl(var(--primary))]"
           data-testid="checkbox-sms-opt-in"
         />
-        <SmsNotificationsOptIn />
+        <SmsNotificationsOptIn titleId="sms-opt-in-title" detailId="sms-opt-in-detail" />
       </label>
     </div>
   );

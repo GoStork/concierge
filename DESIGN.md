@@ -10,7 +10,7 @@ colors:
   ink: "#0F172A"
   ink-soft: "#0A0A0A"
   slate-label: "#475569"
-  slate-muted: "#64748B"
+  slate-muted: "#57667B"
   fog: "#F4F4F5"
   warm-hairline: "#D9D2C6"
   success-green: "#10B981"
@@ -252,7 +252,7 @@ The palette is a warm neutral ground with one saturated teal voice, one muted pu
 - **Paper** (#FFFFFF): cards, inputs, the desktop header, the mobile bottom bar, popovers. Paper is content; the desk behind it is sand.
 - **Ink** (#0F172A): body text on Warm Sand. **Ink Soft** (#0A0A0A): text on Paper cards and Linen surfaces.
 - **Slate Label** (#475569): field labels, the one place a label is allowed to recede below the value it names.
-- **Slate Muted** (#64748B): helper text, timestamps, calendar gutters, micro labels.
+- **Slate Muted** (#57667B): helper text, timestamps, calendar gutters, micro labels. Darkened from #64748B on 2026-09-15 so it clears 4.5:1 on Warm Sand (5.3:1), Paper (5.9:1), Fog (5.3:1), and Linen (5.0:1).
 - **Fog** (#F4F4F5): muted fills, Eva's chat bubble, calendar off-range days.
 - **Warm Hairline** (#D9D2C6, HSL 38 20% 81%): every border, divider, and card edge. Warm, not gray, so it belongs to the sand.
 
@@ -396,7 +396,7 @@ The marketplace card fills its slot with a 3px transparent gutter, container rad
 - **Do** render every service name through ServiceTag and every attachment through the shared attachment card.
 - **Do** address each reader in second person in any shared parent-provider message.
 - **Do** keep 16px input text on phones so iOS does not zoom, and 44px or larger tap targets on the bottom bar.
-- **Do** meet WCAG 2.1 AA contrast: Ink on Warm Sand, Ink Soft on Paper and Linen, Paper on Stork Teal and Orchid all pass; Slate Muted is for text 13px and up only.
+- **Do** meet WCAG 2.1 AA contrast: Ink on Warm Sand, Ink Soft on Paper and Linen, Paper on Stork Teal and Orchid all pass; Slate Muted clears AA on every brand surface at 13px and up.
 
 ### Don't:
 - **Don't** hardcode a hex, a Tailwind color utility, a font family, or a radius at a call site.

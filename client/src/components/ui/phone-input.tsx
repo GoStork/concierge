@@ -329,6 +329,7 @@ export function PhoneInput({
           data-testid={dataTestId ? `${dataTestId}-country-button` : "phone-country-button"}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
+          aria-label={country ? `Country code: ${country.name} ${country.callingCode}` : "Select country code"}
         >
           {renderCountryButtonContent()}
         </button>
