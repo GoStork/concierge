@@ -143,8 +143,13 @@ function mapOtpSendError(code: string): string {
       return "Failed to send verification code. Please try again in a moment.";
     case "turnstile_failed":
       return "We couldn't confirm you're human. Please wait a moment and try again.";
+    case "rate_limited":
+      return "We've sent this number a few codes recently. Please wait about an hour and try again, or use a different mobile number.";
+    case "country_blocked":
+      return "We can't text codes to numbers in this country yet. Please use a mobile number from a supported country.";
     default:
-      return code || "Please check your number and try again.";
+      // Never surface a raw server code (observed live: "rate_limited" in red).
+      return /^[a-z_]+$/.test(code || "") ? "We couldn't send the code just now. Please try again in a moment." : (code || "Please check your number and try again.");
   }
 }
 
