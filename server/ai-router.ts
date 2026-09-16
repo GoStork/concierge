@@ -40,6 +40,7 @@ import { turnTimingStore, newTurnTimings, mark, recordToolCall, recordIntercepto
 import { trackGemini } from "./src/lib/gemini-usage";
 import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
 import { jwtSecret } from "./src/lib/app-secrets";
+import { attachBearerUser } from "./src/lib/api-token";
 
 // Tier2 model id, resolved once so the cost meter and the SDK call can never
 // disagree about which model was billed. TIER2_MODEL overrides for A/B.
@@ -1652,23 +1653,7 @@ aiRouter.use(async (req: any, _res: any, next: any) => {
   if (!req.isAuthenticated?.()) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.slice(7);
-        const secret = jwtSecret();
-        const payload = jwt.verify(token, secret) as any;
-        // A 2FA challenge ticket is signed with the same key but is NOT a
-        // session: it means "password accepted, second factor still owed".
-        // Every place that turns a Bearer token into req.user must refuse it,
-        // or the second factor is bypassable by replaying the ticket.
-        if (payload?.purpose === "2fa_challenge") throw new Error("2fa_challenge_not_a_session");
-        if (payload?.sub) {
-          const user = await prisma.user.findUnique({ where: { id: payload.sub } });
-          if (user && !user.isDisabled) {
-            req.user = user;
-            req.isAuthenticated = () => true;
-          }
-        }
-      } catch { /* invalid token - continue unauthenticated */ }
+      await attachBearerUser(req, prisma);
     }
   }
   next();
@@ -10283,6 +10268,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();
+    // MATCH BLURB CAP (server-side, the prompt rule alone did not hold): a
+    // card turn keeps the first three sentences of prose. Measured live: a
+    // 227-word essay pushed the card two screens above the fold on a phone.
+    if (matchCards.length > 0) {
+      const tagRe = /\[\[[^\]]*\]\]/g;
+      const tags = finalContent.match(tagRe) || [];
+      const prose = finalContent.replace(tagRe, "").replace(/\n{2,}/g, "\n").trim();
+      const words = prose.split(/\s+/).filter(Boolean).length;
+      if (words > 80) {
+        const sentences = prose.split(/(?<=[.!?])\s+/).filter(Boolean);
+        const kept = sentences.slice(0, 3).join(" ");
+        console.warn(`[MATCH BLURB CAP] ${words} words -> ${kept.split(/\s+/).length} (kept ${Math.min(3, sentences.length)} of ${sentences.length} sentences)`);
+        finalContent = [kept, ...tags].join(" ").trim();
+      }
+    }
 
     // DOCTOR_CARD: parse the doctor-recommendation tags (just {slug, reasons}) and
     // strip them here, same as MATCH_CARD. The cards are RESOLVED below (after the
@@ -11932,7 +11932,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     const replySessionId = currentSessionId;
 
     // Sanitize: replace em-dashes and en-dashes with regular hyphens
-    finalContent = finalContent.replace(/[\u2013\u2014]/g, "-");
+    // A bare hyphen glued two words together ("journeys-bringing"); a dash
+    // stands in for a pause, so it needs the spaces.
+    finalContent = finalContent.replace(/\s*[\u2013\u2014]\s*/g, " - ").replace(/ {2,}/g, " ");
 
     const now = new Date();
     // On a calendar hold the reply was blanked - the ack card message IS the

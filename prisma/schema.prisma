@@ -493,6 +493,11 @@ model User {
   // Stripe Customer id - lazily created the first time the parent triggers a
   // payment method that requires it (currently: bank-transfer / customer_balance).
   // Card payments still go through guest checkout and do not populate this.
+  /// Bumped whenever every issued API token for this account must stop
+  /// working - today on password reset and on "sign out everywhere". A JWT
+  /// carries the version it was minted with; a mismatch is rejected. This is
+  /// the only revocation a stateless token can have.
+  tokenVersion           Int                     @default(0)
   /// ── Admin two-factor (TOTP, RFC 6238) ────────────────────────────────────
   /// AES-256-GCM encrypted base32 TOTP secret (server/src/lib/encrypt.ts).
   /// Present but with totpEnabledAt null = enrollment started, not confirmed.

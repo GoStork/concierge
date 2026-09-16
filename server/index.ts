@@ -35,7 +35,7 @@ import { SponsorshipService } from "./src/modules/sponsorship/sponsorship.servic
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
-import { sessionSecret } from "./src/lib/app-secrets";
+import { sessionSecret, jwtSecret } from "./src/lib/app-secrets";
 import { authLimiter, passwordResetLimiter, publicWriteLimiter } from "./src/lib/rate-limits";
 import { pool } from "./db";
 import path from "path";
@@ -72,6 +72,21 @@ process.on("uncaughtException", (err: any) => {
 });
 
 (async () => {
+  // Fail fast, before anything binds a port. sessionSecret() throws when
+  // SESSION_SECRET is missing or too short, and it used to throw AFTER
+  // httpServer.listen(), which left a process listening with no routes
+  // registered: /__health answered {"status":"starting"} forever and every
+  // real URL returned Express's bare "Cannot GET /". A zombie that looks
+  // half-alive is worse than a clean crash, because nothing alerts on it.
+  // (This is exactly what happened to the iMac dev box on 2026-09-16.)
+  try {
+    sessionSecret();
+    jwtSecret();
+  } catch (e: any) {
+    console.error(`\n${e?.message || e}\n`);
+    process.exit(1);
+  }
+
   const app = express();
   const httpServer = createServer(app);
 
@@ -545,4 +560,10 @@ process.on("uncaughtException", (err: any) => {
   import("./ai-router").then(({ warmupGeminiConnection }) => {
     warmupGeminiConnection().catch((e: any) => log(`Gemini warmup error: ${e.message}`));
   });
-})();
+})().catch((err: any) => {
+  // Same reasoning as the secret check above: if startup dies part-way, exit
+  // so the supervisor restarts (or the box stays visibly down) rather than
+  // serving 404s from a process that never finished booting.
+  console.error("FATAL: server startup failed:", err?.stack || err);
+  process.exit(1);
+});

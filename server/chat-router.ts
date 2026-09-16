@@ -50,6 +50,7 @@ import {
 import { trackGemini } from "./src/lib/gemini-usage";
 import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
 import { jwtSecret } from "./src/lib/app-secrets";
+import { attachBearerUser } from "./src/lib/api-token";
 
 const storageService = new StorageService();
 
@@ -285,22 +286,7 @@ chatRouter.use(async (req: any, _res: any, next: any) => {
   if (!req.isAuthenticated?.()) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
-      try {
-        const jwt = (await import("jsonwebtoken")).default;
-        const payload = jwt.verify(authHeader.slice(7), jwtSecret()) as any;
-        // A 2FA challenge ticket is signed with the same key but is NOT a
-        // session: it means "password accepted, second factor still owed".
-        // Every place that turns a Bearer token into req.user must refuse it,
-        // or the second factor is bypassable by replaying the ticket.
-        if (payload?.purpose === "2fa_challenge") throw new Error("2fa_challenge_not_a_session");
-        if (payload?.sub) {
-          const jwtUser = await prisma.user.findUnique({ where: { id: payload.sub } });
-          if (jwtUser && !jwtUser.isDisabled) {
-            req.user = jwtUser;
-            req.isAuthenticated = () => true;
-          }
-        }
-      } catch { /* invalid token - continue unauthenticated */ }
+      await attachBearerUser(req, prisma);
     }
   }
   next();

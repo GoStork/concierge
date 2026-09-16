@@ -41,9 +41,27 @@ const DIGITS = 6;
 /** One step either side, so a slightly wrong device clock still works. */
 const WINDOW = 1;
 
+/**
+ * The issuer shown in the authenticator app. Each environment stores its own
+ * secret, so one person ends up with several GoStork entries; without the host
+ * they all read "GoStork: name@gostork.com" and there is no way to tell which
+ * code belongs to which site. Purely cosmetic - a TOTP code depends only on
+ * the secret, the time and the algorithm, so changing this never invalidates
+ * an existing enrollment.
+ */
+function issuerLabel(): string {
+  const url = process.env.APP_URL || "";
+  try {
+    const host = new URL(url).hostname;
+    return host ? `GoStork (${host})` : "GoStork";
+  } catch {
+    return "GoStork";
+  }
+}
+
 function totpFor(secretBase32: string, label: string): TOTP {
   return new TOTP({
-    issuer: "GoStork",
+    issuer: issuerLabel(),
     label,
     algorithm: "SHA1",
     digits: DIGITS,

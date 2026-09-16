@@ -72,12 +72,40 @@ export class AuthService {
     });
   }
 
-  generateToken(user: { id: string; email: string; roles: string[] }): string {
+  generateToken(user: { id: string; email: string; roles: string[]; tokenVersion?: number | null }): string {
     return this.jwtService.sign({
       sub: user.id,
       email: user.email,
       roles: user.roles,
+      // Carried so a password reset can invalidate this token later. See
+      // src/lib/api-token.ts.
+      tv: user.tokenVersion ?? 0,
     });
+  }
+
+  /**
+   * Ends every existing session and API token for an account.
+   *
+   * Sessions live in the Postgres "session" table (connect-pg-simple), keyed by
+   * the passport user id inside the JSON payload, so they are deleted directly.
+   * Tokens are stateless, so the only revocation available is bumping the
+   * version they were minted with.
+   */
+  async revokeAllSessionsAndTokens(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    try {
+      const { pool } = await import("../../../db");
+      await (pool as any).query(
+        `DELETE FROM "session" WHERE sess->'passport'->>'user' = $1`,
+        [userId],
+      );
+    } catch (e: any) {
+      // A missing session table (fresh install) must not fail a password reset.
+      console.error(`[auth] Could not clear sessions for ${userId}: ${e?.message}`);
+    }
   }
 
   /**
@@ -166,9 +194,15 @@ export class AuthService {
       }),
     ]);
 
+    // OWASP A07: a reset that leaves the attacker's session and 7-day bearer
+    // token working is not a recovery. Whoever took the account over is
+    // signed out by the reset itself.
+    await this.revokeAllSessionsAndTokens(valid.userId);
+
     await recordAuthEvent(this.prisma, {
       event: "PASSWORD_RESET_COMPLETED",
       userId: valid.userId,
+      detail: "sessions and tokens revoked",
     });
 
     return true;
