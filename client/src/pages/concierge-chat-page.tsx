@@ -1399,7 +1399,7 @@ function ConsultationBookingCard({
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarCheck className="w-4 h-4 text-primary-foreground" />
-            <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+            <span className="text-primary-foreground text-sm font-semibold">
               {existingBooking && existingBooking.status !== "CANCELLED"
                 ? card.providerName === "GoStork"
                   ? `GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
@@ -2203,7 +2203,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
       );
     }
     return (
-      <div className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center`}>
+      <div data-testid={`match-card-${card.providerId}`} className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center`}>
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -3763,6 +3763,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // 255px above the fold on desktop and fully off screen on a phone, so the
   // parent met an essay and two buttons before a face.
   const lastCardMsgKeyRef = useRef<string | null>(null);
+  // The loop lives in a ref, not in the effect's cleanup: this effect re-runs
+  // on every streamed token, and a cleanup-owned interval died after the
+  // first one (measured: the card landed a third visible, never repositioned).
+  const cardLandingIvRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (cardLandingIvRef.current) clearInterval(cardLandingIvRef.current); }, []);
   useEffect(() => {
     const last = messages[messages.length - 1];
     if (!last || last.role !== "assistant" || !last.matchCards?.length) return;
@@ -3772,18 +3777,39 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // Reopening an existing thread keeps the usual "latest message" landing;
     // this positioning is for the moment a NEW card arrives in a live session.
     if (!initialScrollDone.current) return;
-    const t = setTimeout(() => {
+    // The card mounts a loading placeholder first and the real card when the
+    // profile arrives; position on whatever is there now and again as it
+    // grows, for a few seconds, so the face ends up in view.
+    // The reply's character drain can run for 20s+ after the card mounts and
+    // ends with its own scroll-to-bottom; keep positioning until 1.5s after
+    // the drain has stopped (hard cap 45s).
+    let attempts = 0;
+    let quietTicks = 0;
+    const position = () => {
       const container = document.querySelector('[data-testid="concierge-messages"]') as HTMLElement | null;
       const cards = container?.querySelectorAll('[data-testid^="match-card-"]');
       const card = cards && cards.length ? (cards[cards.length - 1] as HTMLElement) : null;
       if (!container || !card) return;
       const delta = card.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
-      container.scrollTop += delta;
+      if (Math.abs(delta) > 2) container.scrollTop += delta;
       // The parent is reading the card; do not yank them back down while
-      // images load. Scrolling near the bottom re-arms auto-follow as usual.
+      // images load or the blurb drains (the drain's 18ms tick scrolls to the
+      // bottom while forceScrollRef is set). Scrolling near the bottom
+      // re-arms auto-follow as usual.
       userNearBottom.current = false;
-    }, 250);
-    return () => clearTimeout(t);
+      forceScrollRef.current = false;
+    };
+    if (cardLandingIvRef.current) clearInterval(cardLandingIvRef.current);
+    const iv = setInterval(() => {
+      attempts += 1;
+      position();
+      if (!typingIntervalRef.current) quietTicks += 1; else quietTicks = 0;
+      if (quietTicks >= 5 || attempts >= 150) {
+        clearInterval(iv);
+        if (cardLandingIvRef.current === iv) cardLandingIvRef.current = null;
+      }
+    }, 300);
+    cardLandingIvRef.current = iv;
   }, [messages]);
 
   // Watch for layout shifts (image loads, card renders) and keep scrolled to bottom
@@ -5431,7 +5457,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         // replies, next to "I have questions" and "Schedule":
                         // the red X and green heart were marketplace verbs on
                         // a card the concierge had just recommended.
-                        const cardForChips = (msg.matchCards || []).find((c) => /surrogate|egg|sperm|donor/i.test(String(c.type || "")));
+                        const isPersonCard = (c: any) => /(surrogate|egg donor|sperm donor|donor)/i.test(String(c?.type || "")) && !/agency|program|bank|clinic/i.test(String(c?.type || ""));
+                        const latestPersonCard = [...messages].reverse().flatMap((m) => m.matchCards || []).find(isPersonCard) || null;
+                        // The card's own turn, or a follow-up turn whose chips are about it.
+                        const cardForChips = (msg.matchCards || []).find(isPersonCard)
+                          || (latestPersonCard && qrOptions.some((q) => /save as favorite|not the right fit|schedule a free consultation|questions about (her|him)/i.test(q)) ? latestPersonCard : null);
                         const saveChip = cardForChips ? "Save as favorite" : null;
                         const allOptions = saveChip && !qrOptions.some((q) => /save as favorite/i.test(q)) ? [...qrOptions, saveChip] : qrOptions;
                         if (allOptions.length === 0) return null;

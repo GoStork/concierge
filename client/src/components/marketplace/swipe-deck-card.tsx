@@ -663,7 +663,9 @@ export function SwipeDeckCard({
                 type="button"
                 role="tab"
                 aria-selected={i === slideIndex}
-                aria-label={tabs?.[i]?.title ? `${tabs[i].title}, section ${i + 1} of ${totalSlides}` : `Section ${i + 1} of ${totalSlides}`}
+                aria-label={tabs?.[i]?.title
+                  ? `${tabs[i].title}, section ${i + 1} of ${totalSlides}`
+                  : `Photo ${i - (tabs?.length || 0) + 1} of ${Math.max(1, totalSlides - (tabs?.length || 0))}`}
                 tabIndex={i === slideIndex ? 0 : -1}
                 onClick={(e) => { e.stopPropagation(); setSlideIndex(i); }}
                 onKeyDown={(e) => {

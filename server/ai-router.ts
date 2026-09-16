@@ -1340,16 +1340,20 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       const owedSearch = preSearch
         ? searchToolResults.find((r) => r.toolName === preSearch.name)
         : (owedCardTurn ? searchToolResults[searchToolResults.length - 1] : undefined);
-      if (owedSearch && fullText && !/\[\[MATCH_CARD/i.test(fullText)) {
+      // An EMPTY reply owes the card just as much as a short one (live: a
+      // bare [[QUICK_REPLY]] row and nothing else), so the text check is on
+      // the prose, not on whether anything at all came back.
+      if (owedSearch && !/\[\[MATCH_CARD/i.test(fullText)) {
         const preBody = owedSearch.resultText || "";
         const { id: topId, rows } = topResultId(preBody);
         if (topId) {
-          console.warn(`[TIER2] ${preSearch ? "Pre-searched" : "Ready"} turn produced no MATCH_CARD - appending top result ${topId}`);
+          console.warn(`[TIER2] ${preSearch ? "Pre-searched" : "Owed-card"} turn produced no MATCH_CARD - appending top result ${topId}`);
           // A reply too short to introduce anyone gets the same minimal
           // lead-in the anti-echo guard uses, so the card is not orphaned
-          // under a fragment.
-          const replaced = fullText.trim().length < 40;
-          const lead = replaced ? "Here's a match based on exactly what you shared - take a look:" : fullText.trimEnd();
+          // under a fragment. Tags do not count as an introduction.
+          const proseOnly = fullText.replace(/\[\[[^\]]*\]\]/g, "").trim();
+          const replaced = proseOnly.length < 40;
+          const lead = replaced ? (preSearch ? "Here's a match based on exactly what you shared - take a look:" : "Here's another option based on what you've shared - take a look:") : fullText.trimEnd();
           fullText = `${lead}\n\n[[MATCH_CARD:${topId}]]`;
           if (replaced) {
             // The fragment already streamed - swap it cleanly, as anti-echo does.
@@ -6972,6 +6976,9 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       const pendingReadyService: string | null = userNamedService
         ? (typeSatisfied(userNamedService) ? null : userNamedService)
         : (mentionedUnsatisfied[0]?.svc ?? profileFallbackService);
+      // The parent asked to SEE another person (after a pass, a refinement, or
+      // plain curiosity). Any search the model runs on such a turn owes a card.
+      const asksForAnotherProfile = /\b(show me (another|someone else|more|the next|one more)|(another|a different|the next|one more) (surrogate|donor|option|match|profile|candidate|person)|someone else|more options|next (option|match|profile|one))\b/i.test(userMessage || "");
       const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools &&
         (presentedProviderIds.size === 0 ||
           (pendingReadyService != null && !typeSatisfied(pendingReadyService)));
@@ -7129,7 +7136,12 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         // Biometric-consent corroboration: the parent's own current message
         // must read as an affirmative, on a sound-provenance turn.
         !weakProvenance && /\b(yes|yeah|yep|sure|ok(ay)?|i (agree|consent)|go ahead|please do|sounds good|that'?s fine)\b/i.test(userMessage || ""),
-        userSaidReady && curationAlreadySent,
+        // A card is owed on the "ready" turn after a curation AND whenever
+        // the parent explicitly asks to see another person. Live, Sep 16 2026:
+        // "Something else - please show me another surrogate" ran the search
+        // (1 row), and the model answered with a bare chip row and no card;
+        // the parent got an empty bubble.
+        (userSaidReady && curationAlreadySent) || asksForAnotherProfile,
       );
       // DIAGNOSTIC: the decisive split for "expected match card, got none" -
       // did the ready turn SEARCH at all? A turn that searched can be repaired
@@ -7158,7 +7170,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           : "Surrogate Agency";
         // Use a minimal system prompt for the retry - the full systemPromptForTiers (128K chars)
         // makes the total context too large for Gemini to generate after a tool call.
-        const minimalRetrySystem = `You are Ariel, a warm GoStork fertility concierge. A database search for a ${serviceType} just completed. Present the FIRST result as a match card.
+        const minimalRetrySystem = `You are ${matchmaker?.name || "the GoStork concierge"}, a warm GoStork fertility concierge. A database search for a ${serviceType} just completed. Present the FIRST result as a match card.
 
 CRITICAL: The providerId in the MATCH_CARD MUST be the "id" field from the search results (a UUID like "abc-123-def"). NEVER use the display name or externalId as the providerId.
 
@@ -8261,6 +8273,24 @@ ${phase0Section}`;
     // QUESTION INTERCEPTOR: Detect when parent asked a question about a presented profile
     // but the AI ignored it and showed a new match card instead.
     const isSkipAction = /not interested|show me another|skip|pass on/i.test(userMessage);
+    // The canonical pass ("Not the right fit for us", or the card's own
+    // decline sentence) is the parent's polite exit. Live, typed while the
+    // thread ended on a calendar, it came back as a NEW calendar for the same
+    // surrogate - a re-sell. Whatever the model wrote, a pass never books.
+    const isCanonicalPass = /^not the right fit for us\b/i.test(userMessage.trim()) || /^not [^\n]{0,60}- show me someone else\.?$/i.test(userMessage.trim());
+    if (isCanonicalPass && (/\[\[CONSULTATION_BOOKING:/i.test(finalContent) || /\[\[MATCH_CARD:/i.test(finalContent) || !/what didn'?t feel right|didn'?t feel right/i.test(finalContent))) {
+      // Live: the pass came back as "Here is the calendar to book your
+      // consultation" with a new card. The refinement question is the
+      // product's own Step 1; serve it verbatim and let the model take over
+      // from the parent's answer.
+      console.log(`[PASS GUARD] Parent passed; replacing the model's reply (booking=${/\[\[CONSULTATION_BOOKING:/i.test(finalContent)} card=${/\[\[MATCH_CARD:/i.test(finalContent)}) with the refinement question`);
+      let pronoun = "her";
+      try { const mc = currentSessionId ? await findLatestMatchCard(currentSessionId) : null; if (/sperm/i.test(String(mc?.type || ""))) pronoun = "him"; } catch { /* default */ }
+      const poss = pronoun === "him" ? "His" : "Her";
+      finalContent = `That's completely fine - passing is part of finding the right person. ${poss === "Her" ? "She" : "He"} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:${poss} location|${poss} age|${poss} BMI|Too many pregnancies|Too many C-sections|${poss} medical history|${poss} appearance|${poss} vibe or personality|The cost|Something else]]`;
+      sse.sendReset();
+      sse.sendToken(finalContent);
+    }
     const isFavoriteAction = /save as favorite|like .+!|❤️|favorite/i.test(userMessage);
     // Structure-based (question mark / sentence-leading interrogative /
     // subject-aux inversion) - the old substring heuristic fired the
@@ -10374,86 +10404,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();
-    // MATCH BLURB CAP (server-side, the prompt rule alone did not hold): a
-    // card turn keeps the first three sentences of prose. Measured live: a
-    // 227-word essay pushed the card two screens above the fold on a phone.
-    if (matchCards.length > 0) {
-      const tagRe = /\[\[[^\]]*\]\]/g;
-      const tags = finalContent.match(tagRe) || [];
-      const prose = finalContent.replace(tagRe, "").replace(/\n{2,}/g, "\n").trim();
-      const words = prose.split(/\s+/).filter(Boolean).length;
-      if (words > 80) {
-        const sentences = prose.split(/(?<=[.!?])\s+/).filter(Boolean);
-        const kept = sentences.slice(0, 3).join(" ");
-        console.warn(`[MATCH BLURB CAP] ${words} words -> ${kept.split(/\s+/).length} (kept ${Math.min(3, sentences.length)} of ${sentences.length} sentences)`);
-        finalContent = [kept, ...tags].join(" ").trim();
-      }
-
-      // MATCH BLURB FLOOR: the cap trims, it cannot repair. Live: "I have
-      // found another wonderful option for you to consider" - no age, no
-      // state, no reason, from a persona called The Straight Talker. If the
-      // prose cites none of the card's own facts (or uses a banned word for a
-      // direct persona), one regeneration with the facts in hand.
-      try {
-        // Individual people only: agencies, programs, banks and clinics have
-        // their own card copy and no age / births to cite.
-        const cardTypeL = String(matchCards[0]?.type || "").toLowerCase();
-        const personType = /(surrogate|egg donor|sperm donor|donor)/.test(cardTypeL) && !/agency|program|bank|clinic/.test(cardTypeL);
-        if (personType) {
-          const cardId = String(matchCards[0]?.providerId || "");
-          let row: any = null;
-          for (const sr of lastSearchToolResults) {
-            try {
-              const arr = parseFirstJsonArray(sr.resultText || "") || [];
-              row = arr.find((r: any) => String(r?.id || r?.providerId || "") === cardId) || row;
-            } catch { /* ignore */ }
-          }
-          const prose2 = finalContent.replace(/\[\[[^\]]*\]\]/g, "").trim();
-          const facts: string[] = [];
-          if (row?.age) facts.push(String(row.age));
-          if (row?.location) facts.push(String(row.location).split(",")[0].trim());
-          if (row?.state) facts.push(String(row.state));
-          if (row?.liveBirths != null) facts.push("mom of", "mother of", "children");
-          const citesFact = facts.some((f) => f && prose2.toLowerCase().includes(f.toLowerCase()));
-          const style = styleOf(typeof matchmaker !== "undefined" ? (matchmaker as any) : null);
-          const bannedForDirect = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(prose2);
-          if ((row && !citesFact) || bannedForDirect) {
-            const summary = row ? JSON.stringify({ age: row.age, location: row.location, liveBirths: row.liveBirths, cSections: row.cSections, isExperienced: row.isExperienced, openToSameSexCouple: row.openToSameSexCouple, agreesToTwins: row.agreesToTwins, agreesToInternationalParents: row.agreesToInternationalParents }) : "{}";
-            const retry = await claudeRetry([
-              ...messages,
-              { role: "user", content: `SYSTEM OVERRIDE: Rewrite ONLY your introduction of this match as plain prose, 2-3 sentences, under 60 words, in your persona's register${style === "direct" ? " (direct: no \"wonderful\", \"beautifully\", \"phenomenal\", \"amazing\")" : ""}. Cite at least two facts from this profile summary and one preference the parent stated: ${summary}. Do NOT output any [[...]] tags, no bullet points, no headings.` },
-            ]).catch(() => "");
-            const newProse = (retry || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{2,}/g, "\n").trim();
-            const newWords = newProse.split(/\s+/).filter(Boolean).length;
-            const newCites = facts.some((f) => f && newProse.toLowerCase().includes(f.toLowerCase()));
-            const newBanned = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(newProse);
-            // Only swap when the rewrite is actually better: cites a fact and
-            // does not reintroduce a banned word. Otherwise keep the original.
-            if (newProse && newWords >= 8 && newWords <= 90 && (newCites || !row) && !newBanned) {
-              console.warn(`[MATCH BLURB FLOOR] regenerated (${citesFact ? "banned word" : "no card fact cited"}): ${prose2.slice(0, 60)}... -> ${newProse.slice(0, 60)}...`);
-              const tagsNow = finalContent.match(/\[\[[^\]]*\]\]/g) || [];
-              finalContent = [newProse, ...tagsNow].join(" ").trim();
-              sse.sendReset();
-              sse.sendToken(finalContent);
-            } else {
-              console.warn(`[MATCH BLURB FLOOR] regeneration not better (${newWords} words, cites=${newCites}) - keeping original`);
-            }
-          }
-
-          // ONE post-card reply set, whatever the model wrote. Three chip
-          // vocabularies in six live turns ("Not the right fit for us" /
-          // "Show me someone else" / "Show me more options") made the same
-          // action read as three different ones, and the client styles chips
-          // by their text.
-          const pronoun = /sperm/i.test(String(matchCards[0]?.type || "")) ? "him" : "her";
-          finalContent = finalContent.replace(/\[\[QUICK_REPLY:[^\]]*\]\]/g, "").trim();
-          quickReplies = [`I have questions about ${pronoun}`, "Schedule a free consultation", "Save as favorite", "Not the right fit for us"];
-        }
-      } catch (e) {
-        console.error("[MATCH BLURB FLOOR] error:", e);
-      }
-    }
-
     // DOCTOR_CARD: parse the doctor-recommendation tags (just {slug, reasons}) and
     // strip them here, same as MATCH_CARD. The cards are RESOLVED below (after the
     // clinic-card block) via resolve_doctor_card so the displayed data is DB-truth.
@@ -10743,6 +10693,113 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.error("[LOOK-ALIKE] top-match override failed:", e);
         }
       }
+    }
+
+    // MATCH BLURB CAP (server-side, the prompt rule alone did not hold): a
+    // card turn keeps the first three sentences of prose. Measured live: a
+    // 227-word essay pushed the card two screens above the fold on a phone.
+    if (matchCards.length > 0) {
+      const tagRe = /\[\[[^\]]*\]\]/g;
+      const tags = finalContent.match(tagRe) || [];
+      const prose = finalContent.replace(tagRe, "").replace(/\n{2,}/g, "\n").trim();
+      const words = prose.split(/\s+/).filter(Boolean).length;
+      if (words > 80) {
+        const sentences = prose.split(/(?<=[.!?])\s+/).filter(Boolean);
+        const kept = sentences.slice(0, 3).join(" ");
+        console.warn(`[MATCH BLURB CAP] ${words} words -> ${kept.split(/\s+/).length} (kept ${Math.min(3, sentences.length)} of ${sentences.length} sentences)`);
+        finalContent = [kept, ...tags].join(" ").trim();
+      }
+
+      // MATCH BLURB FLOOR: the cap trims, it cannot repair. Live: "I have
+      // found another wonderful option for you to consider" - no age, no
+      // state, no reason, from a persona called The Straight Talker. If the
+      // prose cites none of the card's own facts (or uses a banned word for a
+      // direct persona), one regeneration with the facts in hand.
+      try {
+        // Individual people only: agencies, programs, banks and clinics have
+        // their own card copy and no age / births to cite.
+        const cardTypeL = String(matchCards[0]?.type || "").toLowerCase();
+        const personType = /(surrogate|egg donor|sperm donor|donor)/.test(cardTypeL) && !/agency|program|bank|clinic/.test(cardTypeL);
+        if (personType) {
+          const cardId = String(matchCards[0]?.providerId || "");
+          let row: any = null;
+          for (const sr of lastSearchToolResults) {
+            try {
+              const arr = parseFirstJsonArray(sr.resultText || "") || [];
+              row = arr.find((r: any) => String(r?.id || r?.providerId || "") === cardId) || row;
+            } catch { /* ignore */ }
+          }
+          const prose2 = finalContent.replace(/\[\[[^\]]*\]\]/g, "").trim();
+          const facts: string[] = [];
+          if (row?.age) facts.push(String(row.age));
+          if (row?.location) facts.push(String(row.location).split(",")[0].trim());
+          if (row?.state) facts.push(String(row.state));
+          if (row?.liveBirths != null) facts.push("mom of", "mother of", "children");
+          const citesFact = facts.some((f) => f && prose2.toLowerCase().includes(f.toLowerCase()));
+          const style = styleOf(typeof matchmaker !== "undefined" ? (matchmaker as any) : null);
+          const bannedForDirect = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(prose2);
+          if ((row && !citesFact) || bannedForDirect) {
+            // The card's own name travels with the facts: the retry has the
+            // whole search result in context and, unpinned, once introduced
+            // "Surrogate #23076" under a #23073 card (live, Sep 16 2026).
+            const cardName = String(matchCards[0]?.name || row?.displayName || "");
+            const summary = row ? JSON.stringify({ displayName: cardName || undefined, age: row.age, location: row.location, liveBirths: row.liveBirths, cSections: row.cSections, isExperienced: row.isExperienced, openToSameSexCouple: row.openToSameSexCouple, agreesToTwins: row.agreesToTwins, agreesToInternationalParents: row.agreesToInternationalParents }) : "{}";
+            const retry = await claudeRetry([
+              ...messages,
+              { role: "user", content: `SYSTEM OVERRIDE: Rewrite ONLY your introduction of this match as plain prose, 2-3 sentences, under 60 words, in your persona's register${style === "direct" ? " (direct: no \"wonderful\", \"beautifully\", \"phenomenal\", \"amazing\")" : ""}. This is the ONLY profile you may describe or name${cardName ? ` (${cardName})` : ""}; do not mention any other profile. Cite at least two facts from this profile summary and one preference the parent stated: ${summary}. Do NOT output any [[...]] tags, no bullet points, no headings.` },
+            ]).catch(() => "");
+            const newProse = (retry || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{2,}/g, "\n").trim();
+            const newWords = newProse.split(/\s+/).filter(Boolean).length;
+            const newCites = facts.some((f) => f && newProse.toLowerCase().includes(f.toLowerCase()));
+            const newBanned = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(newProse);
+            // A rewrite that names a profile number other than the card's is
+            // a different person - text and card must agree.
+            const cardNum = (cardName.match(/#\s*([A-Za-z]*-?\d+)/) || [])[1]?.replace(/[^0-9]/g, "") || "";
+            const namesOther = (newProse.match(/#\s*[A-Za-z]*-?\d{2,}/g) || []).some((ref) => ref.replace(/[^0-9]/g, "") !== cardNum);
+            // Only swap when the rewrite is actually better: cites a fact,
+            // stays on the card's person and does not reintroduce a banned
+            // word. Otherwise keep the original.
+            if (newProse && newWords >= 8 && newWords <= 90 && (newCites || !row) && !newBanned && !namesOther) {
+              console.warn(`[MATCH BLURB FLOOR] regenerated (${citesFact ? "banned word" : "no card fact cited"}): ${prose2.slice(0, 60)}... -> ${newProse.slice(0, 60)}...`);
+              const tagsNow = finalContent.match(/\[\[[^\]]*\]\]/g) || [];
+              finalContent = [newProse, ...tagsNow].join(" ").trim();
+              sse.sendReset();
+              sse.sendToken(finalContent);
+            } else {
+              console.warn(`[MATCH BLURB FLOOR] regeneration not better (${newWords} words, cites=${newCites}, namesOther=${namesOther}) - keeping original`);
+            }
+          }
+
+          // ONE post-card reply set, whatever the model wrote. Three chip
+          // vocabularies in six live turns ("Not the right fit for us" /
+          // "Show me someone else" / "Show me more options") made the same
+          // action read as three different ones, and the client styles chips
+          // by their text.
+          const pronoun = /sperm/i.test(String(matchCards[0]?.type || "")) ? "him" : "her";
+          finalContent = finalContent.replace(/\[\[QUICK_REPLY:[^\]]*\]\]/g, "").trim();
+          quickReplies = [`I have questions about ${pronoun}`, "Schedule a free consultation", "Save as favorite", "Not the right fit for us"];
+        }
+      } catch (e) {
+        console.error("[MATCH BLURB FLOOR] error:", e);
+      }
+    } else if (quickReplies.length > 0 && currentSessionId) {
+      // Follow-up turns about the card (after a question, after a save) kept
+      // reverting to prompt-authored labels ("More questions / Schedule
+      // consultation / Show me more options"), none filled. Same subject,
+      // same four words.
+      try {
+        const looksLikeCardFollowUp = quickReplies.length <= 4 && quickReplies.every((q) => /question|schedule|more option|show me|someone else|like (her|him)|save|not the right fit|next step|decide/i.test(q));
+        if (looksLikeCardFollowUp) {
+          const latest = await findLatestMatchCard(currentSessionId);
+          const t = String(latest?.type || "").toLowerCase();
+          const isPerson = /(surrogate|egg donor|sperm donor|donor)/.test(t) && !/agency|program|bank|clinic/.test(t);
+          if (isPerson && !/\[\[CONSULTATION_BOOKING:/i.test(finalContent)) {
+            const pronoun = /sperm/.test(t) ? "him" : "her";
+            finalContent = finalContent.replace(/\[\[QUICK_REPLY:[^\]]*\]\]/g, "").trim();
+            quickReplies = [`I have questions about ${pronoun}`, "Schedule a free consultation", "Save as favorite", "Not the right fit for us"];
+          }
+        }
+      } catch { /* keep the model's chips */ }
     }
 
     // DIAGNOSTIC: a turn that ran a search but produced no card is the
@@ -11476,6 +11533,35 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           };
           console.log(`[CONSULTATION] Card built: slug=${memberBookingSlug}, bookingUrl=${consultationCard.bookingUrl}, provider=${consultProvider.name}`);
 
+          // ONE live calendar per provider: three identical trays for the same
+          // agency sat in one thread (observed live) and the parent could not
+          // tell which was current. A repeat within two hours re-uses the
+          // earlier card unless its booking was cancelled; program legs (a
+          // different provider) are unaffected.
+          if (consultProviderId && currentSessionId && !programBookingLeg) {
+            try {
+              const recentCard = await prisma.aiChatMessage.findFirst({
+                where: {
+                  sessionId: currentSessionId,
+                  createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+                  uiCardData: { path: ["consultationCard", "providerId"], equals: consultProviderId },
+                },
+                orderBy: { createdAt: "desc" },
+                select: { id: true, createdAt: true },
+              });
+              if (recentCard) {
+                const cancelled = await prisma.booking.count({
+                  where: { parentUserId: userId, status: "CANCELLED", cancelledAt: { gte: recentCard.createdAt } },
+                }).catch(() => 0);
+                if (!cancelled) {
+                  console.log(`[CONSULTATION] Calendar for ${consultProviderId} already posted ${Math.round((Date.now() - new Date(recentCard.createdAt).getTime()) / 60000)} min ago - not posting a duplicate`);
+                  consultProviderId = "";
+                }
+              }
+            } catch (e: any) {
+              console.error("[CONSULTATION] duplicate-calendar guard failed:", e?.message);
+            }
+          }
           // Compute profile label and attach metadata to consultationCard.
           // The 3-way chat session is created LATER when the parent actually books via the calendar.
           if (currentSessionId) {

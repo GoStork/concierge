@@ -196,7 +196,7 @@ export function ConsentAckCard({
       >
         <Check className="w-3.5 h-3.5" />
         {chosenIntent === "INFO_ONLY" ? "Info call requested" : "Confirmed"}
-        {data.acknowledgedByName ? (data.acknowledgedByName === (viewer as any)?.name ? " by you" : ` by ${data.acknowledgedByName}`) : ""}
+        {data.acknowledgedByName ? ((String(data.acknowledgedByName).trim().split(/\s+/)[0].toLowerCase() === String((viewer as any)?.name || "").trim().split(/\s+/)[0].toLowerCase()) ? " by you" : ` by ${data.acknowledgedByName}`) : ""}
       </div>
     );
   }
@@ -215,7 +215,8 @@ export function ConsentAckCard({
         className="flex items-center gap-2 font-medium border-b"
         style={{
           padding: "8px var(--chat-bubble-px, 16px)",
-          fontSize: "var(--chat-bubble-font-size, 12px)",
+          fontSize: "12px",
+          letterSpacing: "0.04em",
           background: "hsl(var(--accent) / 0.12)",
           color: "hsl(var(--accent))",
         }}
@@ -277,7 +278,7 @@ export function ConsentAckCard({
               variant="ghost"
               disabled={saving}
               onClick={() => handleAcknowledge("MATCH_INTEREST")}
-              className="transition-all hover:opacity-90 font-medium"
+              className="transition-all hover-elevate font-medium min-h-11 md:min-h-0"
               style={{
                 ...chipBase,
                 ...(positiveChipStyle ?? {
@@ -300,12 +301,13 @@ export function ConsentAckCard({
                 variant="ghost"
                 disabled={saving}
                 onClick={() => handleAcknowledge("INFO_ONLY")}
-                className="transition-all hover:opacity-90 font-medium"
+                className="transition-all hover-elevate font-medium min-h-11 md:min-h-0"
                 style={{
+                  // Secondary action in the secondary tint: Orchid is emphasis, never action.
                   ...chipBase,
-                  backgroundColor: "transparent",
-                  color: "hsl(var(--accent))",
-                  border: "1px solid hsl(var(--accent) / 0.45)",
+                  backgroundColor: "hsl(var(--secondary))",
+                  color: "hsl(var(--foreground))",
+                  border: "1px solid hsl(var(--primary) / 0.3)",
                 }}
                 data-testid="consent-ack-info-only"
               >
