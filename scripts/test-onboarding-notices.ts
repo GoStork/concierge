@@ -54,10 +54,15 @@ async function main() {
   // ── Throwaway admin ──
   const adminEmail = `test-onb-admin-${Date.now()}@gostork-test.com`;
   await jfetch(`${BASE}/api/users`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: adminEmail, password: PW, name: "Test Onb Admin" }) });
-  const adminRow = await db.query(`UPDATE "User" SET roles=ARRAY['GOSTORK_ADMIN']::text[] WHERE email=$1 RETURNING id`, [adminEmail]);
-  const adminId = adminRow.rows[0].id as string;
+  // Sign in BEFORE the promotion. Once TWO_FACTOR_ENFORCE_AT has passed, a
+  // GOSTORK_* account with no authenticator cannot complete a password login,
+  // so promoting first would leave this fixture with no session. Roles are
+  // re-read from the database per request, so this token becomes an admin
+  // token the moment the UPDATE below lands.
   const login = await jfetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: adminEmail, password: PW }) });
   const hdr: Record<string, string> = { Authorization: `Bearer ${(await login.json()).token}`, "Content-Type": "application/json" };
+  const adminRow = await db.query(`UPDATE "User" SET roles=ARRAY['GOSTORK_ADMIN']::text[] WHERE email=$1 RETURNING id`, [adminEmail]);
+  const adminId = adminRow.rows[0].id as string;
 
   // ── Snapshot provider marker state ──
   const KEYS = ["onbcomplete", "onbcompleteall", "onbmark:complete_ack", "onbmark:completeall_ack"].map((k) => `${k}:${PROVIDER_ID}`);

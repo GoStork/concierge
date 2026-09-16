@@ -1165,9 +1165,15 @@ async function cl02(db: Client) {
   try {
     await mkApprovedService(db, a.providerId, "Surrogacy Agency");
     await mkApprovedService(db, b.providerId, "Surrogacy Agency");
+    // Sign in BEFORE the promotion, on purpose. Once TWO_FACTOR_ENFORCE_AT has
+    // passed, a GOSTORK_* account with no authenticator cannot complete a
+    // password login at all, so a fixture that promotes first and logs in
+    // second can never get a session. Roles are re-read from the database on
+    // every request, so the token issued here acts as an admin the moment the
+    // UPDATE below lands.
+    const adminEmail = (await db.query(`SELECT email FROM "User" WHERE id=$1`, [admin.providerUserId])).rows[0].email;
+    const adminHeaders = await login(adminEmail);
     await db.query(`UPDATE "User" SET roles = ARRAY['GOSTORK_ADMIN']::text[] WHERE id = $1`, [admin.providerUserId]);
-    const adminAuth = await login(admin.parentEmail).catch(() => null);
-    const adminHeaders = await login((await db.query(`SELECT email FROM "User" WHERE id=$1`, [admin.providerUserId])).rows[0].email);
 
     const evaSession = await mkSession(db, a, { status: "ACTIVE", title: "AI Concierge Chat" });
     const slugA = await mkBookingPage(db, a, "cl02a");
@@ -1233,7 +1239,6 @@ async function cl02(db: Client) {
     } finally {
       await destroyFixture(db, c);
     }
-    void adminAuth;
   } finally {
     await destroyFixture(db, a);
     await destroyFixture(db, b);

@@ -8,7 +8,6 @@
     "build": "node script/build.mjs",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "db:push": "drizzle-kit push",
     "decision-tree": "node scripts/generate-decision-tree.mjs",
     "decision-tree:watch": "node scripts/watch-decision-tree.mjs",
     "tech-stack": "node scripts/generate-tech-stack.mjs",
@@ -102,8 +101,6 @@
     "connect-pg-simple": "^10.0.0",
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.4",
-    "drizzle-orm": "^0.39.3",
-    "drizzle-zod": "^0.7.0",
     "embla-carousel-react": "^8.6.0",
     "esbuild": "^0.27.4",
     "exceljs": "^4.4.0",
@@ -182,16 +179,10 @@
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
-    "drizzle-kit": "^0.31.8",
     "postcss": "^8.4.47",
     "prisma": "^7.4.0",
     "tailwindcss": "^3.4.17",
     "typescript": "5.6.3",
     "vite": "^7.3.0"
-  },
-  "overrides": {
-    "drizzle-kit": {
-      "@esbuild-kit/esm-loader": "npm:tsx@^4.20.4"
-    }
   }
 }

@@ -172,8 +172,6 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@prisma/adapter-pg@^7.4.0`
 - `@prisma/client@^7.4.0`
 - `@prisma/config@^7.3.0`
-- `drizzle-orm@^0.39.3`
-- `drizzle-zod@^0.7.0`
 - `pg@^8.16.3`
 
 **Scraping & automation**
@@ -232,7 +230,6 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `tailwindcss@^3.4.17`
 
 **Database / ORM**
-- `drizzle-kit@^0.31.8`
 - `prisma@^7.4.0`
 
 **Build / tooling**
