@@ -1891,20 +1891,23 @@ export default function AccountPage() {
   // Agency Agreements -> Billing -> Payouts -> Parent Form -> inventory ->
   // Sponsorship -> Automation -> Playbooks -> AI Concierge -> Branding.
   const providerTabOrder = [
-    '/account/legal-identity', '/account', '/account/company', '/account/calendar', '/account/team',
+    // Security sits next to My Account on purpose: it is a personal setting,
+    // and on a phone the tab strip scrolls horizontally, so anything past the
+    // first few entries is effectively invisible.
+    '/account/legal-identity', '/account', '/account/security', '/account/company', '/account/calendar', '/account/team',
     '/account/costs', '/account/documents', '/account/billing', '/account/payouts', '/account/parent-form',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
     '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
-    '/account/members', '/account/security', '/account/scrapers', '/account/test-runner',
+    '/account/members', '/account/scrapers', '/account/test-runner',
   ];
   // GoStork admins have no legal-identity form to fill first: for them the
   // legal-identity route is the global W-9 template + tracking view, which
   // belongs with the contracts, right after Contracts.
   const adminTabOrder = [
-    '/account', '/account/company', '/account/calendar', '/account/team',
+    '/account', '/account/security', '/account/company', '/account/calendar', '/account/team',
     '/account/documents', '/account/legal-identity',
     '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
-    '/account/parent-form', '/account/ip-form-template', '/account/security', '/account/scrapers', '/account/test-runner',
+    '/account/parent-form', '/account/ip-form-template', '/account/scrapers', '/account/test-runner',
   ];
   const tabOrder = isAdmin ? adminTabOrder : providerTabOrder;
 
