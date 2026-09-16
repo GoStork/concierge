@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 import { PartnerInviteCard } from "@/components/chat/partner-invite-card";
+import { WhatIKnowStrip } from "@/components/chat/what-i-know-strip";
 import { DonorReleaseWarningButtons } from "@/components/chat/special-message-card";
 import { ReviewPromptCard } from "@/components/reviews/reviews-ui";
 import { IpFormPromptCard } from "@/components/chat/ip-form-prompt-card";
@@ -5058,6 +5059,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             )}
           </div>
         </div>}
+
+        {/* "So far": what Eva has saved about the family, folded to one line.
+            Eva's own session only - provider threads never show it. */}
+        {!providerInChat && sessionLoaded && !inlinePaymentToken && (
+          <WhatIKnowStrip conciergeName={selectedMatchmaker?.name || aiName || null} />
+        )}
 
         {/* Hide the messages list entirely while the payment panel is
             open. The parent doesn't need to see chat history mid-
