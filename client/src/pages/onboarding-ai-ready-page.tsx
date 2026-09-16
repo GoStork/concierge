@@ -29,7 +29,10 @@ export default function OnboardingAiReadyPage() {
   const serviceLabel = SERVICE_LABELS[primaryService] || "fertility provider";
 
   const handleStart = () => {
-    navigate(`/concierge?matchmaker=${matchmakerId || selected?.id || ""}`, { replace: true });
+    // Same as the picker's shortcut: /chat sits behind the chat in history so
+    // Back goes to the conversations list, never out of the app.
+    navigate("/chat", { replace: true });
+    navigate(`/concierge?matchmaker=${matchmakerId || selected?.id || ""}`);
   };
 
   return (

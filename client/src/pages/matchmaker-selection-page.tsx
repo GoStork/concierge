@@ -64,7 +64,11 @@ export default function MatchmakerSelectionPage() {
     setCheckedExisting(true);
     const sessionWithMatchmaker = existingSessions.find(s => s.matchmakerId);
     if (sessionWithMatchmaker) {
-      navigate(`/concierge?matchmaker=${sessionWithMatchmaker.matchmakerId}`, { replace: true });
+      // Leave the conversations list behind the chat so the OS back gesture
+      // returns to it instead of leaving the site: the picker replaced every
+      // earlier onboarding entry, so without this the chat had nothing behind it.
+      navigate("/chat", { replace: true });
+      navigate(`/concierge?matchmaker=${sessionWithMatchmaker.matchmakerId}`);
     }
   }, [existingSessions, matchmakers, checkedExisting, navigate]);
 
