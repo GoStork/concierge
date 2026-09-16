@@ -343,7 +343,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         // a consultation") in their own chat.
         content: isInfoOnly
           ? `You're all set - your information call with ${provider.name} is booked. They know you're still exploring, so come with all your questions. You can message them directly here any time before the call.`
-          : `You're all set - your consultation with ${provider.name} is booked. You can message them directly here any time before the call.`,
+          : `You're all set - your consultation with ${provider.name} is booked. They now have your name and contact details so they can prepare, and you can message them directly here any time before the call.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {

@@ -653,6 +653,11 @@ function BookingForm({
           // with a structured body, so unwrap it rather than printing raw JSON.
           <p className="text-xs text-destructive">{parseApiError(bookMutation.error).message}</p>
         )}
+                {/* Booking is the consent moment: the provider sees who the parent is
+            from here on. Say so before the button, not after. */}
+        <p className="t-helper mb-2" data-testid="text-booking-consent">
+          Confirming shares your name, email and phone with the provider so they can prepare for the call.
+        </p>
         <Button
           type="submit"
           className="w-full h-9 text-sm font-semibold text-primary-foreground"
@@ -1176,7 +1181,7 @@ export function InlineBookingCalendar({
 
         <div className="grid grid-cols-7 gap-0.5 text-center">
           {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-            <div key={d} className="text-[10px] font-medium text-muted-foreground/60 py-1 uppercase">{d}</div>
+            <div key={d} className="text-[12px] font-medium text-muted-foreground py-1 uppercase">{d}</div>
           ))}
           {calendarDays.map((day, i) => {
             const isPast = isBefore(day.date, today) && !isToday(day.date);
@@ -1356,7 +1361,7 @@ function ConsultationBookingCard({
                     ? `Schedule your Match Call with ${card.memberName || card.providerName || "Consultant"}`
                     : (card as any).meetingSubtype === "DOCTOR_CONSULTATION"
                       ? `Schedule your Doctor Call with ${card.memberName || card.providerName || "Consultant"}`
-                      : `Schedule with ${card.memberName || card.providerName || "Consultant"}`}
+                      : `Schedule with ${card.memberName ? `${card.memberName}${card.providerName ? ` at ${card.providerName}` : ""}` : (card.providerName || "Consultant")}`}
             </span>
           </div>
         </div>
@@ -1708,10 +1713,14 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[] = []):
     : getDonorTabs(swipeProfile, [], t === "sperm donor");
 
   if (reasons.length > 0) {
+    // "Based in USA" is trivially true when the only geography answer was
+    // USA; keep it, but let the reasons that discriminate lead.
+    const ordered = [...reasons].sort((a, b) => Number(/^based in/i.test(a)) - Number(/^based in/i.test(b)))
+      .map((r) => r.replace(/^Based in USA$/i, "Based in the USA"));
     const matchTab: TabSection = {
       layoutType: "matched_bubbles",
-      title: `Matched ${reasons.length} Preference${reasons.length !== 1 ? "s" : ""}`,
-      items: reasons.map(r => ({ label: r, value: "" })),
+      title: `Matches ${reasons.length} of your preference${reasons.length !== 1 ? "s" : ""}`,
+      items: ordered.map(r => ({ label: r, value: "" })),
     };
     return [matchTab, ...baseTabs];
   }
@@ -2178,6 +2187,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
           tabs={tabs}
           disableSwipe={!fill}
           chatMode
+          hideActions
           onPass={() => onAction(`Not the right fit for us - show me someone else.`)}
           onSave={() => { persistChatFavorite("donor", card.providerId); onAction(`Save ${card.name || title} as a favorite.`); }}
           onViewFullProfile={() => onViewProfile({ ...card, ownerProviderId: card.ownerProviderId || profile?.providerId })}
@@ -3660,6 +3670,34 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       return () => { clearTimeout(t1); clearTimeout(t2); };
     }
   }, [messages, sessionBookings?.length]);
+
+  // When a NEW reply carries a match card, the card (not the end of the
+  // blurb) is what the parent should see: measured before this, the card sat
+  // 255px above the fold on desktop and fully off screen on a phone, so the
+  // parent met an essay and two buttons before a face.
+  const lastCardMsgKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant" || !last.matchCards?.length) return;
+    const key = last.id || last.createdAt || String(messages.length);
+    if (lastCardMsgKeyRef.current === key) return;
+    lastCardMsgKeyRef.current = key;
+    // Reopening an existing thread keeps the usual "latest message" landing;
+    // this positioning is for the moment a NEW card arrives in a live session.
+    if (!initialScrollDone.current) return;
+    const t = setTimeout(() => {
+      const container = document.querySelector('[data-testid="concierge-messages"]') as HTMLElement | null;
+      const cards = container?.querySelectorAll('[data-testid^="match-card-"]');
+      const card = cards && cards.length ? (cards[cards.length - 1] as HTMLElement) : null;
+      if (!container || !card) return;
+      const delta = card.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
+      container.scrollTop += delta;
+      // The parent is reading the card; do not yank them back down while
+      // images load. Scrolling near the bottom re-arms auto-follow as usual.
+      userNearBottom.current = false;
+    }, 250);
+    return () => clearTimeout(t);
+  }, [messages]);
 
   // Watch for layout shifts (image loads, card renders) and keep scrolled to bottom
   useEffect(() => {
@@ -5290,7 +5328,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         const qrOptions: string[] = (msg.quickReplies && msg.quickReplies.length > 0)
                           ? msg.quickReplies
                           : (((msg as any).uiCardData?.quickReplies as string[] | undefined) || []);
-                        if (qrOptions.length === 0) return null;
+                        // A person card's two card actions live here now, as
+                        // replies, next to "I have questions" and "Schedule":
+                        // the red X and green heart were marketplace verbs on
+                        // a card the concierge had just recommended.
+                        const cardForChips = (msg.matchCards || []).find((c) => /surrogate|egg|sperm|donor/i.test(String(c.type || "")));
+                        const saveChip = cardForChips ? "Save as favorite" : null;
+                        const allOptions = saveChip && !qrOptions.some((q) => /save as favorite/i.test(q)) ? [...qrOptions, saveChip] : qrOptions;
+                        if (allOptions.length === 0) return null;
                         const isMulti = msg.multiSelect ?? !!(msg as any).uiCardData?.multiSelect;
                         const isBinary = qrOptions.length === 2 && !isMulti;
                         // Filled-vs-muted only means something for a real yes/no
@@ -5299,7 +5344,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         const isYesNo = isBinary && isAffirmativeReply(qrOptions[0]) && /^(no\b|not\b|never\b|skip\b|later\b|maybe later|i(?:'| a)m not|don'?t|do not|no,)/i.test(qrOptions[1].trim());
                         return (
                           <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
-                            {qrOptions.map((qr, qi) => {
+                            {allOptions.map((qr, qi) => {
                               const isSelected = isMulti && multiSelectChoices.has(qr);
                               const multiUnselectedStyle: React.CSSProperties = multiIsOutline
                                 ? { backgroundColor: "transparent", color: multiColor, border: `1px solid ${multiColor}` }
@@ -5311,10 +5356,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                 color: qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff",
                                 border: "none",
                               };
+                              // The one chip that moves the family forward is
+                              // the only filled one in a post-card row.
+                              const isScheduleChip = !!cardForChips && !isMulti && /schedule/i.test(qr);
                               const chipStyle = isYesNo
                                 ? qi === 0
                                   ? chipPositiveStyle
                                   : chipDeclineStyle
+                                : isScheduleChip
+                                ? chipPositiveStyle
                                 : isSelected
                                 ? multiSelectedStyle
                                 : multiUnselectedStyle;
@@ -5347,6 +5397,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                         if (next.has(qr)) next.delete(qr); else next.add(qr);
                                         return next;
                                       });
+                                    } else if (cardForChips && /save as favorite/i.test(qr)) {
+                                      persistChatFavorite("donor", cardForChips.providerId);
+                                      handleQuickReply(`Save ${cardForChips.name || "this profile"} as a favorite.`, msg.content ?? "");
                                     } else {
                                       handleQuickReply(qr, msg.content ?? "");
                                     }

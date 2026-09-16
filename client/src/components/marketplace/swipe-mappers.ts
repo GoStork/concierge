@@ -1,3 +1,4 @@
+import { isPlaceholderValue } from "@/lib/format-label";
 import {
   DollarSign, Wallet, GraduationCap, Briefcase,
   Baby, Scissors, Users, Award,
@@ -558,7 +559,10 @@ function isNonEmpty(val: any): val is string | number {
 function V(val: any): string | null {
   if (val == null) return null;
   const s = String(val).trim();
-  return s.length > 0 ? s : null;
+  // "Other", "N/A", "-" and friends carry nothing on a first-impression
+  // card; the full profile keeps the raw row.
+  if (s.length === 0 || isPlaceholderValue(s) || /^other$/i.test(s)) return null;
+  return s;
 }
 
 // Only render an age when it falls in a plausible donor range. Guards against
@@ -861,48 +865,53 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
       title: `Matched ${matchedPrefs.length} Preference${matchedPrefs.length !== 1 ? "s" : ""}`,
       items: matchedPrefs.map(mp => ({ label: mp.displayLabel, value: "" })),
     });
-  } else {
-    const overviewItems: TabItem[] = [];
-    if (isNonEmpty(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-    if (isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.displayLocation || profile.location), value: "" });
-    if (profile.bmi) overviewItems.push({ label: `BMI ${Math.round(Number(profile.bmi))}`, value: "", lineBreakBefore: true });
-    if (isNonEmpty(profile.relationshipStatus)) overviewItems.push({ label: profile.relationshipStatus!, value: "" });
-    if (isNonEmpty(profile.occupation)) overviewItems.push({ label: shortOccupation(profile.occupation)!, value: "" });
-    if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
   }
 
-  const bgItems: TabItem[] = [];
-  if (!matchedKeys.has("race") && V(profile.race)) bgItems.push({ label: V(profile.race)!, value: "" });
-  if (!matchedKeys.has("ethnicity") && V(profile.ethnicity)) bgItems.push({ label: V(profile.ethnicity)!, value: "" });
-  if (!matchedKeys.has("education") && V(profile.education)) bgItems.push({ label: V(profile.education)!, value: "", icon: GraduationCap });
-  if (!matchedKeys.has("religion") && V(profile.religion)) bgItems.push({ label: V(profile.religion)!, value: "" });
-  if (bgItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Background & Education", items: bgItems });
+  // "About her": who she is, in one place. (The old Overview / Background &
+  // Education split put "Other / Other / N/A" on its own slide.)
+  const aboutItems: TabItem[] = [];
+  if (matchedPrefs.length === 0) {
+    if (isNonEmpty(profile.age)) aboutItems.push({ label: `Age ${profile.age}`, value: "" });
+    if (isNonEmpty(profile.location)) aboutItems.push({ label: flaggedLocation(profile.displayLocation || profile.location), value: "" });
+  }
+  if (isNonEmpty(profile.relationshipStatus)) aboutItems.push({ label: profile.relationshipStatus!, value: "" });
+  if (isNonEmpty(profile.occupation)) aboutItems.push({ label: shortOccupation(profile.occupation)! === "Employed" ? "Working" : shortOccupation(profile.occupation)!, value: "" });
+  if (profile.bmi) aboutItems.push({ label: `BMI ${Math.round(Number(profile.bmi))}`, value: "" });
+  if (!matchedKeys.has("race") && V(profile.race)) aboutItems.push({ label: V(profile.race)!, value: "" });
+  if (!matchedKeys.has("ethnicity") && V(profile.ethnicity)) aboutItems.push({ label: V(profile.ethnicity)!, value: "" });
+  if (!matchedKeys.has("education") && V(profile.education)) aboutItems.push({ label: V(profile.education)!.replace(/^Associates? degree.*$/i, "Associate degree").replace(/^Bachelors? degree.*$/i, "Bachelor's degree").replace(/^Masters? degree.*$/i, "Master's degree"), value: "", icon: GraduationCap });
+  if (!matchedKeys.has("religion") && V(profile.religion)) aboutItems.push({ label: V(profile.religion)!, value: "" });
+  if (aboutItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "About her", items: aboutItems });
 
   const costItems: TabItem[] = [];
-  if (isNonEmpty(profile.baseCompensation)) costItems.push({ label: `Base Compensation: ${formatCurrency(profile.baseCompensation)}`, value: "", icon: DollarSign });
+  if (isNonEmpty(profile.baseCompensation)) costItems.push({ label: `Surrogate compensation ${formatCurrency(profile.baseCompensation)}`, value: "", icon: DollarSign });
   if (profile.totalCostMin && profile.totalCostMax && Number(profile.totalCostMax) !== Number(profile.totalCostMin)) {
-    costItems.push({ label: `Total Cost: ${formatCurrency(profile.totalCostMin)} – ${formatCurrency(profile.totalCostMax)}`, value: "", icon: Wallet });
+    costItems.push({ label: `Estimated total ${formatCurrency(profile.totalCostMin)} to ${formatCurrency(profile.totalCostMax)}`, value: "", icon: Wallet });
   } else if (profile.totalCostMin) {
-    costItems.push({ label: `Total Cost: ${formatCurrency(profile.totalCostMin)}`, value: "", icon: Wallet });
+    costItems.push({ label: `Estimated total ${formatCurrency(profile.totalCostMin)}`, value: "", icon: Wallet });
   }
-  if (costItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Journey Costs", items: costItems });
+  if (costItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Costs", items: costItems });
 
-  const medicalItems: TabItem[] = [];
-  if (!matchedKeys.has("liveBirths") && profile.liveBirths != null) medicalItems.push({ label: `Live Births: ${String(profile.liveBirths)}`, value: "" });
-  if (!matchedKeys.has("cSections") && profile.cSections != null) medicalItems.push({ label: `C-Sections: ${String(profile.cSections)}`, value: "" });
-  if (profile.miscarriages != null) medicalItems.push({ label: `Miscarriages: ${String(profile.miscarriages)}`, value: "" });
-  medicalItems.push({ label: `Abortions: 0`, value: "" });
-  if (!matchedKeys.has("covidVaccinated") && profile.covidVaccinated != null) medicalItems.push({ label: `COVID Vaccinated: ${boolLabel(profile.covidVaccinated)}`, value: "", icon: Syringe });
-  if (profile.lastDeliveryYear) medicalItems.push({ label: `Last Delivery: ${String(profile.lastDeliveryYear)}`, value: "" });
-  if (medicalItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Medical", items: medicalItems });
+  // "Pregnancies": her history in human words. Zeroes are noise on an intro
+  // card (and "Abortions: 0" used to be printed for every surrogate).
+  const pregItems: TabItem[] = [];
+  if (!matchedKeys.has("liveBirths") && profile.liveBirths != null) pregItems.push({ label: Number(profile.liveBirths) === 1 ? "Mom of 1" : `Mom of ${String(profile.liveBirths)}`, value: "" });
+  if (!matchedKeys.has("cSections") && profile.cSections != null) {
+    const c = Number(profile.cSections);
+    pregItems.push({ label: c === 0 ? "No C-sections" : c === 1 ? "One C-section" : `${c} C-sections`, value: "" });
+  }
+  if (profile.lastDeliveryYear) pregItems.push({ label: `Last delivered ${String(profile.lastDeliveryYear)}`, value: "" });
+  if (!matchedKeys.has("covidVaccinated") && profile.covidVaccinated === true) pregItems.push({ label: "COVID vaccinated", value: "", icon: Syringe });
+  if (pregItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Pregnancies", items: pregItems });
 
-  const agreesItems: TabItem[] = [];
-  if (profile.agreesToTwins != null) agreesItems.push({ label: `Carry Twins: ${boolLabel(profile.agreesToTwins)}`, value: "", icon: Baby });
-  if (profile.agreesToReduction != null) agreesItems.push({ label: `Abortion: ${boolLabel(profile.agreesToReduction)}`, value: "", icon: Heart });
-  if (profile.agreesToReduction != null) agreesItems.push({ label: `Selective Reduction: ${boolLabel(profile.agreesToReduction)}`, value: "", icon: Scissors });
-  if (profile.openToSameSexCouple != null) agreesItems.push({ label: `Same Sex Couple: ${boolLabel(profile.openToSameSexCouple)}`, value: "", icon: Users });
-  if (profile.agreesToInternationalParents != null) agreesItems.push({ label: `International Parents: ${boolLabel(profile.agreesToInternationalParents)}`, value: "", icon: Globe });
-  if (agreesItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Agrees To", items: agreesItems });
+  // "Open to": affirmative fit facts only. A "no" is not a reason to meet
+  // someone, and termination / reduction stay on the full profile - the
+  // parent answered that in intake and the match already honoured it.
+  const openItems: TabItem[] = [];
+  if (profile.openToSameSexCouple === true) openItems.push({ label: "Open to same-sex couples", value: "", icon: Users });
+  if (profile.agreesToInternationalParents === true) openItems.push({ label: "Open to international parents", value: "", icon: Globe });
+  if (profile.agreesToTwins === true) openItems.push({ label: "Open to carrying twins", value: "", icon: Baby });
+  if (openItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Open to", items: openItems });
 
   const validInterests = profile.interests.filter(i => i != null && i.trim() !== "");
   if (validInterests.length > 0) {
@@ -1575,12 +1584,12 @@ export function buildSidebarSections(profile: SwipeDeckProfile, isSpermDonor = f
   // Agrees To (surrogates only)
   if (isSurrogate) {
     const agrees: SidebarRow[] = [];
-    if (profile.agreesToTwins != null) agrees.push({ label: "Carry Twins", value: boolStr(profile.agreesToTwins) });
-    if (profile.agreesToReduction != null) agrees.push({ label: "Abortion", value: boolStr(profile.agreesToReduction) });
-    if (profile.agreesToReduction != null) agrees.push({ label: "Selective Reduction", value: boolStr(profile.agreesToReduction) });
-    if (profile.openToSameSexCouple != null) agrees.push({ label: "Same Sex Couple", value: boolStr(profile.openToSameSexCouple) });
-    if (profile.agreesToInternationalParents != null) agrees.push({ label: "International Parents", value: boolStr(profile.agreesToInternationalParents) });
-    if (agrees.length > 0) sections.push({ title: "Agrees To", rows: agrees });
+    if (profile.agreesToTwins != null) agrees.push({ label: "Twins", value: profile.agreesToTwins ? "Open to carrying twins" : "Prefers a single pregnancy" });
+    if (profile.agreesToReduction != null) agrees.push({ label: "Termination", value: profile.agreesToReduction ? "Would follow medical advice" : "Would not terminate" });
+    if (profile.agreesToReduction != null) agrees.push({ label: "Selective reduction", value: profile.agreesToReduction ? "Would follow medical advice" : "Would not reduce" });
+    if (profile.openToSameSexCouple != null) agrees.push({ label: "Same-sex couples", value: profile.openToSameSexCouple ? "Open" : "Not open" });
+    if (profile.agreesToInternationalParents != null) agrees.push({ label: "International parents", value: profile.agreesToInternationalParents ? "Open" : "Not open" });
+    if (agrees.length > 0) sections.push({ title: "Open to", rows: agrees });
   }
 
   // Personal Interests (donors only)

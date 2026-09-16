@@ -1067,6 +1067,7 @@ export async function postPreliminaryAckCard(input: {
       `Before we open the calendar, we want to be upfront about what this call is. It's the first step toward a match call with ${subject} specifically, not a general information session. ` +
       `Once it's booked, ${displayName} treats it as real interest: they prepare for the call around ${subject} and start thinking seriously about fit with your family. ` +
       `It's still completely free and nothing is binding - this just makes sure everyone walks into the call on the same page. ` +
+      `Booking also shares your name and contact details with them so they can prepare. ` +
       `If ${subject} is someone you're seriously considering, confirm below and the calendar will open right here. ` +
       `Still exploring? That's completely fine too - choose the info call option instead and you can talk with the agency without signaling commitment to ${subject}.`,
     cardData: {

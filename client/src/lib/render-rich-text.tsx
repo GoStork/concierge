@@ -69,9 +69,12 @@ function renderSegment(text: string, keyPrefix: string): ReactNode[] {
 
 export function renderRichLine(line: string, keyPrefix = "l"): ReactNode[] {
   const out: ReactNode[] = [];
-  line.split(/(\*\*[^*]+\*\*)/g).forEach((part, pi) => {
+  line.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*)/g).forEach((part, pi) => {
     if (part.startsWith("**") && part.endsWith("**")) {
       out.push(<strong key={`${keyPrefix}b${pi}`}>{part.slice(2, -2)}</strong>);
+    } else if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) {
+      // The model writes *asides* for footnotes; they rendered as literal asterisks.
+      out.push(<em key={`${keyPrefix}i${pi}`}>{part.slice(1, -1)}</em>);
     } else if (part) {
       out.push(...renderSegment(part, `${keyPrefix}${pi}`));
     }

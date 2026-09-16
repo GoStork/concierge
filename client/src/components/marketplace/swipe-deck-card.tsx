@@ -86,6 +86,8 @@ interface SwipeDeckCardProps {
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
+  /** Chat: Pass / Save live as quick replies under the card, not on the photo. */
+  hideActions?: boolean;
   readOnly?: boolean;
   isSaved?: boolean;
   isPassed?: boolean;
@@ -124,6 +126,7 @@ export function SwipeDeckCard({
   tabs,
   disableSwipe = false,
   chatMode = false,
+  hideActions = false,
   readOnly = false,
   isSaved = false,
   isPassed = false,
@@ -315,7 +318,7 @@ export function SwipeDeckCard({
             <div className={`absolute inset-0 z-[38] bg-secondary flex flex-col px-5 pt-9 ${readOnly ? "pb-5" : "pb-24"} pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`cover-${id}`}>
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
-                className="absolute top-6 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
+                className="absolute top-6 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
                 aria-label="View full profile"
                 data-testid={`button-view-profile-${id}`}
               >
@@ -638,7 +641,7 @@ export function SwipeDeckCard({
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
-                  className={`ml-auto shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+                  className={`ml-auto shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-md flex items-center justify-center transition-colors pointer-events-auto ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`}
                   aria-label="View full profile"
                 data-testid={`button-view-profile-${id}`}
                 >
@@ -648,11 +651,26 @@ export function SwipeDeckCard({
             </div>
           )}
 
-          <div className={`absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-[40] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`progress-bars-${id}`}>
+          <div role="tablist" aria-label="Profile sections" className={`absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-[40] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`progress-bars-${id}`}>
             {Array.from({ length: totalSlides }).map((_, i) => (
-              <div
+              // Each segment is a real tab stop: arrow keys move, Enter/Space
+              // select, and the section title is the accessible name. Before
+              // this the only way to change slides was tapping invisible
+              // half-card zones, so keyboard and screen-reader users could
+              // never reach the costs or history sections.
+              <button
                 key={i}
-                className={`h-[3px] flex-1 rounded-full transition-all duration-200 ${i === slideIndex ? (isCover ? "bg-foreground/70" : "bg-white") : (isCover ? "bg-foreground/20" : "bg-white/40")}`}
+                type="button"
+                role="tab"
+                aria-selected={i === slideIndex}
+                aria-label={tabs?.[i]?.title ? `${tabs[i].title}, section ${i + 1} of ${totalSlides}` : `Section ${i + 1} of ${totalSlides}`}
+                tabIndex={i === slideIndex ? 0 : -1}
+                onClick={(e) => { e.stopPropagation(); setSlideIndex(i); }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); setSlideIndex((i + 1) % totalSlides); (e.currentTarget.parentElement?.children[(i + 1) % totalSlides] as HTMLElement | undefined)?.focus(); }
+                  else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); setSlideIndex((i - 1 + totalSlides) % totalSlides); (e.currentTarget.parentElement?.children[(i - 1 + totalSlides) % totalSlides] as HTMLElement | undefined)?.focus(); }
+                }}
+                className={`h-[3px] flex-1 rounded-full pointer-events-auto border-0 p-0 focus-visible:outline-none focus-visible:h-[5px] focus-visible:ring-2 focus-visible:ring-ring transition-all duration-200 ${i === slideIndex ? (isCover ? "bg-foreground/70" : "bg-white") : (isCover ? "bg-foreground/20" : "bg-white/40")}`}
                 data-testid={`progress-segment-${i}`}
               />
             ))}
@@ -669,11 +687,13 @@ export function SwipeDeckCard({
           <div
             className="absolute top-0 left-0 w-1/2 h-full z-30"
             onClick={handleTapLeft}
+            aria-hidden="true"
             data-testid={`tap-zone-left-${id}`}
           />
           <div
             className="absolute top-0 right-0 w-1/2 h-full z-30"
             onClick={handleTapRight}
+            aria-hidden="true"
             data-testid={`tap-zone-right-${id}`}
           />
 
@@ -731,7 +751,7 @@ export function SwipeDeckCard({
               )}
               {isPremium && (
                 <Badge
-                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2 py-0.5 gap-1"
+                  className="bg-[hsl(var(--brand-warning))] text-foreground font-ui px-2 py-0.5 gap-1"
                   style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-premium-${id}`}
                 >
@@ -864,7 +884,7 @@ export function SwipeDeckCard({
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
-                className="shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto"
+                className="shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-md flex items-center justify-center transition-colors pointer-events-auto"
                 aria-label="View full profile"
                 data-testid={`button-view-profile-${id}`}
               >
@@ -1137,7 +1157,7 @@ export function SwipeDeckCard({
             </div>
           </div>
 
-          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[39] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""} transition-opacity duration-200 ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`} data-testid={`action-row-${id}`}>
+          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[39] flex items-center justify-center gap-3 ${readOnly || hideActions ? "hidden" : ""} transition-opacity duration-200 ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`} data-testid={`action-row-${id}`}>
             {!chatMode && (!disableSwipe || isDeckPreview) && (
               <motion.div style={{ opacity: otherBtnOpacity }} className="pointer-events-auto">
                 <Button
