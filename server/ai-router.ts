@@ -384,6 +384,7 @@ function injectMissingQuickReplies(content: string): string {
   const patterns: [RegExp, string][] = [
     // Phase 0
     [/do you have any questions about gostork/i, "[[QUICK_REPLY:I understand, let's get started|I have a few questions]]"],
+    [/any questions before we start/i, "[[QUICK_REPLY:I understand, let's get started|I have a few questions]]"],
     [/what are you looking for help with|which services.*interested|tell me.*services|services.*looking for/i, "[[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]"],
     // Phase 1 identity - single 5-option question
     [/solo man.*solo woman.*two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
@@ -7044,7 +7045,7 @@ The greeting was already sent. The parent just confirmed their services ("Yes, t
 
 YOUR ONLY VALID NEXT ACTION RIGHT NOW:
 Deliver the GoStork introduction (PATH A from conversation_flow above). Then end EXACTLY with:
-"Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
+"Any questions before we start?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
 
 PHASE 0 OVERRIDES (apply ONLY while delivering the GoStork education intro - not after):
 1. DO NOT ask about sperm donor preferences yet - that comes AFTER Phase 0
@@ -7068,15 +7069,11 @@ NEVER FAKE AN ACTION OR A SYSTEM FACT (ABSOLUTE):
 === PHASE 0: GOSTORK INTRODUCTION ===
 After parent confirms services ("Yes, that's right"):
 
-1. Acknowledge briefly (1 sentence). Then deliver Part 1 using the EXACT TEMPLATE below. NEVER output curly braces, brackets, or placeholders - always substitute the literal phrase before sending. The "That network is the largest in the industry: ..." numbers sentence is MANDATORY - never omit it.
+1. Acknowledge briefly (1 sentence). Then deliver Part 1 using the EXACT TEMPLATE below. NEVER output curly braces, brackets, or placeholders - always substitute the literal phrase before sending. ONE short paragraph: a stressed parent reads this on a phone.
 
 PART 1 TEMPLATE:
-"Before we dive in, let me give you a quick picture of how GoStork works.
-
-GoStork is a matching concierge service - think of me as your personal matchmaker for your fertility journey. You won't be {RESEARCH} on your own. Instead, I get to know your situation, search our entire network for you, and bring you one great match at a time - hand-picked to fit you. That network is the largest in the industry: {NUMBERS} - all with full transparent pricing and no surprises.
-
-And I don't stop at the match. I book your calls, prep you for them, and handle agreements and payments - everything in one place, from first question to signed contract. It's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you."
-End with: "Does that make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have a question]]
+"Quick picture of how this works. I'm your personal matchmaker for this journey: instead of you {RESEARCH}, I learn your situation, search our whole vetted network - all with transparent pricing - and bring you one hand-picked match at a time. Then I book your calls, prep you, and handle agreements and payments in one place. Free for parents - providers pay us, never you."
+End with: "Make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have a question]]
 
 {RESEARCH} - pick the one matching the parent's services:
 - Sperm donation only -> "scrolling through thousands of donor profiles across dozens of sperm bank websites"
@@ -7091,33 +7088,21 @@ End with: "Does that make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have 
 - Surrogacy + IVF -> "scrolling through endless profiles across dozens of surrogacy agency websites and comparing IVF clinics"
 - 3+ services -> name every relevant surface, joined with commas + "and" (e.g. "scrolling through thousands of profiles across dozens of egg donor agency, surrogacy agency, and sperm bank websites and comparing IVF clinics")
 
-{NUMBERS} - pick or combine by parent's services (2 services use "and"; 3+ use commas + final "and"):
-- Sperm donation -> "10+ sperm banks with 1,500+ donors"
-- Egg donation -> "30 egg donor agencies with 10,000+ donors"
-- Surrogacy -> "60+ surrogacy agencies"
-- IVF clinic -> "30+ IVF clinics"
-
-EXAMPLES (every selected service appears in BOTH {RESEARCH} and {NUMBERS}):
-- Sperm only: "...You won't be scrolling through thousands of donor profiles across dozens of sperm bank websites on your own... That network is the largest in the industry: 10+ sperm banks with 1,500+ donors - all with full transparent pricing and no surprises. ... It's completely free..."
-- Egg + Sperm: "...You won't be scrolling through thousands of donor profiles across dozens of egg donor agency and sperm bank websites on your own... That network is the largest in the industry: 30 egg donor agencies with 10,000+ donors and 10+ sperm banks with 1,500+ donors - all with full transparent pricing and no surprises. ... It's completely free..."
-- All four: "...That network is the largest in the industry: 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, 10+ sperm banks with 1,500+ donors, and 30+ IVF clinics - all with full transparent pricing and no surprises. ... It's completely free..."
-
 HARD RULES:
-- ALWAYS include the "That network is the largest in the industry: {NUMBERS}" sentence - it is MANDATORY.
-- MULTI-SERVICE: if parent selected N services (N>=2), BOTH {RESEARCH} and {NUMBERS} MUST name all N services. Never drop a service.
-- ONLY include numbers for services the parent actually selected. NEVER quote egg donor numbers to a sperm-only parent, etc.
-- NEVER leave curly braces, brackets, slashes, or the literal text "RESEARCH" / "NUMBERS" in the output.
+- NEVER quote network sizes, provider counts or donor counts (no "60+ agencies", no "10,000+ donors"). "Our whole vetted network" is the phrase.
+- MULTI-SERVICE: {RESEARCH} MUST name every service the parent selected. Never drop a service.
+- NEVER leave curly braces, brackets, slashes, or the literal text "RESEARCH" in the output.
 
 2. When parent affirms (any yes/sure/got it/ok), deliver Part 2 in same response. Same placeholder discipline - never output curly braces.
 
 PART 2 TEMPLATE:
-"One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through {JOURNEY} himself. He personally interviews each {PROVIDER}'s leadership, reviews their operations, and makes sure they have the right team in place.{WAITLIST}
+"One more thing: every provider here was vetted in person by Eran Amir, our founder, who went through {JOURNEY} himself. He interviews each {PROVIDER}'s leadership and checks their operations and team before they're listed.{WAITLIST}
 
-Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
+Any questions before we start?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
 
 {JOURNEY} - "surrogacy" if parent is looking for surrogacy; otherwise "the fertility journey".
 {PROVIDER} - "agency" for egg donation or surrogacy, "sperm bank" for sperm donation, "clinic" for IVF clinic, "provider" if the parent selected multiple service types.
-{WAITLIST} - if parent is looking for surrogacy, append " And there are no waiting lists - every surrogate you'll see is available right now." Otherwise leave it out entirely (no extra space, no extra punctuation).
+{WAITLIST} - if parent is looking for surrogacy, append " And no waiting lists - we only show surrogates who are available now." Otherwise leave it out entirely (no extra space, no extra punctuation).
 
 3. If "Not exactly": ask [[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]] then deliver education.
 4. PHASE 1 (Identity) AND PHASE 2 (Biological baseline) ARE MANDATORY for ALL parents. NEVER skip them, even for donor-only parents. Donor matching (B1/C1) cannot run until Phase 1 + Phase 2 are complete - we need to know family type, gender, embryo status, and biology context to match donors properly. The ONLY thing that varies by services is which Phase 3 cycles run AFTER Phase 1+2 finish.
@@ -7272,10 +7257,10 @@ ${phase0Section}`;
       const lastAiMessage = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
       // Part 1 detection: Gemini may rephrase the ending question, so check for
       // the GoStork marketplace education content rather than the exact closing line.
-      const lastAiWasPart1 = /matching concierge service|giant directory and wish you luck|GoStork is a fertility marketplace|Kayak or Expedia for fertility|providers pay us a referral fee|completely free for intended parents/i.test(lastAiMessage?.content || "") &&
-        !/personally vetted by eran amir|no waiting lists/i.test(lastAiMessage?.content || "");
+      const lastAiWasPart1 = /matching concierge service|personal matchmaker for this journey|providers pay us, never you|giant directory and wish you luck|GoStork is a fertility marketplace|Kayak or Expedia for fertility|providers pay us a referral fee|completely free for intended parents/i.test(lastAiMessage?.content || "") &&
+        !/personally vetted by eran amir|vetted in person by eran amir|no waiting lists/i.test(lastAiMessage?.content || "");
       const part2AlreadyDelivered = chatHistory.some((m: any) =>
-        m.role === "assistant" && /personally vetted by eran amir|no waiting lists/i.test(m.content || "")
+        m.role === "assistant" && /personally vetted by eran amir|vetted in person by eran amir|no waiting lists/i.test(m.content || "")
       );
       const userAffirmedPart1 = /^(yes|sure|makes sense|got it|ok|great|absolutely|yep|sounds good|i understand)/i.test(userMessage.trim()) ||
         /makes sense|let'?s (go|start)/i.test(userMessage);
@@ -7295,8 +7280,8 @@ ${phase0Section}`;
           else if (needsClinic) _providerType = "clinic";
           else _providerType = "agency"; // egg donor or surrogacy
         }
-        const _waitlist = needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : "";
-        const part2Body = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through ${_journey} himself. He personally interviews each ${_providerType}'s leadership, reviews their operations, and makes sure they have the right team in place.${_waitlist}`;
+        const _waitlist = needsSurrogate ? " And no waiting lists - we only show surrogates who are available now." : "";
+        const part2Body = `One more thing: every provider here was vetted in person by Eran Amir, our founder, who went through ${_journey} himself. He interviews each ${_providerType}'s leadership and checks their operations and team before they're listed.${_waitlist}`;
         // Inline all variables needed here - they are declared further down in the Tier 1 block
         // and would cause ReferenceError (TDZ) if referenced before their declarations.
         const _parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
@@ -7310,7 +7295,7 @@ ${phase0Section}`;
         const needsPhase1Now = _parentNeedsPhase1 && !_phase1AnsweredInHistory && !_phase1AlreadyAsked;
         const combined = needsPhase1Now
           ? `${part2Body}\n\nTo help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`
-          : `${part2Body}\n\nDo you have any questions about GoStork and how we can help you? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
+          : `${part2Body}\n\nAny questions before we start? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
         finalContent = combined;
         sse.sendToken(combined);
         serverBypassServed = true; mark("bypass_served");
@@ -7338,12 +7323,12 @@ ${phase0Section}`;
       // the response is always the same. Gemini confuses this with post-match Q&A
       // and generates matching language instead of a simple open invitation.
       // -----------------------------------------------------------------------
-      const lastAiWasPhase0Education = /do you have any questions about GoStork/i.test(lastAiMessage?.content || "");
+      const lastAiWasPhase0Education = /do you have any questions about GoStork|any questions before we start/i.test(lastAiMessage?.content || "");
       const userSaysHasQuestions = /i have (a few|some|a couple of)? ?questions?|i'?d like to (ask|know)|have (some|a few) questions/i.test(userMessage);
       // Also catch "I have a question" after Part 1 (before Part 2 is delivered).
       // Without this, Gemini handles it and says "What would you like to know?" which
       // matches the dead-end pattern /what would you like/, triggering a retry + flash.
-      const lastAiWasPart1ForQA = /does that make sense so far|matching concierge service|giant directory and wish you luck|GoStork is a fertility marketplace|Kayak or Expedia for fertility/i.test(lastAiMessage?.content || "");
+      const lastAiWasPart1ForQA = /does that make sense so far|make sense so far|matching concierge service|personal matchmaker for this journey|giant directory and wish you luck|GoStork is a fertility marketplace|Kayak or Expedia for fertility/i.test(lastAiMessage?.content || "");
       if ((lastAiWasPhase0Education || lastAiWasPart1ForQA) && userSaysHasQuestions) {
         finalContent = "Of course! What would you like to know?";
         sse.sendToken(finalContent);
@@ -7470,9 +7455,9 @@ ${phase0Section}`;
           else if (needsClinic) _p1_providerType = "clinic";
           else _p1_providerType = "agency";
         }
-        const _p1_waitlist = needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : "";
+        const _p1_waitlist = needsSurrogate ? " And no waiting lists - we only show surrogates who are available now." : "";
         const part2Text = part2Delivered ? "" :
-          `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through ${_p1_journey} himself. He personally interviews each ${_p1_providerType}'s leadership, reviews their operations, and makes sure they have the right team in place.${_p1_waitlist}\n\n`;
+          `One more thing: every provider here was vetted in person by Eran Amir, our founder, who went through ${_p1_journey} himself. He interviews each ${_p1_providerType}'s leadership and checks their operations and team before they're listed.${_p1_waitlist}\n\n`;
         finalContent = `${part2Text}To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
         sse.sendToken(finalContent);
         serverBypassServed = true; mark("bypass_served");
