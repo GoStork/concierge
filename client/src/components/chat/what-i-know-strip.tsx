@@ -13,7 +13,7 @@
  *
  * Parent-private: rendered only on Eva's own session, never a provider one.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -146,15 +146,19 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
         </p>
       )}
 
+      {/* Label column sizes to its longest label so "Looking for" never
+          wraps; values sit on the transcript's own scale (micro value =
+          15px), not the profile page's 17px field value, so the strip
+          reads as part of the chat rather than a form dropped into it. */}
       {open && (
-        <div id="what-i-know-facts" className="mt-2.5 pt-2.5 border-t border-border space-y-1.5">
+        <div id="what-i-know-facts" className="mt-2.5 pt-2.5 border-t border-border grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-baseline">
           {facts.map(f => (
-            <div key={f.key} className="flex items-baseline gap-2.5">
-              <span className="t-micro-label w-[86px] shrink-0">{f.label}</span>
-              <span className={`t-field-value ${f.pending ? "italic text-muted-foreground" : ""}`} data-testid={`what-i-know-${f.key}`}>{f.value}</span>
-            </div>
+            <Fragment key={f.key}>
+              <span className="t-micro-label whitespace-nowrap">{f.label}</span>
+              <span className={`t-micro-value ${f.pending ? "italic text-muted-foreground" : ""}`} data-testid={`what-i-know-${f.key}`}>{f.value}</span>
+            </Fragment>
           ))}
-          <p className="t-helper pt-1">
+          <p className="t-helper pt-1 col-span-2">
             Something off? <span className="font-medium text-foreground">Just tell {who}</span> and it gets fixed.
           </p>
         </div>
