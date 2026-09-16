@@ -559,6 +559,28 @@ export default function OnboardingPage() {
     handleContinue();
   };
 
+  // Overflow cue: on short viewports (iPhone SE, keyboard up) the fourth goal
+  // pill or the consent tray sat under the Continue bar with no hint that
+  // more existed. Fade the scroller's bottom edge and rule the CTA bar while
+  // there is content below the fold.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [hasMoreBelow, setHasMoreBelow] = useState(false);
+  const measureOverflow = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setHasMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+  }, []);
+  useEffect(() => {
+    measureOverflow();
+    const el = scrollerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measureOverflow);
+    ro.observe(el);
+    Array.from(el.children).forEach(c => ro.observe(c));
+    window.addEventListener("resize", measureOverflow);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measureOverflow); };
+  }, [step, measureOverflow]);
+
   // Focus management: after a step change, if nothing claimed focus (steps
   // with an autofocused field already did), move it to the step's heading so
   // keyboard and screen-reader users land on the new question, not the body.
@@ -903,7 +925,11 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-8">
+      <div
+        ref={scrollerRef}
+        onScroll={measureOverflow}
+        className={`flex-1 overflow-y-auto px-6 pb-8 ${hasMoreBelow ? "scroll-fade-bottom" : ""}`}
+      >
         <div
           key={step}
           className="animate-in fade-in slide-in-from-right-4 duration-300"
@@ -1012,7 +1038,7 @@ export default function OnboardingPage() {
       </div>
 
       {step <= lastStep && (
-        <div className="px-6 pb-8 pt-2">
+        <div className={`px-6 pb-8 pt-2 transition-colors ${hasMoreBelow ? "border-t border-border" : "border-t border-transparent"}`}>
           <Button
             size="lg"
             onClick={handleContinue}
@@ -1130,7 +1156,7 @@ function StepAccount({
             className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/60 transition-colors"
           />
           {email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
-            <p className="text-sm text-destructive mt-1" data-testid="text-email-hint">Please enter a valid email address</p>
+            <p className="t-error mt-1" role="alert" data-testid="text-email-hint">Please enter a valid email address</p>
           )}
         </div>
         <div>
@@ -1155,7 +1181,7 @@ function StepAccount({
             </button>
           </div>
           {password.length > 0 && password.length < 8 && (
-            <p className="text-sm text-destructive mt-1" data-testid="text-password-hint">Password must be at least 8 characters</p>
+            <p className="t-error mt-1" role="alert" data-testid="text-password-hint">Password must be at least 8 characters</p>
           )}
         </div>
         <div>
@@ -1180,11 +1206,11 @@ function StepAccount({
             </button>
           </div>
           {confirmPassword.length > 0 && confirmPassword !== password && (
-            <p className="text-sm text-destructive mt-1" data-testid="text-confirm-hint">Passwords do not match</p>
+            <p className="t-error mt-1" role="alert" data-testid="text-confirm-hint">Passwords do not match</p>
           )}
         </div>
         {error && (
-          <p className="text-sm text-destructive" data-testid="text-register-error">
+          <p className="t-error" role="alert" data-testid="text-register-error">
             {error.type === "emailExists" ? (
               <>
                 An account with this email already exists. Please{" "}
@@ -1392,13 +1418,11 @@ function StepPhone({
       </div>
 
       {error && (
-        <p className="text-destructive text-sm mb-4 flex items-center gap-2" data-testid="text-phone-error">
+        <p className="t-error mb-4 flex items-center gap-2" role="alert" data-testid="text-phone-error">
           <AlertCircle className="w-4 h-4 shrink-0" />
           {error}
         </p>
       )}
-
-      <SmsTransactionalNotice className="mb-5" />
 
       {/* A2P 10DLC: the ongoing-notifications opt-in is a SEPARATE, genuinely optional
           consent. The box starts unticked and the Verify button works either way -
@@ -1418,6 +1442,11 @@ function StepPhone({
         />
         <SmsNotificationsOptIn titleId="sms-opt-in-title" detailId="sms-opt-in-detail" />
       </label>
+
+      {/* The transactional notice (carrier-registered wording, unchanged) sits
+          last so the field, its reassurance and the opt-in share the first
+          viewport on a short phone; it stays fully readable on scroll. */}
+      <SmsTransactionalNotice className="mt-5" />
     </div>
   );
 }
@@ -1462,18 +1491,18 @@ function StepVerification({
       >
         Enter the code you received
       </h1>
-      <p className="text-muted-foreground mb-10">Sent to {phone} via {channel === "whatsapp" ? "WhatsApp" : "SMS"}</p>
+      <p className="t-helper mb-10">Sent to {phone} via {channel === "whatsapp" ? "WhatsApp" : "SMS"}</p>
 
       <OtpInput value={otp} onChange={onChange} />
 
       {error && (
-        <p className="text-destructive text-sm mt-4 flex items-center gap-2 justify-center" data-testid="text-otp-error">
+        <p className="t-error mt-4 flex items-center gap-2 justify-center" role="alert" data-testid="text-otp-error">
           <AlertCircle className="w-4 h-4 shrink-0" />
           {error}
         </p>
       )}
 
-      <p className={`text-center text-muted-foreground text-sm ${error ? "mt-4" : "mt-12"}`}>
+      <p className={`text-center t-helper ${error ? "mt-4" : "mt-8"}`}>
         You should receive the code within 30s
       </p>
       <p className="text-center text-sm mt-1">

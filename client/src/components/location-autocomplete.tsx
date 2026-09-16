@@ -282,7 +282,9 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={isOpen && results.length > 0}
+            aria-haspopup="listbox"
             aria-controls={id ? `${id}-listbox` : undefined}
+            aria-activedescendant={id && isOpen && highlightIdx >= 0 ? `${id}-opt-${highlightIdx}` : undefined}
             data-testid={props["data-testid"]}
           />
         ) : (
@@ -332,6 +334,8 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
       {isOpen && results.length > 0 && dropdownRect && createPortal(
         <div
           ref={dropdownRef}
+          id={id ? `${id}-listbox` : undefined}
+          role="listbox"
           className="fixed z-50 bg-popover border border-border rounded-[var(--radius)] shadow-lg max-h-60 overflow-y-auto"
           style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
           onMouseLeave={() => setHighlightIdx(-1)}
@@ -340,6 +344,10 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
             <button
               key={idx}
               type="button"
+              role="option"
+              id={id ? `${id}-opt-${idx}` : undefined}
+              aria-selected={highlightIdx === idx}
+              tabIndex={-1}
               // Mouse drives the same highlight index as the keyboard, so the
               // highlight reliably follows the cursor (a plain :hover sticks
               // when the list re-renders under a stationary mouse).

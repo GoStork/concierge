@@ -266,13 +266,17 @@ export function PhoneInput({
   const digits = nationalDisplay.replace(/\D/g, "");
   const e164 = buildE164(digits, isoCode);
   const isValid = validate(e164, isoCode);
-  const showValidationError = hasInteracted && digits.length >= 3 && !isValid && !!isoCode;
+  // Validate once the parent has LEFT the field (or typed a full-length
+  // number), never on the third keystroke: a red line mid-typing on the most
+  // nervous screen of signup punished normal input.
+  const showValidationError = hasInteracted && !focused && digits.length >= 3 && !isValid && !!isoCode;
   const externalError = error && error.trim().length > 0 ? error : null;
   const validationError = showValidationError
     ? `Please enter a valid ${country?.name ?? "phone"} phone number`
     : null;
   const errorToShow = externalError ?? validationError;
   const hasError = !!errorToShow;
+  const errorId = `${inputId || dataTestId || "phone"}-error`;
 
   const buttonClasses = cn(
     "flex items-center gap-2 min-w-0 shrink-0 whitespace-nowrap",
@@ -355,6 +359,8 @@ export function PhoneInput({
             autoComplete="tel"
             autoFocus={autoFocus}
             id={inputId}
+            aria-invalid={hasError || undefined}
+            aria-describedby={hasError ? errorId : undefined}
           />
         ) : (
           <Input
@@ -378,7 +384,7 @@ export function PhoneInput({
       )}
 
       {errorToShow && (
-        <p className="mt-2 text-xs text-destructive" data-testid={dataTestId ? `${dataTestId}-error` : "phone-error"}>
+        <p id={errorId} role="alert" className="mt-2 t-error" data-testid={dataTestId ? `${dataTestId}-error` : "phone-error"}>
           {errorToShow}
         </p>
       )}

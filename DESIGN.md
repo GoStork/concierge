@@ -258,6 +258,7 @@ The palette is a warm neutral ground with one saturated teal voice, one muted pu
 
 ### Status (reserved)
 - **Success Green** (#10B981), **Warning Amber** (#F59E0B), **Error Red** (#EF4444): approval, warnings, cancellations, destructive buttons, the calendar's current-time line. They never tint a surface for decoration.
+- **Error text** (`--brand-error-text`, HSL 0 72% 40%): inline validation and send errors through the `.t-error` class. Error Red is a fill colour; as 13px text on Warm Sand it measures 3.4:1, so text uses this darker step (about 6:1).
 - **Focus ring**: Stork Teal. (The pre-teal green #26584A was still the live ring until 2026-09-15; it is kept in the token list only so old screenshots can be read.)
 
 ### Service identity (fixed)

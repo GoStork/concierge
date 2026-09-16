@@ -86,6 +86,9 @@
   --brand-success: 142 72% 29%;
   --brand-warning: 38 92% 50%;
   --brand-error: 0 84% 60%;
+  /* Error TEXT on Warm Sand / Paper: the fill red above is 3.4:1 as text, so
+     inline messages use this darker step (about 6:1). Fill stays --brand-error. */
+  --brand-error-text: 0 72% 40%;
 
   /* Fonts */
   /* Live brand uses the platform's own face (SiteSettings.headingFont /
@@ -794,6 +797,19 @@ input[type="time"]::-webkit-date-and-time-value {
   font-size: var(--helper-text-size);
   color: var(--helper-text-color);
   line-height: 1.5;
+}
+/* Inline validation / send errors. Helper size, AA-passing red text. */
+.t-error {
+  font-size: var(--helper-text-size);
+  color: hsl(var(--brand-error-text));
+  line-height: 1.5;
+}
+/* A scroller with more below the fold: fade the last 40px so the cut reads
+   as "more", not as the end. Toggled from JS when content overflows and the
+   user is not at the bottom. */
+.scroll-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
 }
 .t-card-heading {
   font-size: var(--card-heading-size);
