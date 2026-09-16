@@ -4792,6 +4792,11 @@ IMPORTANT RULES:
     // intake state machine). { offered, asked } = the question turn;
     // { offered, form } = the in-chat invite form turn.
     let partnerInviteExtras: { offered: true; asked?: true; form?: true } | null = null;
+    // A question sent to the agency used to vanish into Eva's "I'll get back
+    // to you": nothing on screen said it was still open. The reply that sent
+    // it now carries the query id; chat-router flips it to "answered" when
+    // the provider replies, so the parent can see the state under the bubble.
+    let whisperExtras: { queryId: string; providerLabel: string; status: "pending" } | null = null;
 
     // Tier 2-only expensive lookups - ALREADY RUNNING since right after the
     // session load (tier2LookupsPromise kicked off ~1s of pre-work earlier);
@@ -9870,6 +9875,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             },
           });
           void emitJourneyEvent({ eventType: "WHISPER_ASKED", parentUserId: userId, providerId: whisperProviderId, sessionId: currentSessionId || null, actorRole: "parent" });
+          whisperExtras = { queryId: silentQuery.id, providerLabel: "the agency", status: "pending" };
 
           let whisperMatchCard: any = null;
           try {
@@ -11928,6 +11934,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (multiSelect) uiExtras.multiSelect = true;
 
     if (partnerInviteExtras) uiExtras.partnerInvite = partnerInviteExtras;
+    if (whisperExtras) (uiExtras as any).whisper = whisperExtras;
 
     const replySessionId = currentSessionId;
 
@@ -12127,6 +12134,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       comparisonCards: comparisonCards.length > 0 ? comparisonCards : undefined,
       prepDoc: sendPrepDoc || undefined,
       partnerInvite: uiExtras.partnerInvite || undefined,
+      whisper: (uiExtras as any).whisper || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
       meetingCards: meetingCards.length > 0 ? meetingCards : undefined,

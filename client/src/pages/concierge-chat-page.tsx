@@ -161,6 +161,8 @@ interface ChatMessage {
   prepDoc?: boolean;
   /** One-time "add your partner" offer attached by the server (uiCardData.partnerInvite). */
   partnerInvite?: { offered: boolean; asked?: boolean; form?: boolean };
+  /** A question Eva sent to the agency on this turn (uiCardData.whisper); status flips when they answer. */
+  whisper?: { queryId: string; providerLabel?: string; status: "pending" | "answered" };
   consultationCard?: ConsultationCardData;
   /** Hydrated Booking objects for existing-meeting questions (join/reschedule/cancel). */
   meetingCards?: any[];
@@ -768,6 +770,28 @@ export function InlineBookingCalendar({
   const [notes, setNotes] = useState("");
   const [additionalAttendees, setAdditionalAttendees] = useState<{ email: string; name: string; phone: string }[]>([]);
   const [showAttendeeFields, setShowAttendeeFields] = useState(false);
+  // The other members of the family account (a partner) are pre-filled as
+  // attendees: the confirmation card already lists them as participants, and
+  // an invited partner should not depend on the owner remembering to add
+  // them to the one call they both need to attend. Removable with one tap.
+  const { data: accountMembers } = useQuery<{ id: string; name?: string | null; email?: string | null; mobileNumber?: string | null; parentAccountRole?: string | null }[]>({
+    queryKey: ["/api/parent-account/members"],
+    enabled: !!user && !existingBookingProp,
+    staleTime: 60_000,
+  });
+  const attendeesPrefilledRef = useRef(false);
+  useEffect(() => {
+    if (attendeesPrefilledRef.current || !Array.isArray(accountMembers) || !user) return;
+    const myEmail = String((user as any).email || "").toLowerCase();
+    const others = accountMembers
+      .filter((m) => m.email && m.email.toLowerCase() !== myEmail && m.id !== (user as any).id)
+      .map((m) => ({ email: m.email as string, name: m.name || "", phone: m.mobileNumber || "" }));
+    attendeesPrefilledRef.current = true;
+    if (others.length > 0) {
+      setAdditionalAttendees((prev) => prev.length ? prev : others);
+      setShowAttendeeFields(true);
+    }
+  }, [accountMembers, user]);
   const [newAttendeeEmail, setNewAttendeeEmail] = useState("");
   const [newAttendeeName, setNewAttendeeName] = useState("");
   const [newAttendeePhone, setNewAttendeePhone] = useState("");
@@ -3366,6 +3390,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             meetingCards: extras.meetingCards,
             prepDoc: extras.prepDoc,
             partnerInvite: extras.partnerInvite,
+            whisper: extras.whisper,
             consultationCard: extras.consultationCard,
             agreementCard: extras.agreementCard,
             // Restore quick replies for the last message so buttons reappear on navigation
@@ -3441,6 +3466,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   meetingCards: extras.meetingCards,
                   prepDoc: extras.prepDoc,
                   partnerInvite: extras.partnerInvite,
+            whisper: extras.whisper,
                   consultationCard: extras.consultationCard,
                   quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
                   uiCardType: m.uiCardType,
@@ -3778,6 +3804,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 meetingCards: extras.meetingCards,
                 prepDoc: extras.prepDoc,
                 partnerInvite: extras.partnerInvite,
+            whisper: extras.whisper,
                 consultationCard: extras.consultationCard,
                 agreementCard: extras.agreementCard,
                 quickReplies: extras.quickReplies,
@@ -4273,6 +4300,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               meetingCards: data.meetingCards,
               prepDoc: data.prepDoc,
               partnerInvite: data.partnerInvite,
+                whisper: data.whisper,
               consultationCard: data.consultationCard,
               agreementCard: data.agreementCard,
               senderType: data.message?.senderType,
@@ -4734,6 +4762,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 meetingCards: data.meetingCards,
                 prepDoc: data.prepDoc,
                 partnerInvite: data.partnerInvite,
+                whisper: data.whisper,
                 consultationCard: data.consultationCard,
                 agreementCard: data.agreementCard,
                 senderType: data.message?.senderType,
@@ -5474,6 +5503,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       as its own turn, the parent said yes, this is the answer
                       surface. Submitting sends the invitation and posts the
                       parent's "Invitation sent" message so the intake resumes. */}
+                  {msg.whisper?.queryId && !alignRight && (
+                    <p className="mt-1.5 flex items-center gap-2 t-helper" data-testid={`whisper-status-${msg.whisper.status}`}>
+                      <span
+                        className="inline-block w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: msg.whisper.status === "answered" ? "hsl(var(--brand-success))" : "hsl(var(--brand-warning))" }}
+                        aria-hidden="true"
+                      />
+                      {msg.whisper.status === "answered"
+                        ? `${msg.whisper.providerLabel || "The agency"} answered. Their reply is below.`
+                        : `Question sent to ${msg.whisper.providerLabel || "the agency"}. Waiting for their reply.`}
+                    </p>
+                  )}
                   {msg.partnerInvite?.form && (
                     <div className="mt-3">
                       <PartnerInviteCard brandColor={brandColor} onDone={(text) => sendMessage(text)} />

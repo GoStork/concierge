@@ -2442,6 +2442,23 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         where: { id: whisper.id },
         data: { status: "RELAYED" },
       });
+      // Flip the parent-side pending marker under Eva's "I've asked the agency"
+      // bubble so the thread shows the question as answered.
+      try {
+        const asked = await prisma.aiChatMessage.findFirst({
+          where: { sessionId: (whisper as any).sessionId, uiCardData: { path: ["whisper", "queryId"], equals: whisper.id } },
+          select: { id: true, uiCardData: true },
+        });
+        if (asked) {
+          const prev = (asked.uiCardData as any) || {};
+          await prisma.aiChatMessage.update({
+            where: { id: asked.id },
+            data: { uiCardData: { ...prev, whisper: { ...(prev.whisper || {}), status: "answered" } } },
+          });
+        }
+      } catch (e) {
+        console.error("[WHISPER] Could not mark the parent-side question as answered:", e);
+      }
 
       // Durable knowledge: if this answer is about HOW THE AGENCY WORKS (not
       // about one donor/surrogate), embed it into the provider's knowledge base
