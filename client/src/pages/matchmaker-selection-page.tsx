@@ -169,15 +169,28 @@ export default function MatchmakerSelectionPage() {
       </div>
 
       <div className="flex flex-wrap justify-center gap-4" role="radiogroup" aria-label="Choose your concierge">
-        {matchmakers.map((m) => {
+        {matchmakers.map((m, idx) => {
           const isSelected = selectedId === m.id;
+          // ARIA radiogroup: one tab stop (the checked radio, or the first),
+          // arrows move and select, Enter/Space select.
+          const isTabStop = selectedId ? isSelected : idx === 0;
+          const moveTo = (next: number, e: React.KeyboardEvent<HTMLDivElement>) => {
+            const target = matchmakers[(next + matchmakers.length) % matchmakers.length];
+            setSelectedId(target.id);
+            const el = (e.currentTarget.parentElement?.querySelector(`[data-testid="matchmaker-option-${target.id}"]`) as HTMLElement | null);
+            el?.focus();
+          };
           return (
             <Card
               key={m.id}
               role="radio"
               aria-checked={isSelected}
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(m.id); } }}
+              tabIndex={isTabStop ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(m.id); }
+                else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); moveTo(idx + 1, e); }
+                else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); moveTo(idx - 1, e); }
+              }}
               className={`relative cursor-pointer transition-all duration-200 p-5 flex flex-col gap-3 self-stretch hover:shadow-md w-full sm:w-[280px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                 isSelected
                   ? "ring-2 ring-primary shadow-lg"
@@ -240,8 +253,7 @@ export default function MatchmakerSelectionPage() {
           size="lg"
           disabled={!selectedId}
           onClick={handleContinue}
-          className="px-8 gap-2"
-          style={{ borderRadius: `var(--radius, 0.5rem)` }}
+          className="px-8 gap-2 rounded-full"
           data-testid="btn-continue-matchmaker"
         >
           Continue

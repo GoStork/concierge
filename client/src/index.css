@@ -338,6 +338,9 @@
   transform: translateY(0) scale(0.98);
 }
 @media (prefers-reduced-motion: reduce) {
+  /* Utility animations (typing dots, onboarding rises, the persona
+     interstitial) stop; the chat's character drain checks this query itself. */
+  .animate-pulse, .animate-bounce, [class*="animate-["] { animation: none !important; }
   .hover-elevate, .active-elevate-2 { transition: none; }
   :is(button, a, [role="button"], label, summary).hover-elevate:hover,
   :is(button, a, [role="button"], label, summary).active-elevate-2:active { transform: none; }
@@ -826,4 +829,11 @@ input[type="time"]::-webkit-date-and-time-value {
   color: var(--form-label-color);
   text-transform: var(--form-label-case);
   letter-spacing: var(--form-label-tracking);
+}
+
+/* Desktop top-nav links had no focus indication at all (outline none from
+   the reset, no ring class). */
+.desktop-nav-link:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }

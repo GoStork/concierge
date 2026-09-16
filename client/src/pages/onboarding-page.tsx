@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck, Stethoscope, Heart, Baby, FlaskConical, Search } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { AiIntroScreen } from "@/components/onboarding/ai-intro-screen";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { SmsTransactionalNotice, SmsNotificationsOptIn } from "@/components/ui/sms-consent-disclosure";
@@ -14,47 +15,26 @@ import { TurnstileWidget } from "@/components/ui/turnstile-widget";
 import { Button } from "@/components/ui/button";
 import { countryNameToIsoCode } from "@/lib/country-flag";
 
-// AI Intro service-to-visual config (inline version of OnboardingAiIntroPage)
-// Card tints come from the platform-wide service hues (index.css --service-*),
-// the same identity the ServiceTag uses everywhere else. Never pink-for-eggs /
-// blue-for-sperm: that is gendered color coding and the brand forbids it.
-const AI_INTRO_SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; hue: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
-  "Fertility Clinic": { icon: Stethoscope, hue: "--service-ivf", label: "Top Clinics", imageKey: "onboardingClinicImageUrl", chatText: "I found a great match for you! A top-rated fertility clinic near you", replyText: "Tell me more about the clinic!" },
-  "Egg Donor": { icon: FlaskConical, hue: "--service-egg-donation", label: "Egg Donors", imageKey: "onboardingEggDonorImageUrl", chatText: "I found an amazing egg donor that matches your preferences!", replyText: "She sounds great!" },
-  "Surrogate": { icon: Baby, hue: "--service-surrogacy", label: "Surrogates", imageKey: "onboardingSurrogateImageUrl", chatText: "I found a wonderful surrogate who's a perfect fit for your journey!", replyText: "Tell me more about her!" },
-  "Sperm Donor": { icon: Heart, hue: "--service-sperm-donation", label: "Sperm Donors", imageKey: "onboardingSpermDonorImageUrl", chatText: "I found a great sperm donor that matches what you're looking for!", replyText: "Tell me more!" },
-};
-
-function AiIntroServiceCard({ service, imageUrl, style }: { service: string; imageUrl: string | null; style: React.CSSProperties }) {
-  const config = AI_INTRO_SERVICE_CONFIG[service];
-  if (!config) return null;
-  const Icon = config.icon;
-  const resolvedUrl = imageUrl ? (getPhotoSrc(imageUrl) || imageUrl) : null;
-  return (
-    <div
-      className="absolute w-48 h-60 rounded-[var(--container-radius)] border border-border shadow-lg overflow-hidden"
-      style={{
-        ...style,
-        ...(resolvedUrl ? {} : { background: `linear-gradient(135deg, hsl(var(${config.hue}) / 0.18), hsl(var(${config.hue}) / 0.04))` }),
-      }}
-    >
-      {resolvedUrl ? (
-        <>
-          <img src={resolvedUrl} alt={config.label} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-3">
-            <span className="text-white text-sm font-semibold">{config.label}</span>
-          </div>
-        </>
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-          <div className="w-16 h-16 rounded-full bg-card/80 flex items-center justify-center">
-            <Icon className="w-8 h-8" style={{ color: `hsl(var(${config.hue}))` }} />
-          </div>
-          <span className="text-sm font-semibold text-foreground/80">{config.label}</span>
-        </div>
-      )}
-    </div>
-  );
+// After account creation the wizard shows "creating your account" and then
+// the meet-your-concierge screen WITHOUT changing route. Both are component
+// state, and logging in mid-wizard has remounted this page before (state
+// gone, the URL's account step clamped back to the code step for a flash,
+// the intro skipped). The phase therefore lives in sessionStorage with a
+// tiny subscriber list: a remounted instance boots straight into the right
+// screen, and the in-flight submit handler still reaches whichever instance
+// is mounted.
+type WizardPhase = "loading" | "intro" | null;
+const PHASE_KEY = "gostork:onboarding-phase:v1";
+const phaseListeners = new Set<(p: WizardPhase) => void>();
+function readPhase(): WizardPhase {
+  try {
+    const v = sessionStorage.getItem(PHASE_KEY);
+    return v === "loading" || v === "intro" ? v : null;
+  } catch { return null; }
+}
+function setPhase(p: WizardPhase) {
+  try { if (p) sessionStorage.setItem(PHASE_KEY, p); else sessionStorage.removeItem(PHASE_KEY); } catch { /* noop */ }
+  phaseListeners.forEach((fn) => fn(p));
 }
 
 const TOTAL_STEPS_AUTHENTICATED = 5;
@@ -268,8 +248,13 @@ export default function OnboardingPage() {
   }, [setSearchParams]);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [submitting, setSubmitting] = useState(false);
-  const [showLoading, setShowLoading] = useState(false);
-  const [showAiIntro, setShowAiIntro] = useState(false);
+  const [showLoading, setShowLoading] = useState<boolean>(() => readPhase() === "loading");
+  const [showAiIntro, setShowAiIntro] = useState<boolean>(() => readPhase() === "intro");
+  useEffect(() => {
+    const fn = (p: WizardPhase) => { setShowLoading(p === "loading"); setShowAiIntro(p === "intro"); };
+    phaseListeners.add(fn);
+    return () => { phaseListeners.delete(fn); };
+  }, []);
   type RegistrationError = { type: "emailExists" } | { type: "message"; message: string };
   const [registrationError, setRegistrationError] = useState<RegistrationError | null>(null);
 
@@ -370,6 +355,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (isLoading || clampedOnceRef.current) return;
     clampedOnceRef.current = true;
+    if (readPhase()) return; // account creation in flight: the phase screen is showing, never clamp under it
     const firstIncomplete = (() => {
       // Members always re-enter their phone after a reload: the code was sent
       // in a session that no longer exists, and a stale draft must never carry
@@ -458,7 +444,7 @@ export default function OnboardingPage() {
   };
 
   const handleSubmit = async () => {
-    setShowLoading(true);
+    setPhase("loading");
     setSubmitting(true);
 
     try {
@@ -521,7 +507,7 @@ export default function OnboardingPage() {
         // member joins the conversation in progress instead of re-running
         // the intro and the persona picker.
         setTimeout(() => {
-          setShowLoading(false);
+          setPhase(null);
           setSubmitting(false);
           navigate("/chat", { replace: true });
         }, 2000);
@@ -529,11 +515,10 @@ export default function OnboardingPage() {
       }
 
       setTimeout(() => {
-        setShowLoading(false);
-        setShowAiIntro(true);
+        setPhase("intro");
       }, 2000);
     } catch (err: any) {
-      setShowLoading(false);
+      setPhase(null);
       setSubmitting(false);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
@@ -755,69 +740,16 @@ export default function OnboardingPage() {
     const matchmakers: Matchmaker[] = (brand?.matchmakers || [])
       .filter((m: Matchmaker) => m.isActive)
       .sort((a: Matchmaker, b: Matchmaker) => a.sortOrder - b.sortOrder);
-    const concierge = matchmakers[0];
-    const conciergeName = concierge?.name?.trim() || null;
-    const visibleServices = data.goals.filter(g => AI_INTRO_SERVICE_CONFIG[g]).slice(0, 2);
-    if (visibleServices.length === 0) visibleServices.push("Fertility Clinic", "Egg Donor");
-    if (visibleServices.length === 1) {
-      const fallback = Object.keys(AI_INTRO_SERVICE_CONFIG).find(k => !visibleServices.includes(k));
-      if (fallback) visibleServices.push(fallback);
-    }
-    const getImageUrl = (service: string): string | null => {
-      const key = AI_INTRO_SERVICE_CONFIG[service]?.imageKey;
-      if (!key || !brand) return null;
-      return (brand as any)[key] || null;
-    };
+    // No persona is chosen yet (that is the next screen), so the preview
+    // shows the house concierge only when there is exactly one.
+    const concierge = matchmakers.length === 1 ? matchmakers[0] : null;
     return (
-      <div
-        className="fixed inset-0 bg-background flex flex-col items-center justify-between px-6"
-        style={{ paddingTop: "max(3rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(3rem, env(safe-area-inset-bottom, 0px))" }}
-        data-testid="onboarding-ai-intro"
-      >
-        <div className="max-w-md w-full flex flex-col items-center flex-1">
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight text-center mb-8" style={{ fontFamily: "var(--font-display)" }} data-testid="text-ai-intro-title">
-            {conciergeName ? `Now let's meet ${conciergeName}` : "Now let's meet your concierge"}
-          </h1>
-          <div className="relative w-72 h-72 mx-auto mb-6">
-            <AiIntroServiceCard service={visibleServices[1]} imageUrl={getImageUrl(visibleServices[1])} style={{ left: "8px", top: "16px", transform: "rotate(-6deg)", zIndex: 1 }} />
-            <AiIntroServiceCard service={visibleServices[0]} imageUrl={getImageUrl(visibleServices[0])} style={{ right: "8px", top: "0px", transform: "rotate(4deg)", zIndex: 2 }} />
-            <div className="absolute bottom-0 left-0 right-0 z-10 flex items-end gap-2">
-              {concierge?.avatarUrl ? (
-                <img src={getPhotoSrc(concierge.avatarUrl) || undefined} alt={concierge.name} className="w-10 h-10 rounded-full object-cover border-2 border-background flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 border-2 border-background" aria-hidden="true">
-                  {conciergeName ? (
-                    <span className="text-primary-foreground text-sm font-bold">{conciergeName.charAt(0).toUpperCase()}</span>
-                  ) : (
-                    <Sparkles className="w-5 h-5 text-primary-foreground" />
-                  )}
-                </div>
-              )}
-              <div className="bg-muted rounded-[var(--radius)] rounded-bl-none px-4 py-3 shadow-sm max-w-[220px]">
-                <p className="text-sm text-foreground">{AI_INTRO_SERVICE_CONFIG[visibleServices[0]]?.chatText || "I found a great match for you!"}</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end w-full max-w-xs mb-8">
-            <div className="bg-primary text-primary-foreground rounded-[var(--radius)] rounded-br-none px-4 py-2.5">
-              <p className="text-sm">{AI_INTRO_SERVICE_CONFIG[visibleServices[0]]?.replyText || "Tell me more!"}</p>
-            </div>
-          </div>
-          <p className="t-helper text-center leading-relaxed max-w-sm mx-auto">
-            {conciergeName ?? "Your concierge"} can answer most questions right away. When something needs a person, the {brandName} team steps in.
-          </p>
-        </div>
-        <div className="w-full max-w-md mt-6">
-          <Button
-            size="lg"
-            onClick={() => navigate("/matchmaker-selection", { replace: true })}
-            data-testid="btn-ai-intro-continue"
-            className="w-full h-auto py-4 text-lg"
-          >
-            Continue
-          </Button>
-        </div>
-      </div>
+      <AiIntroScreen
+        goals={data.goals}
+        concierge={concierge}
+        brand={brand}
+        onContinue={() => { setPhase(null); navigate("/matchmaker-selection", { replace: true }); }}
+      />
     );
   }
 

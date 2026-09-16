@@ -83,7 +83,8 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
   const family = p.familyType ? FAMILY_LABEL[p.familyType] || titleCase(String(p.familyType)) : derivedFamily;
   if (family) facts.push({ key: "family", label: "Family", value: family });
 
-  const home = [u?.city, u?.state].filter(Boolean).join(", ");
+  // "New York, New York" reads as a stutter; one name when city and state match.
+  const home = [u?.city, u?.state].filter(Boolean).filter((v, i, arr) => i === 0 || String(v).trim().toLowerCase() !== String(arr[0]).trim().toLowerCase()).join(", ");
   if (home) facts.push({ key: "home", label: "Home", value: home });
 
   const services: string[] = [];
@@ -113,7 +114,8 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
   // at least two things.
   if (facts.length < 2 && !isMember) return null;
 
-  const line = facts.map(f => f.value).join(" · ");
+  // Labelled pairs: a bare "38" or "Egg Donor" is ambiguous on the fold line.
+  const line = facts.map(f => `${f.label} ${f.value}`).join(" · ");
   const who = conciergeName || "your concierge";
 
   return (
@@ -122,22 +124,25 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
       style={{ borderRadius: "var(--chat-bubble-radius, 20px)" }}
       data-testid="what-i-know-strip"
     >
-      <div className="flex items-center gap-2.5">
+      {/* The whole row toggles (44px tall on touch): the old 34x20 grey
+          "Show" was the only way to see what Eva has saved, and it rendered
+          in helper grey because the .t-helper colour beat the utility. */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls="what-i-know-facts"
+        className="w-full flex items-center gap-2.5 text-left -my-1 py-1 min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+        data-testid="what-i-know-toggle"
+      >
         <span className="t-micro-label whitespace-nowrap">So far</span>
         <span className="t-helper text-foreground min-w-0 flex-1 truncate" data-testid="what-i-know-line">
           {line || "Getting to know you"}
         </span>
-        <button
-          type="button"
-          onClick={() => setOpen(o => !o)}
-          aria-expanded={open}
-          aria-controls="what-i-know-facts"
-          className="t-helper text-primary font-ui whitespace-nowrap hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-          data-testid="what-i-know-toggle"
-        >
+        <span className="t-helper font-ui font-medium whitespace-nowrap" style={{ color: "hsl(var(--primary))" }} aria-hidden="true">
           {open ? "Hide" : "Show"}
-        </button>
-      </div>
+        </span>
+      </button>
 
       {isMember && (
         <p className="mt-2 flex items-center gap-2 t-helper text-foreground" data-testid="what-i-know-member">

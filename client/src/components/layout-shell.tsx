@@ -1177,7 +1177,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             )}
           </Link>
 
-          <nav className="hidden md:flex items-center justify-center gap-1 overflow-x-auto scrollbar-hide min-w-0" data-testid="nav-desktop">
+          <nav aria-label="Main" className="hidden md:flex items-center justify-center gap-1 overflow-x-auto scrollbar-hide min-w-0" data-testid="nav-desktop">
             {visibleNav.filter(item => !item.mobileOnly).map((item) => {
               const Icon = item.icon;
               const active = item.tabId
@@ -1277,6 +1277,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         }}
       >
       <nav
+        aria-label="Main"
         className="transition-all duration-300"
         style={onMarketplaceDeck
           ? {

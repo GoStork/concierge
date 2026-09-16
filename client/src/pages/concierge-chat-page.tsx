@@ -427,7 +427,7 @@ function AgreementSignCard({ card, brandColor, createdAt }: { card: { agreementI
         )}
         {createdAt && (
           <div className="flex justify-end">
-            <span style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }} className="whitespace-nowrap select-none">
+            <span style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.55)" as unknown as number }} className="whitespace-nowrap select-none">
               {new Date(createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
             </span>
           </div>
@@ -4458,7 +4458,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         return;
       }
       const remaining = rawLen - displayed;
-      const drain = Math.max(1, Math.ceil(remaining / 111));
+      const drain = (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
+        ? remaining // reduced motion: land the whole reply at once
+        : Math.max(1, Math.ceil(remaining / 111));
       const newDisplayed = Math.min(displayed + drain, rawLen);
       typingDisplayedRef.current = newDisplayed;
       const displayContent = stripStreamingTags(typingRawRef.current.slice(0, newDisplayed));
@@ -5205,6 +5207,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 ? (msg.senderName === "GoStork" ? "GoStork" : aiName || "AI")
                 : (aiName || "AI");
               const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
+              // Consecutive turns from the same left-side sender within five
+              // minutes share one avatar and name label; twelve identical
+              // "Adam" headers in one screen cost ~40px each on a phone.
+              const prevForGroup = i > 0 ? messages[i - 1] : null;
+              const continuesGroup = !alignRight && !!prevForGroup
+                && prevForGroup.role === msg.role
+                && (prevForGroup.senderType || null) === (msg.senderType || null)
+                && (prevForGroup.senderName || null) === (msg.senderName || null)
+                && !!prevForGroup.createdAt && !!msg.createdAt
+                && new Date(prevForGroup.createdAt).toDateString() === new Date(msg.createdAt).toDateString()
+                && Math.abs(new Date(msg.createdAt).getTime() - new Date(prevForGroup.createdAt).getTime()) < 5 * 60 * 1000;
               const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
               // For attachment messages, strip auto-generated placeholder text so only the file card shows
               const isAttachmentMsg = msg.uiCardType === "attachment";
@@ -5258,7 +5271,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {/* Avatar row - wraps every element of this message */}
               <div className={alignRight ? "flex justify-end" : "flex items-start gap-2"}>
                 {/* Avatar - left-aligned messages only */}
-                {!alignRight && (
+                {!alignRight && continuesGroup && <div className="w-8 shrink-0" aria-hidden="true" />}
+                {!alignRight && !continuesGroup && (
                   <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
                     {msgAvatarUrl ? (
                       <img src={msgAvatarUrl} alt={msgNameLabel} className="w-full h-full object-cover" />
@@ -5276,7 +5290,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 {/* Content column: name, match cards, bubble, all special cards, quick replies */}
                 <div className={`flex flex-col min-w-0 flex-1 ${alignRight ? "items-end" : "items-start"}`}>
                   {/* Name label */}
-                  {!alignRight && (
+                  {!alignRight && !continuesGroup && (
                     <span className="t-helper font-medium mb-0.5" data-testid={`name-label-${i}`}>
                       {msgNameLabel}
                     </span>
@@ -5394,6 +5408,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         if (qrOptions.length === 0) return null;
                         const isMulti = msg.multiSelect ?? !!(msg as any).uiCardData?.multiSelect;
                         const isBinary = qrOptions.length === 2 && !isMulti;
+                        // Filled-vs-muted only means something for a real yes/no
+                        // pair. "First time" vs "I've done IVF before" was drawn
+                        // as a right answer and a wrong one purely by position.
+                        const isYesNo = isBinary && isAffirmativeReply(qrOptions[0]) && /^(no\b|not\b|never\b|skip\b|later\b|maybe later|i(?:'| a)m not|don'?t|do not|no,)/i.test(qrOptions[1].trim());
                         return (
                           <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
                             {qrOptions.map((qr, qi) => {
@@ -5408,7 +5426,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                 color: qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff",
                                 border: "none",
                               };
-                              const chipStyle = isBinary
+                              const chipStyle = isYesNo
                                 ? qi === 0
                                   ? chipPositiveStyle
                                   : chipDeclineStyle
@@ -5421,7 +5439,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="transition-all hover:opacity-90 font-medium"
+                                  // 44px touch target on phones (the chips are the
+                                  // primary intake control); desktop keeps the
+                                  // brand's compact height.
+                                  className="transition-all hover:opacity-90 font-medium min-h-11 md:min-h-0"
                                   style={{
                                     borderRadius: "var(--quick-reply-radius, 999px)",
                                     fontSize: "var(--quick-reply-font-size, 13px)",
@@ -5450,7 +5471,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   data-testid={`quick-reply-${qi}`}
 
                                 >
-                                  {isBinary && qi === 0 && isAffirmativeReply(qr) && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
+                                  {isYesNo && qi === 0 && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
                                   {isSelected && <Check className="shrink-0" style={{ width: "11px", height: "11px", marginRight: "4px" }} />}
                                   {qr}
                                 </Button>
@@ -5670,9 +5691,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           {sending && (
             <div className="flex items-center gap-2 justify-start py-1" data-testid="chat-typing-indicator">
               <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-pulse" style={{ animationDelay: "0ms" }} />
+                <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
               </div>
               <span className="t-helper">{aiName || "AI Concierge"} is typing</span>
             </div>
@@ -5712,9 +5733,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         {!isOnline && (
           <div className="t-helper flex items-center justify-center gap-2 px-3 py-2 border-t bg-muted/40">
             <div className="flex gap-0.5">
-              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
-              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms" }} />
-              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-pulse" style={{ animationDelay: "0ms" }} />
+              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-pulse" style={{ animationDelay: "150ms" }} />
+              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-pulse" style={{ animationDelay: "300ms" }} />
             </div>
             <span>Connection lost - waiting to reconnect</span>
           </div>

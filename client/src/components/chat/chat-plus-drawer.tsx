@@ -95,6 +95,10 @@ export function ChatPlusDrawer({ open, actions, brandColor, onDismiss }: ChatPlu
                 <button
                   type="button"
                   role="menuitem"
+                  // Closed drawer is aria-hidden and pointer-events none, but
+                  // its items still took keyboard focus; keep them out of the
+                  // tab order until the drawer opens.
+                  tabIndex={open ? 0 : -1}
                   onClick={action.onClick}
                   disabled={action.disabled}
                   data-testid={action.testId || `plus-action-${action.id}`}

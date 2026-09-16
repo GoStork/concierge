@@ -81,7 +81,20 @@ function hash(s: string): number {
  * `turn` is any monotonically varying number (e.g. chat length) used to
  * alternate turns; pass 0 to always apply.
  */
+// The two questions a first-timer is least equipped to answer used to arrive
+// as the shortest bubbles in the intake, and on alternate turns with no
+// lead-in at all. These frames are fixed (never alternated, every persona):
+// one sentence on WHY it is asked, then the question verbatim so the suite's
+// contains-assertions and the aiAsked() detectors still match.
+const FIXED_FRAMES: Record<string, string> = {
+  d2_termination: "Agencies ask this early so you are never matched with someone whose values differ from yours.",
+  a3_twins: "Most clinics now transfer one embryo at a time, so this is about your preference, not a plan.",
+  d3_twins: "Most clinics now transfer one embryo at a time, so this is about your preference, not a plan.",
+};
+
 export function applyPersonaVoice(text: string, step: string, persona: PersonaLike, turn: number): string {
+  const frame = FIXED_FRAMES[step];
+  if (frame) return `${frame} ${text}`;
   const style = styleOf(persona);
   if (!style) return text;
   // Only short, single-question turns. Education blocks, curation summaries

@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { useQuery } from "@tanstack/react-query";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { MessageSquare } from "lucide-react";
 
 const SERVICE_LABELS: Record<string, string> = {
   "Fertility Clinic": "fertility clinic",
@@ -19,7 +20,20 @@ export default function OnboardingAiReadyPage() {
   const brandName = brand?.companyName || "GoStork";
 
   const matchmakers: Matchmaker[] = (brand?.matchmakers || []).filter(m => m.isActive);
-  const selected = matchmakers.find(m => m.id === matchmakerId) || matchmakers[0];
+  const selected = matchmakers.find(m => m.id === matchmakerId) || null;
+
+  // This screen announces the persona the parent just chose. Without a valid
+  // ?matchmaker= it used to fall back to the first persona and say "Ariel is
+  // ready" to someone who picked Adam; send them back to choose instead.
+  useEffect(() => {
+    if (brand && matchmakers.length > 0 && !selected) navigate("/matchmaker-selection", { replace: true });
+  }, [brand, matchmakers.length, selected, navigate]);
+
+  useEffect(() => {
+    const prev = document.title;
+    document.title = `${selected ? `${selected.name} is ready` : "Your concierge is ready"} - ${brandName}`;
+    return () => { document.title = prev; };
+  }, [selected, brandName]);
 
   const profileQuery = useQuery<{ interestedServices?: string[] }>({
     queryKey: ["/api/parent-profile"],
@@ -37,8 +51,12 @@ export default function OnboardingAiReadyPage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-background flex flex-col items-center justify-between py-12 px-6 overflow-y-auto" data-testid="onboarding-ai-ready">
-      <div className="max-w-md w-full flex flex-col items-center flex-1">
+    <div className="fixed inset-0 bg-background overflow-y-auto px-6" data-testid="onboarding-ai-ready">
+      <div
+        className="min-h-full max-w-md mx-auto flex flex-col items-center justify-between"
+        style={{ paddingTop: "max(3rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 0px))" }}
+      >
+      <div className="w-full flex flex-col items-center flex-1">
         {/* Selected avatar */}
         <div className="flex justify-center mb-4">
           {selected?.avatarUrl ? (
@@ -98,14 +116,11 @@ export default function OnboardingAiReadyPage() {
       </div>
 
       {/* CTA */}
-      <div className="w-full max-w-md mt-6">
-        <button
-          onClick={handleStart}
-          data-testid="btn-ai-ready-start"
-          className="w-full py-4 rounded-full text-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all duration-200"
-        >
+      <div className="w-full mt-6">
+        <Button size="lg" onClick={handleStart} data-testid="btn-ai-ready-start" className="w-full h-auto py-4 text-lg rounded-full">
           Let's go!
-        </button>
+        </Button>
+      </div>
       </div>
     </div>
   );

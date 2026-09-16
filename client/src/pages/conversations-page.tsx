@@ -2116,6 +2116,7 @@ const sendMessageMutation = useMutation({
             size="sm"
             className={`h-8 w-8 p-0 ${parentShowSidebar ? "md:hidden" : ""}`}
             onClick={() => setSelectedParentSession(null)}
+            aria-label="Back to conversations"
             data-testid="btn-back-parent-chat"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -2219,6 +2220,7 @@ const sendMessageMutation = useMutation({
                   }
                 }}
                 disabled={talkToTeamEscalated || !!selectedParentSession!.humanRequested}
+                aria-label={(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team notified" : "Talk to GoStork Team"}
                 data-testid="btn-talk-to-team"
               >
                 <Headphones className="w-3.5 h-3.5" />
