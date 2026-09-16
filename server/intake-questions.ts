@@ -621,11 +621,23 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   if (needsHelpFindingClinic && !skipClinicCycleForD1 && !internationalOnly) {
     const currentYear = new Date().getFullYear();
 
-    // A1: Age
+    // A1: Age. Ages are read from the reply that FOLLOWED the question, not
+    // only from a bare two-digit message: "I'm 38 and my husband is 41" answers
+    // A1 and A2 at once (observed live: it used to answer neither, and Eva
+    // asked the partner's age again, then ignored the correction).
+    const AGE_RE = /(?<!\d)(1[89]|[2-6]\d|70)(?!\d)/g;
+    const agesInText = (t: string): number[] => Array.from((t || "").matchAll(AGE_RE)).map(m => parseInt(m[1], 10));
+    const repliesAfter = (aiPattern: RegExp): string[] => {
+      const aiIdx = chatHistory.findLastIndex((m: any) => m.role === "assistant" && aiPattern.test(m.content || ""));
+      if (aiIdx === -1) return [];
+      return chatHistory.slice(aiIdx + 1).filter((m: any) => m.role === "user").map((m: any) => m.content || "");
+    };
     const a1Asked = aiAsked(chatHistory, /^how old are you\?$|how old are you\?.*\[\[/i)
       || aiAsked(chatHistory, /how old are you/i);
     const ageFromProfile = profile?.birthYear ? currentYear - profile.birthYear : null;
-    const ageAnsweredInChat = chatHistory.some((m: any) =>
+    const a1Replies = repliesAfter(/how old are you/i);
+    const agesFromA1Reply = a1Replies.length ? agesInText(a1Replies[0]) : [];
+    const ageAnsweredInChat = agesFromA1Reply.length >= 1 || chatHistory.some((m: any) =>
       m.role === "user" && /^\d{2}$/.test((m.content || "").trim()) && parseInt((m.content || "").trim()) >= 18 && parseInt((m.content || "").trim()) <= 70
     );
     const a1Answered = !!(ageFromProfile) || ageAnsweredInChat;
@@ -637,12 +649,9 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
     if (!isSoloSkip) {
       const a2Asked = aiAsked(chatHistory, /how old is your partner/i);
       const partnerAgeFromProfile = profile?.partnerBirthYear ? currentYear - profile.partnerBirthYear : null;
-      const partnerAgeAnsweredInChat = a1Answered && chatHistory.some((m: any, idx: number) => {
-        if (m.role !== "user") return false;
-        const prevAi = chatHistory.slice(0, idx).reverse().find((p: any) => p.role === "assistant");
-        if (!prevAi) return false;
-        return /how old is your partner/i.test(prevAi.content || "") && /^\d{2}$/.test((m.content || "").trim());
-      });
+      const partnerAgeInA1Reply = agesFromA1Reply.length >= 2;
+      const a2Replies = repliesAfter(/how old is your partner/i);
+      const partnerAgeAnsweredInChat = a1Answered && (partnerAgeInA1Reply || (a2Replies.length > 0 && agesInText(a2Replies[0]).length >= 1));
       const a2Answered = !!(partnerAgeFromProfile) || partnerAgeAnsweredInChat;
       if (!a2Asked && !a2Answered) {
         return { step: "a2_partner_age", text: "And how old is your partner?" };

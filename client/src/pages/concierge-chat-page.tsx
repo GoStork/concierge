@@ -4605,14 +4605,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const genericWord = /^(yes|yeah|yep|no|nope|not|sure|ok|okay|correct|exactly|right|really|quite|absolutely|definitely|that'?s|it'?s|i'?m|i|we|do|does|don'?t|did|is|it|am|are|yet|now|please|thanks|thank|you)$/i;
     const isGenericConfirmation = o.split(/[^a-z']+/i).filter(Boolean).every(w => genericWord.test(w));
     if ((isAffirmative || isNegative) && isGenericConfirmation) {
-      if (/surrogacy|surrogate/i.test(q))
-        return isAffirmative ? "Yes, I'm looking into surrogacy" : "No, I'm not specifically looking into surrogacy";
-      if (/egg donation|egg donor/i.test(q))
-        return isAffirmative ? "Yes, I'm looking into egg donation" : "No, I'm not specifically looking into egg donation";
-      if (/sperm donation|sperm donor/i.test(q))
-        return isAffirmative ? "Yes, I'm looking into sperm donation" : "No, I'm not specifically looking into sperm donation";
-      if (/ivf clinic|fertility clinic/i.test(q))
-        return isAffirmative ? "Yes, I'm looking for a fertility clinic" : "No, I'm not specifically looking for a clinic";
+      // A decline must never put a STRONGER claim in the parent's mouth. The
+      // old expansion "No, I'm not specifically looking for a clinic" contained
+      // the word "clinic", which the server's service-mention scan then read as
+      // wanting one (observed live: two dads routed into the clinic cycle). A
+      // decline now carries no service word at all and simply opens the
+      // correction path.
+      if (isNegative) return "Not exactly - let me tell you what I'm looking for";
+      if (/surrogacy|surrogate/i.test(q)) return "Yes, I'm looking into surrogacy";
+      if (/egg donation|egg donor/i.test(q)) return "Yes, I'm looking into egg donation";
+      if (/sperm donation|sperm donor/i.test(q)) return "Yes, I'm looking into sperm donation";
+      if (/ivf clinic|fertility clinic/i.test(q)) return "Yes, I'm looking for a fertility clinic";
     }
 
     // Already descriptive (e.g. "My own eggs", "Donor sperm", "A gestational surrogate")

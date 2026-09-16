@@ -31,6 +31,7 @@ import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
 import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Costs } from "./intake-questions";
+import { applyPersonaVoice, buildIntakeAck, agesIn } from "./persona-voice";
 // Aliased: a pre-existing LOCAL boolean `looksLikeProfileQuestion` (the
 // chat-subject context injector's own substring heuristic, ~line 5821)
 // shadows the imported name inside the /chat handler scope.
@@ -5206,10 +5207,17 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ") + " " + userMessage.toLowerCase();
     const skipDirectives: string[] = [];
 
-    const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
-    const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages);
-    const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages);
-    const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
+    // A service counts as "mentioned" only in a message that is not negating
+    // it: "No, I'm not specifically looking for a clinic" used to match
+    // /clinic/ and flip needsClinic on, sending a couple who had just declined
+    // a clinic straight into the clinic cycle (observed live 2026-09-15).
+    const mentionMsgs = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).concat([userMessage.toLowerCase()]);
+    const NEGATED = /\b(not|no|never|don'?t|do not|won'?t|without)\b.{0,30}\b(looking|need|want|interested|plan)/i;
+    const mentions = (re: RegExp) => mentionMsgs.some(m => re.test(m) && !NEGATED.test(m));
+    const mentionsEggDonor = mentions(/egg\s*donor|need.*egg|donor\s*egg/i);
+    const mentionsSurrogate = mentions(/surrogate|surrogacy|need.*surrogate/i);
+    const mentionsClinic = mentions(/ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i);
+    const mentionsSpermDonor = mentions(/sperm\s*donor|need.*sperm/i);
     // "Already has X" must be detected per SINGLE message. These were previously
     // tested against ALL user messages joined into one string, so ".*" matched
     // across message boundaries: "I need help finding a clinic" + a later
@@ -7728,10 +7736,15 @@ ${phase0Section}`;
           });
 
           if (intakeQuestion) {
-            finalContent = intakeQuestion.text;
-            sse.sendToken(intakeQuestion.text);
+            // Acknowledge a repeat / correction / two-in-one answer BEFORE the
+            // next question, and let the chosen persona colour the scripted
+            // turn. Question sentence and quick-reply tags stay verbatim.
+            const ack = buildIntakeAck(userMessage, lastAiContent);
+            const voiced = applyPersonaVoice(intakeQuestion.text, intakeQuestion.step, matchmaker, ack ? 0 : chatHistory.length);
+            finalContent = ack ? `${ack} ${voiced.charAt(0).toUpperCase()}${voiced.slice(1)}` : voiced;
+            sse.sendToken(finalContent);
             serverBypassServed = true; mark("bypass_served");
-            console.log(`[INTAKE BYPASS] Serving step=${intakeQuestion.step}: "${intakeQuestion.text.slice(0, 80)}"`);
+            console.log(`[INTAKE BYPASS] Serving step=${intakeQuestion.step}: "${finalContent.slice(0, 80)}"`);
           }
         }
 
@@ -8707,9 +8720,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Needs
+        // Needs. A negated sentence ("not looking for a clinic") must never
+        // read as a need - the old regex matched "looking for a clinic" inside it.
+        const negatedNeed = /\b(not|no|never|don'?t|do not)\b.{0,30}\b(looking|need|want|interested)/.test(msg);
         if (extractedProfile?.needsClinic == null) {
-          if (/\b(need|want|looking for|find) (a |an )?(fertility )?clinic\b/.test(msg)) {
+          if (!negatedNeed && /\b(need|want|looking for|find) (a |an )?(fertility )?clinic\b/.test(msg)) {
             autoProfileData.needsClinic = true;
           } else if (/\balready have (a |an )?(fertility )?clinic\b|\bi have a clinic\b/.test(msg)) {
             autoProfileData.needsClinic = false;
@@ -8722,12 +8737,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // user saying "I already have a surrogate" / "I already have an egg donor" MUST
         // be able to flip those defaults back to false. Previously the `== null` guard
         // prevented any override, leaving TD-06 etc. with stale defaults.
-        if (/\b(need|want|looking for|find) (a |an )?surrogate\b/.test(msg)) {
+        if (!negatedNeed && /\b(need|want|looking for|find) (a |an )?surrogate\b/.test(msg)) {
           autoProfileData.needsSurrogate = true;
         } else if (/\balready have (a |an )?surrogate\b/.test(msg)) {
           autoProfileData.needsSurrogate = false;
         }
-        if (/\b(need|want|looking for|find) (a |an )?egg donor\b/.test(msg)) {
+        if (!negatedNeed && /\b(need|want|looking for|find) (a |an )?egg donor\b/.test(msg)) {
           autoProfileData.needsEggDonor = true;
         } else if (/\balready have (a |an )?egg donor\b/.test(msg)) {
           autoProfileData.needsEggDonor = false;
@@ -8747,15 +8762,28 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Age -> birthYear -> dateOfBirth
+        // Age -> birthYear -> dateOfBirth. A compound answer ("I'm 38 and my
+        // husband is 41") saves BOTH ages, so the next turn never asks for the
+        // partner's age again (observed live: it did, and then ignored the
+        // parent's "he's 41, like I said").
+        const lastAiForAges = chatHistory.filter((m: any) => m.role === "assistant").slice(-1)[0]?.content || "";
+        const askedOwnAge = /how old are you/i.test(lastAiForAges);
+        const askedPartnerAge = /how old is your partner/i.test(lastAiForAges);
+        const agesInMsg = agesIn(msg);
         if (!userRecord.dateOfBirth) {
           const ageMatch = msg.match(/\bi('m| am) (\d{2})\b|\bage[d]? (\d{2})\b|\b(\d{2}) years? old\b/);
-          if (ageMatch) {
-            const age = parseInt(ageMatch[2] || ageMatch[3] || ageMatch[4], 10);
-            if (age >= 18 && age <= 80) {
-              autoUserData.dateOfBirth = new Date(new Date().getFullYear() - age, 0, 1);
-            }
+          const age = ageMatch ? parseInt(ageMatch[2] || ageMatch[3] || ageMatch[4], 10)
+            : (askedOwnAge && agesInMsg.length >= 1 ? agesInMsg[0] : null);
+          if (age && age >= 18 && age <= 80) {
+            autoUserData.dateOfBirth = new Date(new Date().getFullYear() - age, 0, 1);
           }
+        }
+        if (!userRecord.partnerAge) {
+          const partnerMatch = msg.match(/\b(husband|wife|partner|spouse|he|she|they)\b[^\d]{0,20}\b(\d{2})\b/);
+          const partnerAge = partnerMatch ? parseInt(partnerMatch[2], 10)
+            : (askedOwnAge && agesInMsg.length >= 2 ? agesInMsg[1]
+              : (askedPartnerAge && agesInMsg.length >= 1 ? agesInMsg[0] : null));
+          if (partnerAge && partnerAge >= 18 && partnerAge <= 80) autoUserData.partnerAge = partnerAge;
         }
 
         // Persist what we found
