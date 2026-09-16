@@ -20,6 +20,9 @@ import { parsePhoneNumberFromString } from "libphonenumber-js";
 import MembersTable from "@/components/members-table";
 import ImageUploader from "@/components/image-uploader";
 import CompanyTab from "@/components/company-tab";
+import { TwoFactorCard } from "@/components/security/two-factor-card";
+import { StaffTwoFactorCard } from "@/components/security/staff-two-factor-card";
+import { AuthLogCard } from "@/components/security/auth-log-card";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import DoctorsDatabasePanel from "@/components/doctors-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
@@ -100,6 +103,12 @@ const allTabs = [
   { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
   { to: '/account/automation', label: 'Automation', icon: RefreshCw, roles: 'provider' as const },
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
+  // Sign-in security: two-factor enrollment for everyone, plus the team
+  // coverage table and the sign-in audit log for GoStork staff. Lives here
+  // rather than only at /admin/security because that link is in the desktop
+  // avatar dropdown, which does not exist on mobile - there was no way to
+  // reach enrollment from a phone.
+  { to: '/account/security', label: 'Security', icon: Shield, roles: null },
   // Money & compliance
   { to: '/account/legal-identity', label: 'Legal', icon: FileSignature, roles: 'provider' as const },
   { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
@@ -1744,6 +1753,28 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
   );
 }
 
+/**
+ * Settings -> Security. Two-factor enrollment is for every account; the team
+ * coverage table and the sign-in audit log are GoStork staff only. The same
+ * three cards are mounted at /admin/security - shared components, never forked.
+ */
+function SecurityTab() {
+  const { user } = useAuth();
+  const roles: string[] = (user as any)?.roles || [];
+  const isGostorkTeam = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE", "GOSTORK_DEVELOPER"].some((r) => roles.includes(r));
+  return (
+    <div className="space-y-4">
+      <TwoFactorCard />
+      {isGostorkTeam && (
+        <>
+          <StaffTwoFactorCard />
+          <AuthLogCard />
+        </>
+      )}
+    </div>
+  );
+}
+
 function TeamTab() {
   const { user } = useAuth();
   if (!user) return null;
@@ -1864,7 +1895,7 @@ export default function AccountPage() {
     '/account/costs', '/account/documents', '/account/billing', '/account/payouts', '/account/parent-form',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
     '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
-    '/account/members', '/account/scrapers', '/account/test-runner',
+    '/account/members', '/account/security', '/account/scrapers', '/account/test-runner',
   ];
   // GoStork admins have no legal-identity form to fill first: for them the
   // legal-identity route is the global W-9 template + tracking view, which
@@ -1873,7 +1904,7 @@ export default function AccountPage() {
     '/account', '/account/company', '/account/calendar', '/account/team',
     '/account/documents', '/account/legal-identity',
     '/account/sponsorship', '/account/automation', '/account/playbooks', '/account/concierge', '/account/branding',
-    '/account/parent-form', '/account/ip-form-template', '/account/scrapers', '/account/test-runner',
+    '/account/parent-form', '/account/ip-form-template', '/account/security', '/account/scrapers', '/account/test-runner',
   ];
   const tabOrder = isAdmin ? adminTabOrder : providerTabOrder;
 
@@ -1991,6 +2022,7 @@ export default function AccountPage() {
         {/* Memory merged into the AI Concierge tab - keep old links working. */}
         <Route path="memory" element={<Navigate to="/account/concierge" replace />} />
         <Route path="calendar" element={<CalendarTab />} />
+        <Route path="security" element={<SecurityTab />} />
         {isProvider && !isAdmin && providerId && (
           <Route path="billing" element={
             <ProviderBillingTab
