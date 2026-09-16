@@ -1513,9 +1513,9 @@ Also required on the production host before this ships:
 - `TEST_RUNNER_TOKEN` if the admin test-runner dashboard is used there.
 
 **Still open after this pass (ranked, none fixed yet):**
-1. **No Content-Security-Policy.** The SPA ships inline bootstrap script, so a
-   CSP needs a nonce/hash pass through the Vite build. Highest-value remaining
-   header.
+1. ~~No Content-Security-Policy~~ **DONE 2026-09-16.** See 10d. (The earlier
+   note here was wrong: the built index.html carries no inline script, so no
+   nonce plumbing was needed and `script-src 'self'` was enough.)
 2. ~~No 2FA for `GOSTORK_ADMIN`~~ **DONE 2026-09-16** - TOTP two-factor for the
    three GoStork staff roles, with recovery codes, replay protection and a
    grace period. See 10c. Account lockout is still not implemented; only the IP
@@ -1614,6 +1614,52 @@ per-IP control above.
 Still missing on top of this: no account lockout after N failures, no alerting
 when the failure rate spikes (the rows exist, nothing watches them), and the
 log has no retention policy or off-box copy.
+
+### 10d. Content Security Policy (shipped 2026-09-16)
+
+`server/src/lib/csp.ts`, sent on document responses only (never on /api, which
+saves bytes and avoids fighting the image proxy's own tighter sandbox policy).
+
+**Kill switch: `CSP_MODE`.** `enforce` (default), `report` (send
+Content-Security-Policy-Report-Only, so nothing breaks while violations are
+collected) or `off`. Changing it needs a restart. If anything is reported
+broken in production and the cause is not obvious, set `CSP_MODE=report` and
+restart rather than debugging live.
+
+Violations POST to `/api/csp-report` and are logged as `[csp-violation]`, so
+grep the server log. The endpoint is unauthenticated by necessity (browsers
+send reports without credentials), so it is rate limited and body-capped.
+
+What the policy actually buys us, beyond defence in depth: `profile-detail-page`
+renders a SCRAPED url in an iframe whenever it merely contains "embed",
+"player" or "iframe", so an agency page we sync can frame arbitrary content
+into the app. `frame-src` is the control for that.
+
+Two directives are deliberately loose, and both are judgement calls:
+- `img-src`/`media-src` allow `https:` wholesale. Photos come from a long tail
+  of agency CDNs plus logo.dev, t2.gstatic.com, the LiveAvatar preview CDN and
+  GCS signed URLs. An enumerated list would silently hide donor photos as soon
+  as an agency changed host, and images are not an execution sink.
+- `style-src` allows `'unsafe-inline'`. Radix, framer-motion, vaul, embla and
+  our own components write inline style attributes everywhere, and
+  `components/ui/chart.tsx` injects a `<style>` tag. A nonce cannot cover
+  inline style ATTRIBUTES anyway.
+
+**Known behaviour change to watch.** Three places render an absolute URL that a
+person typed or a scraper found:
+`profile-detail-page.tsx` (an arbitrary embed URL, and a direct .mp4),
+and the consultation booking iframe in `concierge-chat-page.tsx` fed by
+`consultProvider.consultationBookingUrl`. Hosts outside the allowlist are now
+blocked. That is the correct outcome, but to whoever entered the URL it looks
+like a regression, so check `[csp-violation]` before assuming a bug.
+
+**Not verifiable from a dev box**, and therefore the most likely source of a
+surprise: a live Stripe payment, a live Daily video call, a PandaDoc signing
+iframe, and the LiveAvatar talking head. Their origins are allowlisted from a
+code inventory rather than from observed traffic. The LiveKit host in
+particular is handed out per session by LiveAvatar, so it is pinned by wildcard
+to `*.livekit.cloud`; if they ever move region hosts the avatar goes silent and
+the reason will appear at `/api/csp-report`.
 
 **Not tested in this pass** (needs access or authorization we did not have):
 the production host and its `.env`, the PROD Supabase project, Cloudflare/WAF

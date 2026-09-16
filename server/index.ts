@@ -37,6 +37,7 @@ import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
 import { sessionSecret, jwtSecret } from "./src/lib/app-secrets";
 import { authLimiter, passwordResetLimiter, publicWriteLimiter } from "./src/lib/rate-limits";
+import { buildCsp, cspMode, CSP_REPORT_PATH } from "./src/lib/csp";
 import { pool } from "./db";
 import path from "path";
 import { aiRouter } from "./ai-router";
@@ -135,16 +136,52 @@ process.on("uncaughtException", (err: any) => {
   // inline bootstrap script and would break silently. That is tracked as an
   // open item in docs/production-launch-runbook.md.
   app.disable("x-powered-by");
-  app.use((_req, res, next) => {
+  const isProd = process.env.NODE_ENV === "production";
+  const csp = buildCsp({ isProduction: isProd });
+  const mode = cspMode();
+  log(`[csp] mode=${mode}`);
+  app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", "geolocation=(), payment=(), usb=()");
-    if (process.env.NODE_ENV === "production") {
+    if (isProd) {
       res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    // The policy only governs documents. Sending it on JSON and images costs
+    // bytes on every response and buys nothing, and the image proxy sets its
+    // own much tighter sandbox policy.
+    if (mode !== "off" && !req.path.startsWith("/api/")) {
+      res.setHeader(
+        mode === "report" ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
+        csp,
+      );
     }
     next();
   });
+
+  // Where the browser posts CSP violations. Unauthenticated by necessity (the
+  // browser sends these without credentials), so it is rate limited and the
+  // body is capped. Reports are how we find out that a real agency video host
+  // or a payment iframe is being blocked, without a user having to report it.
+  app.post(
+    CSP_REPORT_PATH,
+    publicWriteLimiter,
+    express.json({ type: ["application/csp-report", "application/json"], limit: "8kb" }),
+    (req, res) => {
+      try {
+        const r = (req.body?.["csp-report"] || req.body || {}) as Record<string, any>;
+        const oneLine = (v: unknown, max = 300) =>
+          typeof v === "string" ? v.replace(/[\r\n\u2028\u2029]+/g, " ").slice(0, max) : null;
+        console.warn("[csp-violation]", JSON.stringify({
+          directive: oneLine(r["effective-directive"] || r["violated-directive"], 80),
+          blocked: oneLine(r["blocked-uri"], 300),
+          document: oneLine(r["document-uri"], 300),
+        }));
+      } catch { /* a malformed report must never cost us anything */ }
+      res.status(204).end();
+    },
+  );
 
   // Brute-force brakes on the unauthenticated auth surface (OWASP A07).
   app.use("/api/auth/login", authLimiter);
