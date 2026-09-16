@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { resolveTtsProvider, resolveVoiceForProvider, voiceProviderStatus } from "./voice-gateway";
 import { prisma } from "../db";
+import { jwtSecret } from "../src/lib/app-secrets";
 
 // HTTP companion to the voice WS gateway:
 //   GET  /api/voice/providers - admin: which TTS/STT vendors have API keys set
@@ -19,7 +20,7 @@ voiceRouter.use(async (req: any, _res: any, next: any) => {
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const jwt = (await import("jsonwebtoken")).default;
-        const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "dev-jwt-secret-change-me") as any;
+        const payload = jwt.verify(authHeader.slice(7), jwtSecret()) as any;
         if (payload?.sub) {
           const jwtUser = await prisma.user.findUnique({ where: { id: payload.sub } });
           if (jwtUser && !jwtUser.isDisabled) {

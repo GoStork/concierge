@@ -197,8 +197,11 @@ export class VideoService implements OnModuleInit {
   ): boolean {
     const secret = process.env.DAILY_WEBHOOK_SECRET;
     if (!secret) {
-      this.logger.warn("DAILY_WEBHOOK_SECRET not set - skipping signature verification");
-      return true;
+      // SECURITY (OWASP A08): fail CLOSED. Returning true here meant a missing
+      // env var silently accepted every forged webhook, and the handler mutates
+      // bookings and recordings from the payload's room_name.
+      this.logger.error("DAILY_WEBHOOK_SECRET not set - rejecting webhook (cannot verify signature)");
+      return false;
     }
     if (!signature) return false;
 

@@ -27,3 +27,8 @@ dump.rdb
 graphify-out/
 scripts/test-results/
 /out.mp4
+
+# Live session cookie jars from curl-based manual testing. cookies.txt and
+# cookies2.txt were COMMITTED with real connect.sid values (untracked 2026-09-16
+# during the OWASP review). Never commit a session cookie.
+cookies*.txt

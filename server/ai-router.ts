@@ -39,6 +39,7 @@ import { looksLikeProfileQuestion as isInterrogativeShaped } from "./question-sh
 import { turnTimingStore, newTurnTimings, mark, recordToolCall, recordInterceptor, snapshotTurnTimings, timeSpan } from "./turn-timing";
 import { trackGemini } from "./src/lib/gemini-usage";
 import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
+import { jwtSecret } from "./src/lib/app-secrets";
 
 // Tier2 model id, resolved once so the cost meter and the SDK call can never
 // disagree about which model was billed. TIER2_MODEL overrides for A/B.
@@ -1653,7 +1654,7 @@ aiRouter.use(async (req: any, _res: any, next: any) => {
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const token = authHeader.slice(7);
-        const secret = process.env.JWT_SECRET || "dev-jwt-secret-change-me";
+        const secret = jwtSecret();
         const payload = jwt.verify(token, secret) as any;
         if (payload?.sub) {
           const user = await prisma.user.findUnique({ where: { id: payload.sub } });
@@ -2531,8 +2532,11 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       : "fertility services";
     const conciergeNameLabel = matchmakerRecord?.name || "your concierge";
     const defaultGreeting = interestedServices.length > 0
-      ? `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. I see you're looking into ${serviceLabel} - is that correct? [[QUICK_REPLY:Yes, that's right|Not exactly]]`
-      : `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. What are you looking for help with? [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
+      // The persona was introduced by the picker and the "Adam is ready"
+      // screen seconds ago; a third "I'm Adam, your GoStork AI concierge"
+      // was the parent's first bubble. Lead with them instead.
+      ? `Hi ${firstName}! I see you're looking into ${serviceLabel} - is that correct? [[QUICK_REPLY:Yes, that's right|Not exactly]]`
+      : `Hi ${firstName}! What are you looking for help with? [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
     // Use the matchmaker's initialGreeting template from DB with [First Name]/[Service]/[Location] replaced.
     // Fall back to defaultGreeting if no template is set.
     const templateGreeting = matchmakerRecord?.initialGreeting

@@ -2,6 +2,7 @@ import { Injectable, Inject } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { randomUUID } from "crypto";
+import { assertPublicHttpUrl, SsrfBlockedError } from "../../lib/ssrf-guard";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -131,35 +132,26 @@ export class KnowledgeService {
     return { chunks };
   }
 
-  private validateExternalUrl(url: string): void {
-    let parsed: URL;
+  /**
+   * SECURITY (OWASP A01 SSRF). This used to be a string-prefix blocklist, which
+   * `127.1`, `0177.0.0.1`, `2130706433`, `[::ffff:127.0.0.1]`, CGNAT
+   * `100.64/10` and any attacker-owned hostname with a private A record all
+   * walked straight past. It also over-blocked public `172.32.x`. The shared
+   * guard resolves DNS and checks every resolved address instead.
+   *
+   * Residual risk: fetchHtml() below follows redirects internally, so a public
+   * URL that 302s to a private one is not covered here. Tracked in the launch
+   * runbook - closing it means routing the shared scraper engine through
+   * safeFetch, which touches the nightly syncs.
+   */
+  private async validateExternalUrl(url: string): Promise<void> {
     try {
-      parsed = new URL(url);
-    } catch {
+      await assertPublicHttpUrl(url);
+    } catch (e: any) {
+      if (e instanceof SsrfBlockedError) {
+        throw new Error("URL points to a restricted address");
+      }
       throw new Error("Invalid URL");
-    }
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      throw new Error("Only HTTP/HTTPS URLs are allowed");
-    }
-    const hostname = parsed.hostname.toLowerCase();
-    const blockedHostnames = [
-      "localhost",
-      "127.0.0.1",
-      "0.0.0.0",
-      "::1",
-      "[::1]",
-      "metadata.google.internal",
-      "169.254.169.254",
-    ];
-    if (
-      blockedHostnames.includes(hostname) ||
-      hostname.endsWith(".local") ||
-      hostname.endsWith(".internal") ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("172.") ||
-      hostname.startsWith("192.168.")
-    ) {
-      throw new Error("URL points to a restricted address");
     }
   }
 
@@ -181,7 +173,7 @@ export class KnowledgeService {
     url: string,
     providerId: string,
   ): Promise<{ chunks: number; pages: number }> {
-    this.validateExternalUrl(url);
+    await this.validateExternalUrl(url);
 
     const PER_PAGE_CHAR_CAP = 20_000;
     const TOTAL_CHAR_CAP = 150_000;
@@ -204,11 +196,13 @@ export class KnowledgeService {
     const mainText = this.htmlToText(mainHtml).slice(0, PER_PAGE_CHAR_CAP);
     if (mainText.length >= 50) pageTexts.push(`PAGE: ${effectiveUrl}\n${mainText}`);
 
-    const subpageUrls = findSubpageUrls(mainHtml, effectiveUrl)
-      .filter((u) => {
-        try { this.validateExternalUrl(u); return true; } catch { return false; }
-      })
-      .slice(0, MAX_SUBPAGES);
+    const discovered = findSubpageUrls(mainHtml, effectiveUrl);
+    const checked = await Promise.all(
+      discovered.map(async (u) => {
+        try { await this.validateExternalUrl(u); return u; } catch { return null; }
+      }),
+    );
+    const subpageUrls = checked.filter((u): u is string => !!u).slice(0, MAX_SUBPAGES);
 
     const subpages = await Promise.allSettled(
       subpageUrls.map(async (u) => ({ url: u, html: (await fetchHtml(u, 20000)).html })),

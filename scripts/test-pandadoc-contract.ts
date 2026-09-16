@@ -38,7 +38,7 @@ function check(label: string, ok: boolean, detail?: string) {
 async function reportToDashboard(event: Record<string, unknown>): Promise<void> {
   try {
     await fetch(`${BASE}/api/admin/test-runner/event`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(event),
+      method: "POST", headers: { "Content-Type": "application/json", ...(process.env.TEST_RUNNER_TOKEN ? { "x-test-runner-token": process.env.TEST_RUNNER_TOKEN } : {}) }, body: JSON.stringify(event),
     });
   } catch { /* dashboard is optional */ }
 }

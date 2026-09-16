@@ -1440,12 +1440,123 @@ with no code change. Pinned to `prisma@^7.4.0` in devDependencies 2026-08-25.
   bypasses RLS. **Standing rule: every future migration that CREATEs a table must
   include `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` in the same file**, or the
   advisor alert comes back for that table.
-- [ ] PandaDoc webhook signature verification (section 5).
-- [ ] Audit other inbound webhook/callback routes for auth (Twilio inbound,
-  Stripe signature checks, cron route secret?).
-- [ ] Session cookie flags behind Cloudflare (secure, sameSite) verified.
+- [x] PandaDoc webhook signature verification (section 5). **DONE 2026-09-16** -
+  HMAC-SHA256 hex over the raw body, accepted from either `?signature=` or the
+  `x-pd-signature` header, constant-time compared, **fails closed**.
+- [x] Audit other inbound webhook/callback routes for auth. **DONE 2026-09-16** -
+  Stripe / Stripe Connect / Trolley already verified signatures; Daily.co was
+  **fail-open** when `DAILY_WEBHOOK_SECRET` was unset and now fails closed; no
+  inbound Twilio/SendGrid route exists.
+- [x] Session cookie flags (secure, httpOnly, sameSite) - **DONE 2026-09-16**,
+  `sameSite: "lax"` added; verify again from behind Cloudflare at cutover.
 - [ ] Admin accounts audit; remove/disable test admin logins.
-- [ ] Rate limiting sanity on auth + OTP routes at production traffic levels.
+- [x] Rate limiting on auth routes - **DONE 2026-09-16** (`server/src/lib/rate-limits.ts`:
+  20 attempts / 15 min on login, verify-otp, reset-password; 10 / hr on
+  forgot-password; 60 / 15 min on the client-error sink). Re-check the ceilings
+  against real production traffic before Phase B.
+
+### 10b. OWASP Top 10:2025 review - 2026-09-16 (what shipped, what is still open)
+
+Full review against the OWASP Top 10:2025 categories, tested live against the
+MacBook dev server. Fixed in that pass (all verified by re-test):
+
+- **A01** Public `POST /api/users` honoured a client-supplied `roles` array, so
+  an unauthenticated request could mint a `GOSTORK_ADMIN` and read every user
+  row. Self-serve signup is now always `PARENT` with no provider attachment.
+- **A01** `GET /api/uploads/gcs` had no auth guard - any object in the private
+  bucket (recordings, W-9s, signed agreements) was readable by path. Guarded.
+- **A01** `GET /api/uploads/proxy` was an unauthenticated SSRF / open proxy that
+  also echoed the upstream `Content-Type`, i.e. HTML-on-our-origin XSS. Now
+  goes through `server/src/lib/ssrf-guard.ts` (DNS resolution + reserved-range
+  block, re-checked on every redirect hop) and serves media types only.
+- **A01** `sync-config` GET/PUT and the sync triggers on
+  `/api/providers/:providerId/*` only checked "logged in", so any parent could
+  read and overwrite another agency's scraper credentials. Ownership enforced.
+- **A01** `POST /api/admin/test-runner/event` was unauthenticated on a
+  "localhost-only" assumption while bound to 0.0.0.0. Now needs
+  `TEST_RUNNER_TOKEN` or an admin session.
+- **A02** No security headers at all; Swagger `/docs` served the full 390-route
+  API surface in production. Headers added, `/docs` now dev-only
+  (`ENABLE_API_DOCS=true` to override on staging).
+- **A03** `npm audit`: 62 findings (1 critical `protobufjs` RCE) -> 21, zero
+  critical, via non-breaking `npm audit fix`. This bumped `@nestjs/core` to
+  11.2.5, which needs `@nestjs/common` 11.2.5 - **the two must stay in lockstep
+  or the esbuild server bundle fails to resolve `sse-signal.decorator`.**
+- **A04** Hardcoded fallbacks `SESSION_SECRET || "r3pl1t_s3cr3t_k3y_g0st0rk"`
+  and `JWT_SECRET || "dev-jwt-secret-change-me"` in 11 files. Replaced by
+  `server/src/lib/app-secrets.ts`, which **throws at boot** if either is unset
+  or under 32 chars. See the DEPLOY BLOCKER below.
+- **A07** Session fixation (no `regenerate()` on login) and no brute-force
+  brake. Both fixed.
+- **A08** PandaDoc unsigned webhook and Daily.co fail-open verification.
+- **A09** `/api/client-errors` accepted unauthenticated unbounded writes with
+  newlines, i.e. log injection into our only forensic record. Rate-limited and
+  control characters stripped.
+- **A10** The Express error handler returned `err.message` verbatim on 500,
+  leaking Prisma model/column names. 5xx bodies are generic now; there were no
+  `unhandledRejection` / `uncaughtException` handlers, and now there are.
+
+**DEPLOY BLOCKER - check before the first deploy that carries this change:**
+the production host `.env` MUST have `SESSION_SECRET` and `JWT_SECRET` set to
+at least 32 characters, or the server will refuse to boot. `SESSION_SECRET` was
+found EMPTY on the dev MacBook (the app was silently running on the hardcoded
+literal), so do not assume prod has it. Generate with
+`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
+Note that changing `SESSION_SECRET` invalidates all existing sessions - everyone
+is logged out once, which is intended after a secret that lived in git.
+
+Also required on the production host before this ships:
+- `PANDADOC_WEBHOOK_SECRET` (the per-subscription shared key from the PandaDoc
+  Dev Center). Unset = every signing webhook is rejected and agreements stop
+  completing.
+- `DAILY_WEBHOOK_SECRET` (now fails closed instead of accepting anything).
+- `TEST_RUNNER_TOKEN` if the admin test-runner dashboard is used there.
+
+**Still open after this pass (ranked, none fixed yet):**
+1. **No Content-Security-Policy.** The SPA ships inline bootstrap script, so a
+   CSP needs a nonce/hash pass through the Vite build. Highest-value remaining
+   header.
+2. **No 2FA for `GOSTORK_ADMIN`**, and no account lockout - only the new IP rate
+   limit. For a platform that already lost a Stripe account to takeover, admin
+   2FA belongs before Phase B.
+3. **No authentication audit log.** Login success/failure, password reset use,
+   role changes and admin actions write no row anywhere. `OtpAttempt` is the
+   only security log we have.
+4. **Password reset does not invalidate existing sessions or issued JWTs**, and
+   a logout does not revoke the 7-day JWT (no jti/denylist/token-version).
+   Someone who took over an account keeps their token after the victim resets.
+5. **Provider-agreement and W-9 guest signing tokens never expire** and have no
+   revocation field, unlike the IP-form guest tokens which do both. They grant
+   access to executed legal documents and tax forms.
+6. **21 npm vulnerabilities remain** (10 high, 10 moderate, 1 low) needing major
+   upgrades: `prisma`, `drizzle-orm` (SQL injection via unescaped identifiers),
+   `googleapis`, `exceljs`, `esbuild`, `sharp`. Each needs its own test pass.
+7. **`cookies.txt` / `cookies2.txt` were committed with real session cookies.**
+   Untracked and gitignored 2026-09-16, but they are still in git history -
+   removing them needs a history rewrite, which is Eran's call. The cookies are
+   localhost dev sessions, so impact is low.
+8. **`POST /api/cron/redeploy` runs a shell deploy script** behind one
+   non-constant-time secret compare, with no IP allowlist or replay protection.
+9. **The auto-deploy pipeline verifies nothing cryptographically** - anything on
+   `origin/main` is `git reset --hard`'d onto prod and migrated within 60s. No
+   signed commits, no author allowlist, no approval gate.
+10. **No per-user quota on `/api/ai-concierge/chat`.** `gemini-usage.ts` meters
+    spend after the fact; it does not gate. One authenticated account can loop
+    the endpoint.
+11. **Public booking (`POST /api/calendar/book/:slug`) has no rate limit or
+    CAPTCHA**, and `booking/:token/confirm|decline` are state-changing GETs that
+    an email scanner can trigger.
+12. **Path traversal in `face-recognition.service.ts`** (`photoUrl` joined into
+    a path without stripping `../`) - limited to a sharp decode oracle, but it
+    should use `path.basename` like `uploads.controller.ts` does.
+13. **No `engines` / `.nvmrc`** - prod, both Macs and CI can run different Node
+    majors.
+
+**Not tested in this pass** (needs access or authorization we did not have):
+the production host and its `.env`, the PROD Supabase project, Cloudflare/WAF
+config, the GCS bucket IAM and object ACLs, Stripe/Twilio/SendGrid console
+settings, real PandaDoc-signed webhook traffic, and any authenticated
+penetration testing of the provider/admin UI beyond the API layer.
 
 ### 10a. Stripe account-takeover defense (lessons from the GoStork 1.0 breach, Aug-Sep 2024)
 

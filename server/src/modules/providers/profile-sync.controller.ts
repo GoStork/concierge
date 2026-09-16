@@ -95,12 +95,35 @@ export class ProfileSyncController {
     @Inject(StorageService) private readonly storageService: StorageService,
   ) {}
 
+  /**
+   * SECURITY (OWASP A01, cross-tenant): the class-level SessionOrJwtGuard only
+   * proves "someone is logged in". These routes read and WRITE another
+   * provider's scraper credentials (source URL, login URL, username, password,
+   * API key), so they must also prove the caller owns :providerId. Without
+   * this, any self-serve PARENT could read every agency's scraper config and
+   * overwrite it. Mirrors the check already used by stopSync/uploadPdfs/
+   * updateDonor in this same file.
+   */
+  private assertCanManageSync(req: any, providerId: string) {
+    const user = req?.user;
+    if (!user) throw new ForbiddenException("Not authenticated");
+    const isGostorkAdmin =
+      user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_DEVELOPER");
+    if (isGostorkAdmin) return;
+    const isProviderAdmin = user.roles?.includes("PROVIDER_ADMIN");
+    if (!isProviderAdmin || user.providerId !== providerId) {
+      throw new ForbiddenException("You can only manage sync for your own provider");
+    }
+  }
+
   @Get("sync-config/:type")
   @ApiOperation({ summary: "Get sync configuration for a donor type" })
   async getConfig(
     @Param("providerId") providerId: string,
     @Param("type") type: string,
+    @Req() req?: any,
   ) {
+    this.assertCanManageSync(req, providerId);
     const validType = validateType(type);
     const config = await getSyncConfig(this.prisma, providerId, validType);
     if (!config) return null;
@@ -141,7 +164,9 @@ export class ProfileSyncController {
       profileUrlTemplate?: string;
       loginUrl?: string;
     },
+    @Req() req?: any,
   ) {
+    this.assertCanManageSync(req, providerId);
     const validType = validateType(type);
     // PDF_UPLOAD imports from uploaded files, so it is the one method with no URL.
     if (!body.databaseUrl && body.syncMethod !== "PDF_UPLOAD") {
@@ -318,7 +343,9 @@ export class ProfileSyncController {
     @Param("providerId") providerId: string,
     @Param("type") type: string,
     @Query("limit") limitStr?: string,
+    @Req() req?: any,
   ) {
+    this.assertCanManageSync(req, providerId);
     const validType = validateType(type);
 
     const provider = await this.prisma.provider.findUnique({
@@ -340,9 +367,18 @@ export class ProfileSyncController {
 
   @Get("sync/status/:jobId")
   @ApiOperation({ summary: "Get sync job status" })
-  async syncStatus(@Param("jobId") jobId: string) {
+  async syncStatus(
+    @Param("providerId") providerId: string,
+    @Param("jobId") jobId: string,
+    @Req() req?: any,
+  ) {
+    this.assertCanManageSync(req, providerId);
     const job = getSyncJob(jobId);
     if (!job) {
+      throw new NotFoundException("Sync job not found");
+    }
+    // Job ids are global; never hand one provider another provider's job.
+    if ((job as any).providerId && (job as any).providerId !== providerId) {
       throw new NotFoundException("Sync job not found");
     }
     return job;
@@ -354,7 +390,9 @@ export class ProfileSyncController {
     @Param("providerId") providerId: string,
     @Param("type") type: string,
     @Query("kind") kind?: string,
+    @Req() req?: any,
   ) {
+    this.assertCanManageSync(req, providerId);
     const validType = validateType(type);
     const job = kind === "pdf"
       ? getActivePdfJob(providerId, validType)

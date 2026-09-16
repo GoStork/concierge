@@ -22,6 +22,7 @@ import { claimGostorkOwner, claimProviderOwner } from "./parent-owner-claim";
 import { serviceLineOfSubject } from "./journey-timeline";
 import { IP_PROFILE_SELECT } from "./parent-record";
 import multer from "multer";
+import crypto from "node:crypto";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncAgreementStatus, supersedeReplacedAgreements } from "./pandadoc-service";
@@ -48,6 +49,7 @@ import {
 } from "./consultation-gates";
 import { trackGemini } from "./src/lib/gemini-usage";
 import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
+import { jwtSecret } from "./src/lib/app-secrets";
 
 const storageService = new StorageService();
 
@@ -285,7 +287,7 @@ chatRouter.use(async (req: any, _res: any, next: any) => {
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const jwt = (await import("jsonwebtoken")).default;
-        const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "dev-jwt-secret-change-me") as any;
+        const payload = jwt.verify(authHeader.slice(7), jwtSecret()) as any;
         if (payload?.sub) {
           const jwtUser = await prisma.user.findUnique({ where: { id: payload.sub } });
           if (jwtUser && !jwtUser.isDisabled) {
@@ -6507,8 +6509,59 @@ async function handleProviderAgreementWebhook(eventType: string, documentId: str
   return true;
 }
 
+/**
+ * SECURITY (OWASP A08): PandaDoc signs every webhook. It appends
+ * `?signature=<hex>` where the value is HMAC-SHA256 of the RAW request body,
+ * keyed with the shared secret shown next to the webhook in the PandaDoc
+ * console (PANDADOC_WEBHOOK_SECRET).
+ *
+ * Without this check anyone who learns or guesses a pandaDocDocumentId can POST
+ * a forged `recipient_completed` and drive agreement / W-9 / provider-agreement
+ * signing state plus the emails that follow it. Fails CLOSED: an unset secret
+ * rejects, it does not wave the event through (an unsigned webhook is exactly
+ * the thing this defends against).
+ */
+function verifyPandaDocSignature(req: any): boolean {
+  const secret = process.env.PANDADOC_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("[PandaDoc webhook] PANDADOC_WEBHOOK_SECRET is not set - rejecting event");
+    return false;
+  }
+  // PandaDoc sends the signature two ways: the `?signature={signature}`
+  // placeholder in the subscription URL, and the x-pd-signature header. Accept
+  // either, so a subscription registered without the query placeholder keeps
+  // working rather than silently dropping every signing event.
+  const fromQuery = typeof req.query?.signature === "string" ? req.query.signature : "";
+  const fromHeader = typeof req.headers?.["x-pd-signature"] === "string" ? (req.headers["x-pd-signature"] as string) : "";
+  const provided = (fromQuery || fromHeader).trim();
+  if (!provided) {
+    console.warn("[PandaDoc webhook] No signature on request (checked ?signature= and x-pd-signature)");
+    return false;
+  }
+  const raw: Buffer | undefined = (req as any).rawBody;
+  const body = raw ?? Buffer.from(JSON.stringify(req.body ?? ""), "utf8");
+  const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(provided, "utf8");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    // Diagnostic only - prefixes, never the secret or a full valid signature.
+    // If a real PandaDoc event ever lands here, this line says whether the key
+    // is wrong (both present, different) or the body was re-serialized.
+    console.warn(
+      `[PandaDoc webhook] Signature mismatch. expected=${expected.slice(0, 8)}... provided=${provided.slice(0, 8)}... rawBody=${raw ? "yes" : "NO (re-serialized)"} len=${body.length}`,
+    );
+    return false;
+  }
+  return true;
+}
+
 chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
-  // Always respond 200 first - PandaDoc disables webhooks after repeated non-200 responses
+  if (!verifyPandaDocSignature(req)) {
+    console.warn("[PandaDoc webhook] Rejected event with missing/invalid signature");
+    return res.status(401).json({ message: "Invalid signature" });
+  }
+  // Respond 200 once the event is authenticated - PandaDoc disables webhooks
+  // after repeated non-200 responses.
   res.json({ received: true });
 
   // Passive environments acknowledge but never process - a stale instance

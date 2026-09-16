@@ -2723,11 +2723,16 @@ export class UsersController {
       if (existing) {
         throw new BadRequestException("Email already in use");
       }
-      // Email hygiene: refuse disposable inboxes and alias-flooding (one account
-      // per canonical mailbox), except allowlisted staff test inboxes. Applies
-      // only to self-serve PARENT signups, never admin/provider-created users.
-      const roles = Array.isArray(body.roles) ? body.roles : [input.role || "PARENT"];
-      const selfServeParent = roles.length === 1 && roles[0] === "PARENT";
+      // SECURITY (OWASP A01): this endpoint is PUBLIC - it is the self-serve
+      // signup form. It must never honour a client-supplied role or provider
+      // attachment, or anyone on the internet could POST
+      // {"roles":["GOSTORK_ADMIN"]} and mint a platform admin (and skip every
+      // signup control below, which only runs for self-serve parents).
+      // Privileged creation lives behind auth: POST /api/users/admin
+      // (GOSTORK_ADMIN) and POST /api/providers/:providerId/users
+      // (PROVIDER_ADMIN). Both call prisma directly, not this handler.
+      const roles = ["PARENT"];
+      const selfServeParent = true;
       let emailCanonical: string | null = null;
       if (selfServeParent) {
         const emailCheck = await checkEmailForSignup(this.prisma, input.email);
@@ -2763,7 +2768,8 @@ export class UsersController {
           name: input.name || null,
           mobileNumber: input.mobileNumber || null,
           roles,
-          providerId: input.providerId || null,
+          // Never client-controlled here - see the role note above.
+          providerId: null,
           parentAccountId,
           parentAccountRole: isParent ? "INTENDED_PARENT_1" : null,
           trustState: risk.trustState,

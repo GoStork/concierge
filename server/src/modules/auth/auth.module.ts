@@ -8,12 +8,13 @@ import { JwtStrategy } from "./jwt.strategy";
 import { SessionSerializer } from "./session.serializer";
 import { OtpGuardService } from "./otp-guard.service";
 import { NotificationModule } from "../notifications/notification.module";
+import { jwtSecret } from "../../lib/app-secrets";
 
 @Module({
   imports: [
     PassportModule.register({ session: true }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || "dev-jwt-secret-change-me",
+      secret: jwtSecret(),
       signOptions: { expiresIn: "7d" },
     }),
     NotificationModule,

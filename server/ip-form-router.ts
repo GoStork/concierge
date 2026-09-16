@@ -25,6 +25,7 @@ import { hasContactRelease, parentAccountKey, releaseParentContact, releasedAcco
 import { ipFormProviderIds } from "./notify-ip-form";
 import { maritalImpliesTwoParents } from "./ip-form-defaults";
 import { providerProgramTypes, providerOffersSurrogacy, providerRequiresIdPhotocopy } from "./ip-form-flow";
+import { jwtSecret } from "./src/lib/app-secrets";
 
 export const ipFormRouter = Router();
 
@@ -38,7 +39,7 @@ ipFormRouter.use(async (req: any, _res: any, next: any) => {
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const token = authHeader.slice(7);
-        const secret = process.env.JWT_SECRET || "dev-jwt-secret-change-me";
+        const secret = jwtSecret();
         const payload = jwt.verify(token, secret) as any;
         if (payload?.sub) {
           const user = await prisma.user.findUnique({ where: { id: payload.sub } });

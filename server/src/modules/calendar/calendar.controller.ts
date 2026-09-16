@@ -58,6 +58,7 @@ import {
   redactBookingForProvider, releasedAccountIds, resolveParentGates, resolveParentGatesBatch,
 } from "../../../parent-privacy";
 import { Observable } from "rxjs";
+import { sessionSecret } from "../../lib/app-secrets";
 
 function isValidTimezone(tz: string): boolean {
   try {
@@ -3410,7 +3411,7 @@ I'll check in with you right after the call. You've got this!`;
   }
 
   private signOAuthState(payload: Record<string, any>): string {
-    const secret = process.env.SESSION_SECRET || process.env.GOOGLE_CLIENT_SECRET || "fallback";
+    const secret = sessionSecret();
     const nonce = randomBytes(16).toString("hex");
     const data = JSON.stringify({ ...payload, nonce });
     const hmac = createHmac("sha256", secret).update(data).digest("hex");
@@ -3419,7 +3420,7 @@ I'll check in with you right after the call. You've got this!`;
 
   private verifyOAuthState(state: string): Record<string, any> | null {
     try {
-      const secret = process.env.SESSION_SECRET || process.env.GOOGLE_CLIENT_SECRET || "fallback";
+      const secret = sessionSecret();
       const { data, hmac } = JSON.parse(Buffer.from(state, "base64url").toString());
       const expected = createHmac("sha256", secret).update(data).digest("hex");
       if (hmac !== expected) return null;

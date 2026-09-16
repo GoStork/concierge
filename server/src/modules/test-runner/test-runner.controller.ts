@@ -16,6 +16,7 @@ import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { TestRunnerService } from "./test-runner.service";
 import { getTestCaseInfo } from "./test-cases";
+import { timingSafeEqual } from "node:crypto";
 
 @Controller()
 export class TestRunnerController {
@@ -121,12 +122,28 @@ export class TestRunnerController {
     return { ok: true };
   }
 
-  // ─── POST /api/admin/test-runner/event (NO auth - CLI reports here) ────────
-  // Any running CLI process posts events here; the service broadcasts to SSE.
-  // No auth required since this is localhost-only (CLI runs on same machine).
-
+  // ─── POST /api/admin/test-runner/event ────────────────────────────────────
+  // The running CLI reports progress events here and the service broadcasts
+  // them to the admin SSE stream.
+  //
+  // SECURITY (OWASP A01): this was unauthenticated on the theory that it is
+  // "localhost-only", but the server binds 0.0.0.0 and is published through
+  // ngrok, so anyone could inject arbitrary events into an admin's live test
+  // view. The CLI runs with a shared secret in TEST_RUNNER_TOKEN (or, in a
+  // developer session, an admin session/JWT like every sibling route).
   @Post("api/admin/test-runner/event")
-  receiveCliEvent(@Body() event: Record<string, unknown>) {
+  receiveCliEvent(@Body() event: Record<string, unknown>, @Req() req: Request) {
+    const token = process.env.TEST_RUNNER_TOKEN;
+    const provided = req.headers["x-test-runner-token"];
+    const tokenOk =
+      !!token &&
+      typeof provided === "string" &&
+      provided.length === token.length &&
+      timingSafeEqual(Buffer.from(provided), Buffer.from(token));
+    if (!tokenOk) {
+      // Falls back to the same admin check every other test-runner route uses.
+      this.assertAdmin(req);
+    }
     this.testRunnerService.receiveCliEvent(event);
     return { ok: true };
   }

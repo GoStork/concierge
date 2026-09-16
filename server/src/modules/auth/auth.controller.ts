@@ -44,6 +44,11 @@ export class AuthController {
   async login(@Req() req: Request) {
     const user = req.user as any;
     return new Promise<any>((resolve, reject) => {
+      // OWASP A07 (session fixation): issue a NEW session id at the moment of
+      // authentication. Without this, a session id planted before login (via a
+      // shared link, a subdomain, or any pre-auth fixation) stays valid and
+      // becomes an authenticated session belonging to the victim.
+      const proceed = () =>
       req.logIn(user, async (err) => {
         if (err) {
           reject(new InternalServerErrorException("Login session error"));
@@ -61,6 +66,19 @@ export class AuthController {
         const token = this.authService.generateToken(user);
         resolve({ ...safe, token });
       });
+
+      const session = (req as any).session;
+      if (session?.regenerate) {
+        session.regenerate((regenErr: any) => {
+          if (regenErr) {
+            reject(new InternalServerErrorException("Login session error"));
+            return;
+          }
+          proceed();
+        });
+      } else {
+        proceed();
+      }
     });
   }
 

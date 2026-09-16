@@ -18,6 +18,7 @@ import {
   ApiConsumes,
   ApiBody,
   ApiQuery,
+  ApiBearerAuth,
 } from "@nestjs/swagger";
 import * as fs from "fs";
 import * as path from "path";
@@ -26,16 +27,20 @@ import { Readable } from "stream";
 import { GoogleGenAI } from "@google/genai";
 import { StorageService } from "../storage/storage.service";
 import { trackGemini } from "../../lib/gemini-usage";
+import { safeFetch, assertPublicHttpUrl, SsrfBlockedError } from "../../lib/ssrf-guard";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 const PERSONAS_DIR = path.resolve(process.cwd(), "server/personas");
 const MAX_FILE_SIZE = 16 * 1024 * 1024;
+// SECURITY: image/svg+xml is deliberately NOT here. SVG is an active document -
+// an uploaded <svg><script> served back from /uploads is stored XSS on our own
+// origin, with the victim's session cookie. sharp only re-encodes raster types,
+// so an SVG would pass through untouched. Raster formats only.
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
-  "image/svg+xml",
 ];
 const ALLOWED_DOCUMENT_TYPES = [
   "application/pdf",
@@ -266,6 +271,8 @@ export class UploadsController {
   }
 
   @Get("gcs")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: "Serve a file from GCS (authenticated)" })
   @ApiQuery({ name: "path", required: true, type: String })
   async serveGcsFile(@Query("path") gcsPath: string, @Res() res: Response) {
@@ -280,7 +287,10 @@ export class UploadsController {
     try {
       const { buffer, contentType } = await this.storageService.downloadBuffer(gcsPath);
       res.set("Content-Type", contentType);
-      res.set("Cache-Control", "public, max-age=86400");
+      // Private bucket content - never let a shared cache hold it, and never
+      // let a browser sniff a stored document into an active type.
+      res.set("Cache-Control", "private, max-age=86400");
+      res.set("X-Content-Type-Options", "nosniff");
       res.send(buffer);
     } catch (err: any) {
       res.status(404).json({ message: "File not found" });
@@ -298,9 +308,19 @@ export class UploadsController {
       return;
     }
 
+    // SECURITY (OWASP A01 SSRF): this endpoint is public and takes a URL from
+    // the caller. Without this check it reaches cloud metadata
+    // (169.254.169.254), anything on localhost, and the private network - and
+    // doubles as an open proxy. assertPublicHttpUrl resolves DNS and rejects
+    // every reserved range; safeFetch re-runs that check on each redirect hop,
+    // because a public URL that 302s to a private one is the standard bypass.
     try {
-      new URL(url);
-    } catch {
+      await assertPublicHttpUrl(url);
+    } catch (err: any) {
+      if (err instanceof SsrfBlockedError) {
+        res.status(400).json({ message: "Invalid or disallowed URL" });
+        return;
+      }
       res.status(400).json({ message: "Invalid URL" });
       return;
     }
@@ -309,13 +329,12 @@ export class UploadsController {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      const response = await fetch(url, {
+      const response = await safeFetch(url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (compatible; GoStork/1.0)",
           Accept: "image/*",
         },
         signal: controller.signal,
-        redirect: "follow",
       });
       clearTimeout(timeout);
 
@@ -333,12 +352,26 @@ export class UploadsController {
         return;
       }
 
-      const ct = response.headers.get("content-type") || "image/jpeg";
+      // SECURITY: the upstream Content-Type must never be echoed verbatim.
+      // ?url=https://evil/x.html would otherwise return text/html ON OUR OWN
+      // ORIGIN, i.e. script execution with the victim's session cookie, cached
+      // "immutable" for a week. This endpoint carries media or nothing.
+      const rawCt = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      if (!rawCt.startsWith("image/") && !rawCt.startsWith("video/") && !rawCt.startsWith("audio/")) {
+        res.status(415).json({ message: "Upstream is not a media file" });
+        return;
+      }
+      // SVG is an active document; never serve one from our origin (see the
+      // upload allowlist note above).
+      const ct = rawCt === "image/svg+xml" ? "application/octet-stream" : rawCt;
 
       // 2. Set response headers immediately
       res.set({
         "Content-Type": ct,
         "Cache-Control": "public, max-age=604800, immutable",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Content-Disposition": "inline",
       });
 
       if (contentLength) {

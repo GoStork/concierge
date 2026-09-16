@@ -19,7 +19,9 @@
 ## Backend
 - **sanitize-html** - server-side allowlist sanitizer for rich-text CRM note bodies (write + read paths in `server/note-html.ts`).
 - **NestJS 11** on **Express 5** (`@nestjs/platform-express`)
-- **Auth:** Passport.js + JWT, with `express-session` stored in **PostgreSQL** via `connect-pg-simple` (no Redis), multi-role RBAC
+- **Auth:** Passport.js + JWT, with `express-session` stored in **PostgreSQL** via `connect-pg-simple` (no Redis), multi-role RBAC. Session id regenerated on login; cookie is `httpOnly` + `sameSite=lax` + `secure` in production. Signing secrets come from `server/src/lib/app-secrets.ts`, which refuses to boot without `SESSION_SECRET` / `JWT_SECRET` (no hardcoded fallbacks).
+- **Abuse controls:** `express-rate-limit` on the unauthenticated auth surface (`server/src/lib/rate-limits.ts`), Turnstile + `OtpGuardService` on OTP send, and `server/src/lib/ssrf-guard.ts` for every server-side fetch of a user-supplied URL (image proxy, knowledge website sync).
+- **Security headers:** `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and HSTS in production, set in `server/index.ts`. No CSP yet (tracked in the launch runbook).
 - **API docs:** Swagger (`@nestjs/swagger`)
 - **MCP architecture:** all provider/donor/surrogate/clinic/KB reads go through MCP server tools
 - **Dev:** `tsx server/index.ts`; **Build:** esbuild → `dist/index.cjs` (also serves the built client from `dist/public`)
@@ -140,7 +142,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `vaul@^1.1.2`
 
 **Backend (server)**
-- `@nestjs/common@^11.1.14`
+- `@nestjs/common@^11.2.5`
 - `@nestjs/core@^11.1.14`
 - `@nestjs/jwt@^11.0.2`
 - `@nestjs/passport@^11.0.5`
@@ -151,6 +153,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `connect-pg-simple@^10.0.0`
 - `dotenv@^17.2.4`
 - `express@^5.0.1`
+- `express-rate-limit@^8.7.0`
 - `express-session@^1.18.1`
 - `jsonrepair@^3.14.0`
 - `memorystore@^1.6.7`

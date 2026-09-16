@@ -2243,7 +2243,7 @@ async function reportToDashboard(event: Record<string, unknown>): Promise<void> 
   try {
     await fetch(`${BASE_URL}/api/admin/test-runner/event`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(process.env.TEST_RUNNER_TOKEN ? { "x-test-runner-token": process.env.TEST_RUNNER_TOKEN } : {}) },
       body: JSON.stringify(event),
     });
   } catch {} // Non-fatal - dashboard reporting is best-effort

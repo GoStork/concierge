@@ -25,6 +25,7 @@ import { prisma } from "./db";
 import { isAdminOrConcierge } from "./chat-router";
 import { trackGemini } from "./src/lib/gemini-usage";
 import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
+import { jwtSecret } from "./src/lib/app-secrets";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -300,7 +301,7 @@ conciergeMemoryRouter.use(async (req: any, _res: any, next: any) => {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
       try {
-        const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "dev-jwt-secret-change-me") as any;
+        const payload = jwt.verify(authHeader.slice(7), jwtSecret()) as any;
         if (payload?.sub) {
           const user = await prisma.user.findUnique({ where: { id: payload.sub } });
           if (user && !user.isDisabled) {

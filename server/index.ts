@@ -35,6 +35,8 @@ import { SponsorshipService } from "./src/modules/sponsorship/sponsorship.servic
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
+import { sessionSecret } from "./src/lib/app-secrets";
+import { authLimiter, passwordResetLimiter, publicWriteLimiter } from "./src/lib/rate-limits";
 import { pool } from "./db";
 import path from "path";
 import { aiRouter } from "./ai-router";
@@ -55,6 +57,19 @@ export function log(message: string, source = "nestjs") {
   });
   console.log(`${formattedTime} [${source}] ${message}`);
 }
+
+// OWASP A10: without these an unhandled rejection kills the process on modern
+// Node with no explanation in the log, and the codebase fires a lot of
+// deliberate `void somePromise()`. Log loudly; do not exit on a rejection
+// (a single bad sweep should not take the server down), but do exit on a truly
+// uncaught exception, where process state is no longer trustworthy.
+process.on("unhandledRejection", (reason: any) => {
+  console.error("[unhandledRejection]", reason?.stack || reason);
+});
+process.on("uncaughtException", (err: any) => {
+  console.error("[uncaughtException]", err?.stack || err);
+  process.exit(1);
+});
 
 (async () => {
   const app = express();
@@ -99,6 +114,29 @@ export function log(message: string, source = "nestjs") {
   );
   app.use(express.urlencoded({ extended: false }));
 
+  // Security headers (OWASP A02). The app previously sent none, so there was no
+  // defence-in-depth against MIME sniffing, clickjacking or referrer leakage.
+  // A Content-Security-Policy is deliberately NOT set here: the SPA ships
+  // inline bootstrap script and would break silently. That is tracked as an
+  // open item in docs/production-launch-runbook.md.
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "geolocation=(), payment=(), usb=()");
+    if (process.env.NODE_ENV === "production") {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    next();
+  });
+
+  // Brute-force brakes on the unauthenticated auth surface (OWASP A07).
+  app.use("/api/auth/login", authLimiter);
+  app.use("/api/auth/verify-otp", authLimiter);
+  app.use("/api/auth/reset-password", authLimiter);
+  app.use("/api/auth/forgot-password", passwordResetLimiter);
+
   const uploadsPath = path.resolve(process.cwd(), "public/uploads");
   app.use("/uploads", express.static(uploadsPath));
 
@@ -106,12 +144,21 @@ export function log(message: string, source = "nestjs") {
   app.use("/persona-avatars", express.static(personasPath));
 
   const sessionMiddleware = session({
-    secret: process.env.SESSION_SECRET || "r3pl1t_s3cr3t_k3y_g0st0rk",
+    // No hardcoded fallback - see src/lib/app-secrets.ts. A missing
+    // SESSION_SECRET is fatal at boot, never a publicly-known key at runtime.
+    secret: sessionSecret(),
     resave: false,
     saveUninitialized: false,
     store: new (pgSession(session))({ pool, createTableIfMissing: true }),
+    name: "connect.sid",
     cookie: {
       secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      // The app has no CSRF tokens, so the cookie itself has to carry the
+      // cross-site defence. "lax" still allows the normal top-level GET
+      // navigations (email links, OAuth returns) while blocking cross-site
+      // POST/PUT/DELETE from riding the session.
+      sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   });
@@ -247,14 +294,20 @@ export function log(message: string, source = "nestjs") {
     return res.status(202).json({ message: "Nightly sync started", isRunning: true });
   });
 
-  app.post("/api/client-errors", express.json({ limit: "5kb" }), (req, res) => {
+  app.post("/api/client-errors", publicWriteLimiter, express.json({ limit: "5kb" }), (req, res) => {
     try {
       const { message, stack, componentStack, url, userAgent, at } = req.body || {};
+      // This log is our only forensic record of client crashes, so never let a
+      // caller embed newlines and forge log lines in it (OWASP A09).
+      const oneLine = (v: unknown, max: number) =>
+        typeof v === "string" ? v.replace(/[\r\n\u2028\u2029]+/g, " ").slice(0, max) : null;
       console.error("[CLIENT ERROR]", JSON.stringify({
-        at: at || new Date().toISOString(),
-        url, userAgent, message,
-        stack: typeof stack === "string" ? stack.slice(0, 4000) : null,
-        componentStack: typeof componentStack === "string" ? componentStack.slice(0, 2000) : null,
+        at: oneLine(at, 40) || new Date().toISOString(),
+        url: oneLine(url, 500),
+        userAgent: oneLine(userAgent, 300),
+        message: oneLine(message, 1000),
+        stack: oneLine(stack, 4000),
+        componentStack: oneLine(componentStack, 2000),
       }));
     } catch (e: any) {
       console.error("[CLIENT ERROR] sink failed:", e?.message);
@@ -308,8 +361,13 @@ export function log(message: string, source = "nestjs") {
       { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "JWT token from /api/auth/login" },
     )
     .build();
-  const document = SwaggerModule.createDocument(nestApp, swaggerConfig);
-  SwaggerModule.setup("docs", nestApp, document);
+  // The full API surface (390 routes, parameter names, auth scheme) is an
+  // attacker's road map. Keep it for local development, never serve it in
+  // production. Set ENABLE_API_DOCS=true to override on a staging host.
+  if (process.env.NODE_ENV !== "production" || process.env.ENABLE_API_DOCS === "true") {
+    const document = SwaggerModule.createDocument(nestApp, swaggerConfig);
+    SwaggerModule.setup("docs", nestApp, document);
+  }
 
   await nestApp.init();
   setNestApp(nestApp);
@@ -385,11 +443,18 @@ export function log(message: string, source = "nestjs") {
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
     console.error("Internal Server Error:", err);
     if (res.headersSent) {
       return next(err);
     }
+    // OWASP A10: 4xx messages are ours and are meant for the caller. 5xx
+    // messages are not - an unhandled Prisma error would otherwise hand the
+    // client our model names, column names and query shape. Log it, return a
+    // generic body.
+    const message =
+      status < 500
+        ? err.message || "Request failed"
+        : "Internal Server Error";
     return res.status(status).json({ message });
   });
 
