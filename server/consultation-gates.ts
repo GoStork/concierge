@@ -943,11 +943,13 @@ export async function maskedProviderName(
   );
   if (!confidential) return provider.name;
   const st = (subjectType || "").toLowerCase();
+  // Lower case on purpose: "the Surrogate's Agency" read like an unfilled
+  // placeholder in the ack card and the booking header.
   return st.includes("egg")
-    ? "the Egg Donor's Agency"
+    ? "the egg donor's agency"
     : st.includes("sperm")
-      ? "the Sperm Donor's Agency"
-      : "the Surrogate's Agency";
+      ? "the sperm donor's agency"
+      : "the surrogate's agency";
 }
 
 /**
@@ -961,6 +963,8 @@ async function postGateCard(input: {
   gate: ConsentGate;
   sessionId: string;
   content: string;
+  /** Who the parent hears this from; the concierge persona when known. */
+  senderName?: string | null;
   providerContent?: string | null;
   cardData: Record<string, unknown>;
   subjectProfileId?: string | null;
@@ -1003,7 +1007,7 @@ async function postGateCard(input: {
         role: "assistant",
         content: input.content,
         senderType: "system",
-        senderName: "GoStork",
+        senderName: input.senderName || "GoStork",
         uiCardType: cardType,
         uiCardData: {
           gate: input.gate,
@@ -1060,16 +1064,26 @@ export async function postPreliminaryAckCard(input: {
   }
   const displayName = await maskedProviderName(input.providerId, input.subjectType, input.client);
   const subject = input.subjectLabel || "this profile";
+  let voiceName: string | null = null;
+  try {
+    const prismaForVoice = await db(input.client);
+    const sess = await prismaForVoice.aiChatSession.findUnique({ where: { id: sessionId }, select: { matchmakerId: true } });
+    if (sess?.matchmakerId) {
+      const mm = await prismaForVoice.matchmaker.findUnique({ where: { id: sess.matchmakerId }, select: { name: true } });
+      voiceName = mm?.name || null;
+    }
+  } catch { /* falls back to GoStork */ }
   return postGateCard({
     gate: "PRELIMINARY_STEP",
     sessionId,
+    // Three sentences, in the concierge's own voice, naming her once. The
+    // 124-word version named the profile six times, switched the speaker to
+    // "GoStork" at the highest-stakes moment, and filled a phone screen.
     content:
-      `Before we open the calendar, we want to be upfront about what this call is. It's the first step toward a match call with ${subject} specifically, not a general information session. ` +
-      `Once it's booked, ${displayName} treats it as real interest: they prepare for the call around ${subject} and start thinking seriously about fit with your family. ` +
-      `It's still completely free and nothing is binding - this just makes sure everyone walks into the call on the same page. ` +
-      `Booking also shares your name and contact details with them so they can prepare. ` +
-      `If ${subject} is someone you're seriously considering, confirm below and the calendar will open right here. ` +
-      `Still exploring? That's completely fine too - choose the info call option instead and you can talk with the agency without signaling commitment to ${subject}.`,
+      `Quick heads-up before the calendar: this call is the first step toward a match with ${subject}, so ${displayName} will prepare for it as real interest. ` +
+      `Booking shares your name and contact details with them, and it is still free with nothing binding. ` +
+      `If she is someone you are seriously considering, confirm below and the calendar opens right here.`,
+    senderName: voiceName,
     cardData: {
       providerId: input.providerId,
       providerDisplayName: displayName,

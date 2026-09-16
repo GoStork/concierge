@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { isUsableCardId, parseMatchCardTag, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
+import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession } from "./parent-visibility";
 import {
   listOpenConsultations,
@@ -31,7 +31,7 @@ import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
 import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Costs } from "./intake-questions";
-import { applyPersonaVoice, buildIntakeAck, agesIn } from "./persona-voice";
+import { applyPersonaVoice, buildIntakeAck, agesIn, styleOf } from "./persona-voice";
 // Aliased: a pre-existing LOCAL boolean `looksLikeProfileQuestion` (the
 // chat-subject context injector's own substring heuristic, ~line 5821)
 // shadows the imported name inside the /chat handler scope.
@@ -460,6 +460,9 @@ function injectMissingQuickReplies(content: string): string {
     [/find.*someone.*better|schedule.*call.*anyway/i, "[[QUICK_REPLY:Find me a better match|Schedule a call with her anyway]]"],
   ];
 
+  // A chip row on an empty bubble is a dead end (observed live: the ten
+  // "what didn't feel right" reasons under no text at all).
+  if (!content.replace(/\[\[[^\]]*\]\]/g, "").trim()) return content;
   for (const [pattern, tag] of patterns) {
     if (pattern.test(content)) {
       console.log(`[Tier1 QR inject] Pattern matched, injecting: ${tag.slice(0, 60)}`);
@@ -8195,7 +8198,27 @@ ${phase0Section}`;
     const looksLikeQuestion = isInterrogativeShaped(userMessage);
     const aiShowedNewMatch = /\[\[MATCH_CARD:/i.test(finalContent);
 
-    if (!isSkipAction && !isFavoriteAction && looksLikeQuestion && aiShowedNewMatch && currentSessionId && mcpClient) {
+    // "I have questions about her" is declarative, so the question detector
+    // below never fired and the model read the chip as "next": the parent's
+    // most careful move replaced the person they wanted to ask about
+    // (observed live). No model call needed - invite the question.
+    const asksToAsk = /^(?:i have (?:some |a few |more )?questions?(?: about (?:her|him|them|it))?|more questions|i'?d like to ask(?: something| a question)?|can i ask (?:you )?(?:something|a question))[.!?]?$/i.test(userMessage.trim());
+    if (asksToAsk && aiShowedNewMatch && currentSessionId) {
+      const _aqT0 = Date.now();
+      let pronoun = "her";
+      try {
+        const mc = await findLatestMatchCard(currentSessionId);
+        const t = String(mc?.type || "").toLowerCase();
+        pronoun = t.includes("sperm") ? "him" : t.includes("clinic") || t.includes("agency") || t.includes("program") ? "them" : "her";
+      } catch { /* default pronoun */ }
+      console.log(`[QUESTION INTERCEPT] Parent asked to ask; model showed a new card - inviting the question instead`);
+      finalContent = `Of course. What would you like to know about ${pronoun}?`;
+      sse.sendReset();
+      sse.sendToken(finalContent);
+      recordInterceptor("question_intercept", true, Date.now() - _aqT0);
+    }
+
+    if (!asksToAsk && !isSkipAction && !isFavoriteAction && looksLikeQuestion && aiShowedNewMatch && currentSessionId && mcpClient) {
       const _qiT0 = Date.now();
       const _qiPre = finalContent;
       console.log(`[QUESTION INTERCEPT] Parent asked a question but AI showed new match card. Intercepting to answer from profile.`);
@@ -9996,6 +10019,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // Normalize verbose quick-reply options for simple sense-check / confirmation questions.
     // The AI sometimes generates "Yes, I'm looking into surrogacy" instead of "Yes, makes sense!"
     if (quickReplies.length > 0 && /does that make sense|make sense so far|does that all make sense/i.test(finalContent)) {
+      // An empty bubble with a chip row underneath reads as "I did it wrong"
+      // (observed live on the decline flow). Give the chips a sentence.
+      if (quickReplies.length > 0 && !finalContent.replace(/\[\[[^\]]*\]\]/g, "").trim()) {
+        const bridge = quickReplies.includes("Her location") ? "What didn't feel right about her?" : "Here's what we can do next:";
+        finalContent = `${bridge} ${finalContent}`.trim();
+        console.log(`[POST-PROC] Added bridging before a chip-only reply`);
+      }
       quickReplies = quickReplies.map((opt: string) => {
         if (/^yes[,!]?\s*$/i.test(opt) || /^yes,?\s+(that\s+)?makes?\s+sense/i.test(opt) || (/^yes,\s+/i.test(opt) && opt.length > 20)) return "Yes, makes sense!";
         if (/^no[,!]?\s*$/i.test(opt) || /^i\s+have\s+a?\s+question/i.test(opt) || /^i\s+have\s+questions/i.test(opt)) return "I have a question";
@@ -10287,6 +10317,70 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const kept = sentences.slice(0, 3).join(" ");
         console.warn(`[MATCH BLURB CAP] ${words} words -> ${kept.split(/\s+/).length} (kept ${Math.min(3, sentences.length)} of ${sentences.length} sentences)`);
         finalContent = [kept, ...tags].join(" ").trim();
+      }
+
+      // MATCH BLURB FLOOR: the cap trims, it cannot repair. Live: "I have
+      // found another wonderful option for you to consider" - no age, no
+      // state, no reason, from a persona called The Straight Talker. If the
+      // prose cites none of the card's own facts (or uses a banned word for a
+      // direct persona), one regeneration with the facts in hand.
+      try {
+        // Individual people only: agencies, programs, banks and clinics have
+        // their own card copy and no age / births to cite.
+        const cardTypeL = String(matchCards[0]?.type || "").toLowerCase();
+        const personType = /(surrogate|egg donor|sperm donor|donor)/.test(cardTypeL) && !/agency|program|bank|clinic/.test(cardTypeL);
+        if (personType) {
+          const cardId = String(matchCards[0]?.providerId || "");
+          let row: any = null;
+          for (const sr of lastSearchToolResults) {
+            try {
+              const arr = parseFirstJsonArray(sr.resultText || "") || [];
+              row = arr.find((r: any) => String(r?.id || r?.providerId || "") === cardId) || row;
+            } catch { /* ignore */ }
+          }
+          const prose2 = finalContent.replace(/\[\[[^\]]*\]\]/g, "").trim();
+          const facts: string[] = [];
+          if (row?.age) facts.push(String(row.age));
+          if (row?.location) facts.push(String(row.location).split(",")[0].trim());
+          if (row?.state) facts.push(String(row.state));
+          if (row?.liveBirths != null) facts.push("mom of", "mother of", "children");
+          const citesFact = facts.some((f) => f && prose2.toLowerCase().includes(f.toLowerCase()));
+          const style = styleOf(typeof matchmaker !== "undefined" ? (matchmaker as any) : null);
+          const bannedForDirect = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(prose2);
+          if ((row && !citesFact) || bannedForDirect) {
+            const summary = row ? JSON.stringify({ age: row.age, location: row.location, liveBirths: row.liveBirths, cSections: row.cSections, isExperienced: row.isExperienced, openToSameSexCouple: row.openToSameSexCouple, agreesToTwins: row.agreesToTwins, agreesToInternationalParents: row.agreesToInternationalParents }) : "{}";
+            const retry = await claudeRetry([
+              ...messages,
+              { role: "user", content: `SYSTEM OVERRIDE: Rewrite ONLY your introduction of this match as plain prose, 2-3 sentences, under 60 words, in your persona's register${style === "direct" ? " (direct: no \"wonderful\", \"beautifully\", \"phenomenal\", \"amazing\")" : ""}. Cite at least two facts from this profile summary and one preference the parent stated: ${summary}. Do NOT output any [[...]] tags, no bullet points, no headings.` },
+            ]).catch(() => "");
+            const newProse = (retry || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{2,}/g, "\n").trim();
+            const newWords = newProse.split(/\s+/).filter(Boolean).length;
+            const newCites = facts.some((f) => f && newProse.toLowerCase().includes(f.toLowerCase()));
+            const newBanned = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(newProse);
+            // Only swap when the rewrite is actually better: cites a fact and
+            // does not reintroduce a banned word. Otherwise keep the original.
+            if (newProse && newWords >= 8 && newWords <= 90 && (newCites || !row) && !newBanned) {
+              console.warn(`[MATCH BLURB FLOOR] regenerated (${citesFact ? "banned word" : "no card fact cited"}): ${prose2.slice(0, 60)}... -> ${newProse.slice(0, 60)}...`);
+              const tagsNow = finalContent.match(/\[\[[^\]]*\]\]/g) || [];
+              finalContent = [newProse, ...tagsNow].join(" ").trim();
+              sse.sendReset();
+              sse.sendToken(finalContent);
+            } else {
+              console.warn(`[MATCH BLURB FLOOR] regeneration not better (${newWords} words, cites=${newCites}) - keeping original`);
+            }
+          }
+
+          // ONE post-card reply set, whatever the model wrote. Three chip
+          // vocabularies in six live turns ("Not the right fit for us" /
+          // "Show me someone else" / "Show me more options") made the same
+          // action read as three different ones, and the client styles chips
+          // by their text.
+          const pronoun = /sperm/i.test(String(matchCards[0]?.type || "")) ? "him" : "her";
+          finalContent = finalContent.replace(/\[\[QUICK_REPLY:[^\]]*\]\]/g, "").trim();
+          quickReplies = [`I have questions about ${pronoun}`, "Schedule a free consultation", "Save as favorite", "Not the right fit for us"];
+        }
+      } catch (e) {
+        console.error("[MATCH BLURB FLOOR] error:", e);
       }
     }
 

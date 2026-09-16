@@ -546,6 +546,7 @@ function BookingForm({
   addAttendee: () => void; removeAttendee: (email: string) => void;
   bookMutation: any; brandColor: string; onBack: () => void;
 }) {
+  const [editingContact, setEditingContact] = useState<boolean>(!(name && email));
   const ref = useRef<HTMLDivElement>(null);
   const [showNotes, setShowNotes] = useState(!!notes);
 
@@ -574,20 +575,39 @@ function BookingForm({
         <span className="text-muted-foreground">at {formatTime12(selectedSlot)}</span>
       </div>
       <form onSubmit={(e) => { e.preventDefault(); bookMutation.mutate(); }} className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-0.5">
-            <Label className="t-form-label-sm">Name *</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required className="h-8 text-xs" data-testid="input-book-name-inline" />
+        {/* Name, email and phone are already on file: show them as one line
+            with Edit instead of re-asking (principle 3: nothing the parent
+            told us is asked again). The fields open only when something is
+            missing or the parent wants to change it. */}
+        {!editingContact && name && email ? (
+          <div className="flex items-start justify-between gap-3 bg-secondary rounded-[var(--container-radius)] px-3 py-2.5" data-testid="booking-contact-summary">
+            <div className="min-w-0">
+              <p className="t-micro-label">Booking as</p>
+              <p className="t-micro-value truncate">{name}</p>
+              <p className="t-helper truncate">{email}{phone ? ` · ${phone}` : ""}</p>
+            </div>
+            <button type="button" onClick={() => setEditingContact(true)} className="t-helper font-medium shrink-0 min-h-11 md:min-h-0 px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md" style={{ color: "hsl(var(--primary))" }} data-testid="button-edit-contact">
+              Edit
+            </button>
           </div>
-          <div className="space-y-0.5">
-            <Label className="t-form-label-sm">Email *</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-8 text-xs" data-testid="input-book-email-inline" />
-          </div>
-        </div>
-        <div className="space-y-0.5">
-          <Label className="t-form-label-sm">Phone</Label>
-          <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-8 text-xs" data-testid="input-book-phone-inline" />
-        </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-0.5">
+                <Label htmlFor="book-name-inline" className="t-form-label-sm">Name *</Label>
+                <Input id="book-name-inline" value={name} onChange={(e) => setName(e.target.value)} required className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-name-inline" />
+              </div>
+              <div className="space-y-0.5">
+                <Label htmlFor="book-email-inline" className="t-form-label-sm">Email *</Label>
+                <Input id="book-email-inline" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-email-inline" />
+              </div>
+            </div>
+            <div className="space-y-0.5">
+              <Label htmlFor="book-phone-inline" className="t-form-label-sm">Phone</Label>
+              <Input id="book-phone-inline" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-phone-inline" />
+            </div>
+          </>
+        )}
 
         <div className="space-y-1.5">
           {additionalAttendees.length > 0 && !showAttendeeFields && (
@@ -662,12 +682,12 @@ function BookingForm({
         </p>
         <Button
           type="submit"
-          className="w-full h-9 text-sm font-semibold text-primary-foreground"
+          className="w-full h-11 md:h-10 rounded-full text-sm font-semibold text-primary-foreground"
           style={{ backgroundColor: brandColor }}
           disabled={bookMutation.isPending}
           data-testid="button-confirm-booking-inline"
         >
-          {bookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm Booking"}
+          {bookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm booking"}
         </Button>
       </form>
     </div>
@@ -1185,17 +1205,19 @@ export function InlineBookingCalendar({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-9 w-9"
+            aria-label="Previous month"
             onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
             data-testid="button-prev-month-inline"
           >
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <span className="text-sm font-semibold">{format(currentMonth, "MMMM yyyy")}</span>
+          <span className="text-sm font-semibold" aria-live="polite">{format(currentMonth, "MMMM yyyy")}</span>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-9 w-9"
+            aria-label="Next month"
             onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
             data-testid="button-next-month-inline"
           >
@@ -1203,6 +1225,9 @@ export function InlineBookingCalendar({
           </Button>
         </div>
 
+        <p className="t-helper text-center" data-testid="text-booking-timezone">
+          Times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, " ")}
+        </p>
         <div className="grid grid-cols-7 gap-0.5 text-center">
           {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
             <div key={d} className="text-[12px] font-medium text-muted-foreground py-1 uppercase">{d}</div>
@@ -1219,7 +1244,9 @@ export function InlineBookingCalendar({
                 key={i}
                 onClick={() => { if (!isDisabled) { setSelectedDate(day.date); setSelectedSlot(null); } }}
                 disabled={isDisabled}
-                className={`relative w-8 h-8 rounded-full text-xs transition-all mx-auto flex items-center justify-center ${
+                aria-label={format(day.date, "EEEE, MMMM d")}
+                aria-pressed={!!isSelected}
+                className={`relative w-10 h-10 md:w-8 md:h-8 rounded-full text-sm md:text-xs transition-all mx-auto flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   !day.isCurrentMonth ? "text-muted-foreground/20" :
                   isPast || noAvailability ? "text-muted-foreground/30 cursor-not-allowed" :
                   isSelected ? "bg-primary text-primary-foreground font-semibold shadow-md" :
@@ -1289,7 +1316,7 @@ function SelectedDateSlots({
             <button
               key={slot.time}
               onClick={() => onSelectSlot(slot.time)}
-              className="px-2 py-2 rounded-[var(--radius)] text-xs font-medium transition-all cursor-pointer bg-muted/50 border border-border hover:bg-primary/10 hover:border-primary/40 text-foreground/80"
+              className="px-2 py-2 min-h-11 md:min-h-0 rounded-full text-sm md:text-xs font-medium transition-all cursor-pointer bg-secondary border border-border hover:bg-primary/10 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-foreground/80"
               data-testid={`slot-inline-${slot.time}`}
             >
               {formatTime12(slot.time)}

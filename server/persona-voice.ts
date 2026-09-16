@@ -17,7 +17,7 @@ export type PersonaLike = { name?: string | null; title?: string | null; persona
 
 type Style = "warm" | "direct" | "holistic" | "expert" | "coach" | null;
 
-function styleOf(p: PersonaLike): Style {
+export function styleOf(p: PersonaLike): Style {
   const src = `${p?.title || ""} ${p?.personalityPrompt || ""}`.toLowerCase();
   if (/warm|empath|nurtur|gentle|kind/.test(src)) return "warm";
   if (/straight|direct|honest|no sugarcoat|blunt/.test(src)) return "direct";

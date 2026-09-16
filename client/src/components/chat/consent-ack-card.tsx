@@ -307,10 +307,15 @@ export function ConsentAckCard({
                 }}
                 data-testid="consent-ack-info-only"
               >
-                I'm still researching - book an info call
+                Still exploring - book an info call instead
               </Button>
             )}
           </div>
+        )}
+        {!isProvider && data.gate === "PRELIMINARY_STEP" && (
+          <p className="t-helper mt-2" data-testid="consent-ack-fork-help">
+            An info call lets you talk with the agency without signalling interest in her.
+          </p>
         )}
 
         {isProvider && (
