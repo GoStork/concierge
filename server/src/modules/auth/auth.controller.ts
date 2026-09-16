@@ -287,8 +287,10 @@ export class AuthController {
     if (!body.phone?.trim()) {
       throw new BadRequestException("Phone number is required");
     }
-    // First hop only - the rest of x-forwarded-for is forgeable behind ngrok.
-    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress) ?? null;
+    // Behind Cloudflare the first x-forwarded-for hop is a Cloudflare edge
+    // address, which would bucket every visitor behind one edge node together
+    // and defeat the per-IP OTP limit that exists to stop SMS toll fraud.
+    const ip = requestIp(req);
 
     // Turnstile gate. A real signup carries a token minted by the widget in the
     // form; a bot POSTing straight to this endpoint has none. Inert until the

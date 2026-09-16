@@ -2806,7 +2806,9 @@ export class UsersController {
       // hard block: a flagged account still exists, it just lands in the
       // /parents review queue for a one-click approve.
       const signupIp = selfServeParent
-        ? ((String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress) ?? null)
+        // Real visitor address, not the Cloudflare edge - otherwise the
+        // per-IP signup velocity check sees one "IP" for a whole region.
+        ? requestIp(req)
         : null;
       const risk = selfServeParent
         ? await evaluateSignupRisk(this.prisma, { ip: signupIp, turnstilePassed: true })

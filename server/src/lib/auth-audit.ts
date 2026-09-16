@@ -35,11 +35,33 @@ export interface AuthAuditInput {
   detail?: string | null;
 }
 
-/** First X-Forwarded-For hop, which is what the app already trusts behind
- *  ngrok / Caddy. Forgeable by a determined attacker, so treat it as a hint. */
-export function requestIp(req: any): string | null {
+/**
+ * The visitor's address.
+ *
+ * Production sits behind Cloudflare in front of Caddy, and in that chain the
+ * first X-Forwarded-For hop is a CLOUDFLARE EDGE address (verified in the
+ * production audit log: 162.158.63.201). Keying on that makes the audit trail
+ * useless for identifying an attacker and makes the rate limiter bucket half
+ * the internet together. CF-Connecting-IP is the header Cloudflare sets to the
+ * original visitor address, so prefer it.
+ *
+ * Caveat: CF-Connecting-IP is only trustworthy because the origin is reachable
+ * solely through Cloudflare. If the origin is ever exposed directly, a client
+ * can set that header itself. Restricting the origin to Cloudflare's ranges is
+ * tracked in the launch runbook.
+ */
+export function clientIpFrom(req: any): string | null {
+  const cf = req?.headers?.["cf-connecting-ip"];
+  if (typeof cf === "string" && cf.trim()) return cf.trim();
+  const real = req?.headers?.["x-real-ip"];
+  if (typeof real === "string" && real.trim()) return real.trim();
   const fwd = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
   return fwd || req?.socket?.remoteAddress || req?.ip || null;
+}
+
+/** Alias kept for the audit call sites. */
+export function requestIp(req: any): string | null {
+  return clientIpFrom(req);
 }
 
 export function requestUserAgent(req: any): string | null {

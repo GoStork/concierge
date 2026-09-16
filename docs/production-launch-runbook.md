@@ -1585,6 +1585,20 @@ creation and deletion. It stores no credential material of any kind. Read it at
 `/admin/security` ("Sign-in activity"), filterable by event, email and window,
 with the addresses producing the most failures surfaced at the top.
 
+**Client IP behind Cloudflare.** Verified against the live production audit
+log: the first `X-Forwarded-For` hop there is a CLOUDFLARE EDGE address
+(162.158.63.201), not the visitor. Everything keyed on "the IP" was therefore
+keyed on Cloudflare: the audit trail, the new auth rate limits, the per-IP OTP
+cap that exists to stop SMS toll fraud, and the signup velocity check. All four
+now go through `clientIpFrom()` (`server/src/lib/auth-audit.ts`), which prefers
+`CF-Connecting-IP`, then `X-Real-IP`, then the first forwarded hop.
+
+That header is only trustworthy while the origin is reachable **solely**
+through Cloudflare. **Open item:** lock the GCE origin's firewall to
+Cloudflare's published IP ranges, otherwise anyone who finds 34.85.132.142
+directly can set `CF-Connecting-IP` themselves and forge their way past every
+per-IP control above.
+
 Still missing on top of this: no account lockout after N failures, no alerting
 when the failure rate spikes (the rows exist, nothing watches them), and the
 log has no retention policy or off-box copy.

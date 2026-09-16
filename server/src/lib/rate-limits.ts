@@ -13,12 +13,17 @@
  * lockout is tracked separately in the launch runbook.
  */
 import rateLimit, { ipKeyGenerator, type Options } from "express-rate-limit";
+import { clientIpFrom } from "./auth-audit";
 
 function clientIp(req: any): string {
-  const fwd = String(req.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+  // Same resolution as the audit log. Behind Cloudflare the first
+  // X-Forwarded-For hop is a Cloudflare edge address, so keying on it would
+  // bucket unrelated visitors together and let one attacker exhaust everyone
+  // else's allowance.
+  const ip = clientIpFrom(req) || "unknown";
   // ipKeyGenerator normalises IPv6 into a /56 block so a single host cannot
   // rotate through its own address space to get a fresh bucket each request.
-  return ipKeyGenerator(fwd || req.ip || req.socket?.remoteAddress || "unknown");
+  return ipKeyGenerator(ip);
 }
 
 const base: Partial<Options> = {
