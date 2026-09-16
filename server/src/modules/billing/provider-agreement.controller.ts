@@ -40,6 +40,7 @@ import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
 import { prisma } from "../../../db";
+import { guestLinkExpiry, guestLinkProblem, GUEST_LINK_DEAD_MESSAGE } from "../../lib/guest-link";
 import {
   sendProviderAgreement,
   syncProviderAgreementTemplate,
@@ -335,9 +336,20 @@ export class ProviderAgreementController {
     if (emails.length > 10) throw new HttpException("At most 10 recipients per share", HttpStatus.BAD_REQUEST);
 
     let guestToken = row.guestToken;
+    // Sharing is a deliberate hand-out, so it refreshes the window and clears
+    // any earlier revocation.
+    const guestTokenExpiresAt = guestLinkExpiry();
     if (!guestToken) {
       guestToken = (await import("crypto")).randomBytes(24).toString("hex");
-      await (prisma as any).providerAgreement.update({ where: { id }, data: { guestToken } });
+      await (prisma as any).providerAgreement.update({
+        where: { id },
+        data: { guestToken, guestTokenExpiresAt, guestTokenRevokedAt: null },
+      });
+    } else {
+      await (prisma as any).providerAgreement.update({
+        where: { id },
+        data: { guestTokenExpiresAt, guestTokenRevokedAt: null },
+      }).catch(() => {});
     }
     const { getBaseUrl } = await import("../../lib/get-base-url");
     await this.notificationService.sendProviderAgreementShareEmail({
@@ -363,9 +375,17 @@ export class ProviderAgreementController {
     if (!token || token.length < 20) throw new HttpException("Invalid signing link", HttpStatus.NOT_FOUND);
     const row = await (prisma as any).providerAgreement.findUnique({
       where: { guestToken: token },
-      select: { id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true, provider: { select: { name: true } } },
+      select: {
+        id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true,
+        guestTokenExpiresAt: true, guestTokenRevokedAt: true,
+        provider: { select: { name: true } },
+      },
     });
-    if (!row) throw new HttpException("Invalid or expired signing link", HttpStatus.NOT_FOUND);
+    // Same response whether the token is unknown, revoked or expired, so
+    // probing cannot tell a real-but-dead link from a made-up one.
+    if (!row || guestLinkProblem(row)) {
+      throw new HttpException(GUEST_LINK_DEAD_MESSAGE, HttpStatus.NOT_FOUND);
+    }
 
     if (!row.guestOpenedAt) {
       await (prisma as any).providerAgreement.update({
@@ -395,9 +415,13 @@ export class ProviderAgreementController {
     if (!token || token.length < 20) throw new HttpException("Invalid link", HttpStatus.NOT_FOUND);
     const row = await (prisma as any).providerAgreement.findUnique({
       where: { guestToken: token },
-      select: { status: true, pandaDocDocumentId: true },
+      select: {
+        status: true, pandaDocDocumentId: true,
+        guestTokenExpiresAt: true, guestTokenRevokedAt: true,
+      },
     });
-    if (!row || row.status !== "COMPLETED" || !row.pandaDocDocumentId) {
+    // The executed contract obeys the same lifetime as the signing page.
+    if (!row || guestLinkProblem(row) || row.status !== "COMPLETED" || !row.pandaDocDocumentId) {
       throw new HttpException("Not available", HttpStatus.NOT_FOUND);
     }
     const apiKey = process.env.PANDADOC_API_KEY;

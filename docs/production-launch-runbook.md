@@ -1521,12 +1521,24 @@ Also required on the production host before this ships:
    grace period. See 10c. Account lockout is still not implemented; only the IP
    rate limit stands between an attacker and unlimited password guesses.
 3. ~~No authentication audit log~~ **DONE 2026-09-16** - see 10c.
-4. **Password reset does not invalidate existing sessions or issued JWTs**, and
-   a logout does not revoke the 7-day JWT (no jti/denylist/token-version).
-   Someone who took over an account keeps their token after the victim resets.
-5. **Provider-agreement and W-9 guest signing tokens never expire** and have no
-   revocation field, unlike the IP-form guest tokens which do both. They grant
-   access to executed legal documents and tax forms.
+4. ~~Password reset does not invalidate existing sessions or issued JWTs~~
+   **DONE 2026-09-16.** `User.tokenVersion` is minted into every token and
+   checked on every request; a reset bumps it and deletes that account's rows
+   from the Postgres session table, so both credential types die together.
+   **Open follow-up:** an ordinary logout still only ends that one session. A
+   deliberate "sign out everywhere" is available internally
+   (`revokeAllSessionsAndTokens`) but is not exposed in the UI.
+5. ~~Provider-agreement and W-9 guest signing tokens never expire~~ **DONE
+   2026-09-16.** Both now carry `guestTokenExpiresAt` and `guestTokenRevokedAt`
+   and use the same 30-day window as the IP-form links. The window is refreshed
+   on every send, reminder and share, so a real signer never hits it, and a
+   resend also clears a revocation. All four public endpoints (session and
+   download, for each document type) honour it, and a dead link returns exactly
+   the same response as one that never existed, so probing cannot tell them
+   apart. Rows that predate the field carry NULL and stay usable rather than
+   stranding providers mid-signature; they pick up a deadline on the next send.
+   **Open follow-up:** revocation has no admin button yet - the column is
+   honoured, but switching a link off today means setting it directly.
 6. **21 npm vulnerabilities remain** (10 high, 10 moderate, 1 low) needing major
    upgrades: `prisma`, `drizzle-orm` (SQL injection via unescaped identifiers),
    `googleapis`, `exceljs`, `esbuild`, `sharp`. Each needs its own test pass.

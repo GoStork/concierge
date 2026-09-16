@@ -6428,9 +6428,18 @@ async function handleProviderAgreementWebhook(eventType: string, documentId: str
     // onboarding starts after the signature), so the email must not point at
     // an auth-guarded page. A one-time token gates the public signing route.
     const guestToken = pa.guestToken || (await import("crypto")).randomBytes(24).toString("hex");
+    const { guestLinkExpiry: agreementLinkExpiry } = await import("./src/lib/guest-link");
     await (prisma as any).providerAgreement.update({
       where: { id: pa.id },
-      data: { status: "SENT", gostorkCompletedAt: new Date(), providerNotifiedAt: new Date(), guestToken },
+      data: {
+        status: "SENT",
+        gostorkCompletedAt: new Date(),
+        providerNotifiedAt: new Date(),
+        guestToken,
+        // The link is being emailed right now, so start its window here.
+        guestTokenExpiresAt: agreementLinkExpiry(),
+        guestTokenRevokedAt: null,
+      },
     });
     console.log(`[ProviderAgreement webhook] GoStork signed for provider ${pa.providerId} - notifying provider`);
 

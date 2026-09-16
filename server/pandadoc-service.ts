@@ -2186,9 +2186,16 @@ export async function notifyProviderAgreementProviderTurn(agreementId: string, r
 
   const { randomBytes } = await import("crypto");
   const guestToken = pa.guestToken || randomBytes(24).toString("hex");
+  const { guestLinkExpiry } = await import("./src/lib/guest-link");
   await (prisma as any).providerAgreement.update({
     where: { id: pa.id },
-    data: { guestToken, providerNotifiedAt: new Date() },
+    data: {
+      guestToken,
+      // Notifying the provider is a fresh hand-out of the link.
+      guestTokenExpiresAt: guestLinkExpiry(),
+      guestTokenRevokedAt: null,
+      providerNotifiedAt: new Date(),
+    },
   });
 
   await raiseProviderAgreementTask(pa.providerId, requestedByUserId, pa.id);

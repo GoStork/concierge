@@ -43,6 +43,7 @@ import {
   fetchDocumentViewUrl,
 } from "../../../pandadoc-service";
 import { TAX_FORM_LABELS, type TaxFormType } from "../../../../shared/payout-countries";
+import { guestLinkExpiry, guestLinkProblem, GUEST_LINK_DEAD_MESSAGE } from "../../lib/guest-link";
 
 function isAdmin(user: any): boolean {
   return !!user?.roles?.includes("GOSTORK_ADMIN");
@@ -51,10 +52,24 @@ function isAdmin(user: any): boolean {
 /** Login-free signing link (mirrors ProviderAgreement.guestToken): mints the
  *  token on first use so pre-existing rows get one on resend/remind. */
 export async function mintW9GuestToken(w9Id: string, existingToken: string | null): Promise<string> {
-  if (existingToken) return existingToken;
+  // Every call is a send or a reminder, so the window is refreshed here too -
+  // otherwise a day-10 reminder could link to an already-dead token.
+  // Re-sending also clears a revocation: the admin is deliberately handing the
+  // link out again.
+  const guestTokenExpiresAt = guestLinkExpiry();
+  if (existingToken) {
+    await (prisma as any).providerW9.update({
+      where: { id: w9Id },
+      data: { guestTokenExpiresAt, guestTokenRevokedAt: null },
+    }).catch(() => {});
+    return existingToken;
+  }
   const { randomBytes } = await import("crypto");
   const guestToken = randomBytes(24).toString("hex");
-  await (prisma as any).providerW9.update({ where: { id: w9Id }, data: { guestToken } });
+  await (prisma as any).providerW9.update({
+    where: { id: w9Id },
+    data: { guestToken, guestTokenExpiresAt, guestTokenRevokedAt: null },
+  });
   return guestToken;
 }
 
@@ -359,9 +374,16 @@ export class W9Controller {
     if (!token || token.length < 20) throw new HttpException("Invalid signing link", HttpStatus.NOT_FOUND);
     const row = await (prisma as any).providerW9.findUnique({
       where: { guestToken: token },
-      select: { id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true, formType: true },
+      select: {
+        id: true, status: true, signerEmail: true, pandaDocDocumentId: true, guestOpenedAt: true, formType: true,
+        guestTokenExpiresAt: true, guestTokenRevokedAt: true,
+      },
     });
-    if (!row) throw new HttpException("Invalid or expired signing link", HttpStatus.NOT_FOUND);
+    // Same response whether the token is unknown, revoked or expired, so
+    // probing cannot tell a real-but-dead link from a made-up one.
+    if (!row || guestLinkProblem(row)) {
+      throw new HttpException(GUEST_LINK_DEAD_MESSAGE, HttpStatus.NOT_FOUND);
+    }
     // The page header/loading copy names the actual form (W-9 vs W-8BEN-E).
     const formLabel = TAX_FORM_LABELS[(row.formType || "W9") as TaxFormType];
     if (!row.guestOpenedAt) {
@@ -385,9 +407,14 @@ export class W9Controller {
     if (!token || token.length < 20) throw new HttpException("Invalid link", HttpStatus.NOT_FOUND);
     const row = await (prisma as any).providerW9.findUnique({
       where: { guestToken: token },
-      select: { status: true, pandaDocDocumentId: true },
+      select: {
+        status: true, pandaDocDocumentId: true,
+        guestTokenExpiresAt: true, guestTokenRevokedAt: true,
+      },
     });
-    if (!row || row.status !== "COMPLETED" || !row.pandaDocDocumentId) {
+    // The signed form carries an EIN or an SSN, so the download obeys the same
+    // lifetime as the signing page.
+    if (!row || guestLinkProblem(row) || row.status !== "COMPLETED" || !row.pandaDocDocumentId) {
       throw new HttpException("Not available", HttpStatus.NOT_FOUND);
     }
     const apiKey = process.env.PANDADOC_API_KEY;

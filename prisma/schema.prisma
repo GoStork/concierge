@@ -2854,6 +2854,12 @@ model ProviderW9 {
   /// Login-free signing (mirrors ProviderAgreement): the request email links
   /// to /sign-w9/<guestToken> so the signer needs no GoStork account.
   guestToken         String?   @unique
+  /// When the link stops working. Refreshed on every resend and reminder, so a
+  /// real signer never hits it. Null on rows that predate this field - treated
+  /// as usable, see server/src/lib/guest-link.ts.
+  guestTokenExpiresAt DateTime?
+  /// Set to switch a link off early (wrong recipient, superseded request).
+  guestTokenRevokedAt DateTime?
   /// Automatic signing reminders already sent (day 3/7/10 ladder, max 3).
   autoRemindCount    Int       @default(0)
   /// First open of the guest link - "did they see it" tracking.
@@ -2902,6 +2908,12 @@ model ProviderAgreement {
   /// Generated when the provider is notified; validated by the public session
   /// endpoint (no auth).
   guestToken                 String?   @unique
+  /// When the link stops working. Refreshed on every resend and reminder, so a
+  /// real signer never hits it. Null on rows that predate this field - treated
+  /// as usable, see server/src/lib/guest-link.ts.
+  guestTokenExpiresAt        DateTime?
+  /// Set to switch a link off early (wrong recipient, superseded agreement).
+  guestTokenRevokedAt        DateTime?
   /// Automatic signing reminders already sent (day 3/7/10 ladder, max 3).
   /// Doubles as the cross-machine claim: the sweep increments it atomically
   /// before emailing, so two servers on the same tick send once.
