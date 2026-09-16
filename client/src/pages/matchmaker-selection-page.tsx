@@ -191,9 +191,9 @@ export default function MatchmakerSelectionPage() {
                 else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); moveTo(idx + 1, e); }
                 else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); moveTo(idx - 1, e); }
               }}
-              className={`relative cursor-pointer transition-all duration-200 p-5 flex flex-col gap-3 self-stretch hover:shadow-md w-full sm:w-[280px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+              className={`relative cursor-pointer transition-all duration-200 p-5 flex flex-col gap-3 self-stretch hover-elevate w-full sm:w-[280px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                 isSelected
-                  ? "ring-2 ring-primary shadow-lg"
+                  ? "ring-2 ring-primary"
                   : "hover:ring-1 hover:ring-primary/30"
               }`}
               style={{ borderRadius: `var(--container-radius, 0.5rem)` }}

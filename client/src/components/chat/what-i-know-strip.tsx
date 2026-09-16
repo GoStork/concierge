@@ -24,7 +24,7 @@ const FAMILY_LABEL: Record<string, string> = {
   solo_woman: "Solo mom",
   two_dads: "Two dads",
   two_moms: "Two moms",
-  straight_couple: "Couple",
+  straight_couple: "Mom and dad",
 };
 
 function titleCase(s: string): string {
@@ -83,11 +83,13 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
   const isMember = !!u?.parentAccountRole && u.parentAccountRole !== "INTENDED_PARENT_1";
   const { data: members } = useQuery<{ id: string; name?: string | null; parentAccountRole?: string | null }[]>({
     queryKey: ["/api/parent-account/members"],
-    enabled: !!user && isMember,
+    enabled: !!user,
     staleTime: 60_000,
   });
-  const ownerFirstName = (Array.isArray(members) ? members : [])
-    .find(m => m.parentAccountRole === "INTENDED_PARENT_1")?.name?.split(" ")[0] || null;
+  const memberList = Array.isArray(members) ? members : [];
+  const ownerFirstName = memberList.find(m => m.parentAccountRole === "INTENDED_PARENT_1")?.name?.split(" ")[0] || null;
+  const otherFirstName = memberList.find(m => m.parentAccountRole !== "INTENDED_PARENT_1")?.name?.split(" ")[0] || null;
+  const meFirstName = (u?.firstName || u?.name?.split(" ")[0] || null) as string | null;
 
   const p = profile || {};
   const facts: Fact[] = [];
@@ -102,7 +104,7 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
   const single = /single|solo/.test(rel);
   const derivedFamily = !p.familyType && (isMan || isWoman)
     ? (single ? (isMan ? "Solo dad" : "Solo mom")
-      : rel ? (isMan && orient === "gay" ? "Two dads" : isWoman && orient === "lesbian" ? "Two moms" : "Couple") : null)
+      : rel ? (isMan && orient === "gay" ? "Two dads" : isWoman && orient === "lesbian" ? "Two moms" : "Mom and dad") : null)
     : null;
   const family = p.familyType ? FAMILY_LABEL[p.familyType] || titleCase(String(p.familyType)) : derivedFamily;
   if (family) facts.push({ key: "family", label: "Family", value: family });
@@ -128,7 +130,10 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
 
   const age = ageFrom(u?.dateOfBirth);
   const partnerAge = typeof u?.partnerAge === "number" && u.partnerAge >= 18 ? u.partnerAge : null;
-  if (age && partnerAge) facts.push({ key: "ages", label: "Ages", value: `${age} and ${partnerAge}` });
+  // With two members on the account, "Partner age" is ambiguous (from the
+  // partner's seat it is the owner's age). Name them.
+  const partnerLabel = isMember ? ownerFirstName : otherFirstName;
+  if (age && partnerAge) facts.push({ key: "ages", label: "Ages", value: meFirstName && partnerLabel ? `${meFirstName} ${age} · ${partnerLabel} ${partnerAge}` : `${age} and ${partnerAge}` });
   else if (age) facts.push({ key: "ages", label: "Age", value: String(age) });
 
   if (p.eggSource) facts.push({ key: "eggs", label: "Eggs", value: EGG_LABEL[String(p.eggSource).toLowerCase()] || titleCase(String(p.eggSource)) });
@@ -151,7 +156,9 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
 
   // Labelled pairs, most recently learned first: the fold shows ~36 chars on
   // a phone, so the newest facts (what Eva just heard) must lead.
-  const line = [...facts].reverse().map(f => `${f.label} ${f.value}`).join(" · ");
+  // Termination stays out of the always-visible fold (a phone, over a
+  // shoulder); it is still in the expanded list.
+  const line = [...facts].reverse().filter(f => f.key !== "termination").map(f => `${f.label} ${f.value}`).join(" · ");
   const who = conciergeName || "your concierge";
 
   return (

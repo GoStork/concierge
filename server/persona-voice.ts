@@ -87,6 +87,8 @@ function hash(s: string): number {
 // one sentence on WHY it is asked, then the question verbatim so the suite's
 // contains-assertions and the aiAsked() detectors still match.
 const FIXED_FRAMES: Record<string, string> = {
+  a1_age: "Clinics and agencies match on age ranges, so this changes which options I bring you.",
+  step1b_pgta: "PGT-A is the genetic screening some clinics run on embryos; it changes what your next step looks like.",
   d2_termination: "Agencies ask this early so you are never matched with someone whose values differ from yours.",
   a3_twins: "Most clinics now transfer one embryo at a time, so this is about your preference, not a plan.",
   d3_twins: "Most clinics now transfer one embryo at a time, so this is about your preference, not a plan.",

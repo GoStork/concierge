@@ -58,7 +58,7 @@ export default function OnboardingAiReadyPage() {
       >
       <div className="w-full flex flex-col items-center flex-1">
         {/* Selected avatar */}
-        <div className="flex justify-center mb-4">
+        <div className="flex justify-center mb-4 [@media(max-height:700px)]:mb-2">
           {selected?.avatarUrl ? (
             <img
               src={getPhotoSrc(selected.avatarUrl) || undefined}
@@ -78,21 +78,21 @@ export default function OnboardingAiReadyPage() {
         </div>
 
         <h1
-          className="text-3xl md:text-4xl font-bold leading-tight text-center mb-4"
+          className="text-3xl md:text-4xl font-bold leading-tight text-center mb-4 [@media(max-height:700px)]:mb-2"
           style={{ fontFamily: "var(--font-display)" }}
           data-testid="text-ai-ready-title"
         >
           {selected ? `${selected.name} is ready` : "Your AI concierge is ready"}
         </h1>
 
-        <p className="t-field-prose text-center max-w-sm mx-auto mb-6" data-testid="text-ai-ready-intro">
+        <p className="t-field-prose text-center max-w-sm mx-auto mb-6 [@media(max-height:700px)]:mb-3" data-testid="text-ai-ready-intro">
           Here is how the next few minutes go.
         </p>
 
         {/* What happens next - true steps, no mock booking. The previous mock
             "Meeting Confirmed" card told a nervous first-timer that calls get
             booked without them; the product promise is the opposite. */}
-        <ol className="mx-auto max-w-sm w-full space-y-3" data-testid="ai-ready-steps">
+        <ol className="mx-auto max-w-sm w-full space-y-3 [@media(max-height:700px)]:space-y-2" data-testid="ai-ready-steps">
           {[
             { n: 1, title: `Tell ${firstName} about your journey`, body: "A few short questions, one at a time. Answer in your own words or tap a reply." },
             { n: 2, title: `${firstName} brings you hand-picked matches`, body: "One at a time, from our vetted network, with real costs shown up front." },

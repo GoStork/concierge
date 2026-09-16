@@ -199,11 +199,7 @@ function chatDateLabel(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
 }
 
-const CURATION_LINES = [
-  "Analyzing your family-building goals...",
-  "Searching our vetted network...",
-  "Finalizing your personalized results...",
-];
+const WORKING_CURATION_ID = "working-curation";
 
 const PREP_DOC_SECTIONS = [
   { icon: Heart, title: "Personal & Lifestyle", items: ["Family background & motivation", "Daily life & support system", "Work schedule"] },
@@ -213,92 +209,6 @@ const PREP_DOC_SECTIONS = [
   { icon: Shield, title: "Legal & Communication", items: ["Prior surrogacy experience", "Preferred communication style"] },
 ];
 
-function CurationOverlay({ brandColor, onComplete }: { brandColor: string; onComplete: () => void }) {
-  const [lineIndex, setLineIndex] = useState(0);
-  const [displayText, setDisplayText] = useState("");
-  const [charIndex, setCharIndex] = useState(0);
-
-  useEffect(() => {
-    if (lineIndex >= CURATION_LINES.length) {
-      const t = setTimeout(onComplete, 400);
-      return () => clearTimeout(t);
-    }
-    const line = CURATION_LINES[lineIndex];
-    if (charIndex < line.length) {
-      const t = setTimeout(() => {
-        setDisplayText(line.substring(0, charIndex + 1));
-        setCharIndex(charIndex + 1);
-      }, 30);
-      return () => clearTimeout(t);
-    } else {
-      const t = setTimeout(() => {
-        setLineIndex(lineIndex + 1);
-        setCharIndex(0);
-        setDisplayText("");
-      }, 800);
-      return () => clearTimeout(t);
-    }
-  }, [lineIndex, charIndex, onComplete]);
-
-  return createPortal(
-    <div
-      className="flex flex-col items-center justify-center"
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 9999,
-        backgroundColor: "hsl(var(--background) / 0.95)",
-        WebkitBackdropFilter: "blur(4px)",
-        backdropFilter: "blur(4px)",
-      }}
-      data-testid="curation-overlay"
-    >
-      <div className="flex flex-col items-center text-center px-8 max-w-md">
-        <div className="relative mb-8">
-          <div
-            className="w-16 h-16 rounded-full"
-            style={{
-              border: `3px solid ${brandColor}20`,
-              borderTopColor: brandColor,
-              animation: "spin 1s linear infinite",
-              WebkitAnimation: "spin 1s linear infinite",
-            }}
-          />
-          <Sparkles
-            className="w-6 h-6 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-            style={{ color: brandColor }}
-          />
-        </div>
-        <div className="h-8 flex items-center">
-          <p
-            className="text-lg font-medium"
-            style={{ fontFamily: "var(--font-display)", color: brandColor }}
-            data-testid="curation-text"
-          >
-            {displayText}
-            <span style={{ animation: "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite", WebkitAnimation: "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" }}>|</span>
-          </p>
-        </div>
-        <div className="flex gap-2 mt-6">
-          {CURATION_LINES.map((_, i) => (
-            <div
-              key={i}
-              className="h-1.5 rounded-full transition-all duration-500"
-              style={{
-                width: i === lineIndex ? "2rem" : "0.5rem",
-                backgroundColor: i <= lineIndex ? brandColor : `${brandColor}30`,
-              }}
-            />
-          ))}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 // One meeting/booking card - the SAME component serves the chat transcript
 // AND the voice-call takeover (extracted from the message-list JSX so voice
@@ -2217,7 +2127,16 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
       return (
         <div className="w-full rounded-[var(--container-radius)] overflow-hidden bg-muted border border-border p-4 text-center">
           <p className="t-helper font-ui">{card.name || cardType || "Profile"}</p>
-          <p className="t-helper mt-1">Profile unavailable</p>
+          <p className="t-helper mt-1">This profile did not load.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 rounded-full"
+            onClick={() => onAction("That profile didn't load for me. Could you show me another option?")}
+            data-testid="btn-card-unavailable-another"
+          >
+            Ask for another
+          </Button>
         </div>
       );
     }
@@ -2259,8 +2178,8 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
           tabs={tabs}
           disableSwipe={!fill}
           chatMode
-          onPass={() => onAction(`I'm not interested in ${card.name || title}. Show me another option.`)}
-          onSave={() => { persistChatFavorite("donor", card.providerId); onAction(`I like ${card.name || title}! Save as favorite. ❤️`); }}
+          onPass={() => onAction(`Not the right fit for us - show me someone else.`)}
+          onSave={() => { persistChatFavorite("donor", card.providerId); onAction(`Save ${card.name || title} as a favorite.`); }}
           onViewFullProfile={() => onViewProfile({ ...card, ownerProviderId: card.ownerProviderId || profile?.providerId })}
         />
       </div>
@@ -4076,7 +3995,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       });
       setInput("");
       curationAwaitingRef.current = false;
-      setTimeout(() => { showCurationRef.current = true; setShowCuration(true); }, 800);
+      // No takeover. The search happens in the thread: one working line in
+      // the persona's voice, the typing row, then the real match card. The
+      // old CurationOverlay was a fixed, blurred, six-second portal with
+      // stock "Analyzing your goals..." copy - a modal at the climax.
+      setMessages((prev) => [...prev, {
+        role: "assistant" as const,
+        id: WORKING_CURATION_ID,
+        content: `${aiName || "Your concierge"} is going through the network now with everything you just shared.`,
+        createdAt: new Date().toISOString(),
+      }]);
+      setTimeout(() => { void handleCurationComplete(); }, 300);
       return;
     }
 
@@ -4716,8 +4645,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       });
       if (!res.ok) throw new Error("Chat request failed");
 
-      // Add streaming placeholder
-      setMessages((prev) => [...prev, { role: "assistant" as const, content: "", id: curationStreamId, createdAt: new Date().toISOString() }]);
+      // Add streaming placeholder (and retire the working line)
+      setMessages((prev) => [...prev.filter((m) => m.id !== WORKING_CURATION_ID), { role: "assistant" as const, content: "", id: curationStreamId, createdAt: new Date().toISOString() }]);
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -4781,7 +4710,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }
       }
     } catch {
-      setMessages((prev) => prev.filter((m) => m.id !== curationStreamId));
+      setMessages((prev) => prev.filter((m) => m.id !== curationStreamId && m.id !== WORKING_CURATION_ID));
       setMessages((prev) => [
         ...prev,
         { role: "assistant" as const, content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
@@ -4847,7 +4776,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         <p className="t-helper mb-4">
           Please choose an AI guide to start your concierge experience.
         </p>
-        <Button onClick={() => navigate("/account/concierge")} data-testid="btn-go-select-matchmaker">
+        <Button onClick={() => navigate("/matchmaker-selection")} data-testid="btn-go-select-matchmaker">
           Choose a Concierge
         </Button>
       </div>
@@ -4856,9 +4785,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   return (
     <>
-      {showCuration && (
-        <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
-      )}
+
       <div
         className={`flex ${isInline ? "flex-1 min-h-0 min-w-0" : "h-dvh"} overflow-hidden${!isEmbedded && !isInline && !(providerInChat && (sessionBookings?.length ?? 0) > 0) ? " max-w-3xl mx-auto" : ""}`}
         data-testid="concierge-chat-page"
@@ -5167,12 +5094,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
               // For attachment messages, strip auto-generated placeholder text so only the file card shows
               const isAttachmentMsg = msg.uiCardType === "attachment";
-              const displayContent = isAttachmentMsg
+              const rawDisplay = isAttachmentMsg
                 ? (msg.content || "")
                     .replace(/\s*\[Attached file:[^\]]*\]/gi, "")
                     .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "")
                     .trim()
                 : (msg.content || "");
+              // The card renders ABOVE the bubble, so a caption line that points
+              // down at where the tag used to be ("Here is her profile:") and the
+              // blank lines the stripped tag left behind read as a hole. Measured
+              // live: three empty lines inside a 1187px bubble.
+              const displayContent = (msg.matchCards?.length || msg.doctorCards?.length)
+                ? rawDisplay
+                    .split("\n")
+                    .filter((l) => !/^\s*here (?:is|are) (?:her|his|their|the|a)? ?(?:full )?profiles?\s*[:.!]?\s*$/i.test(l))
+                    .join("\n")
+                    .replace(/\n{3,}/g, "\n\n")
+                    .trim()
+                : rawDisplay;
               const hasQuickReplies = !!(msg.quickReplies?.length || (msg as any).uiCardData?.quickReplies?.length);
               const showBubble = !isAttachmentMsg || displayContent.length > 0 || hasQuickReplies;
               const msgAvatarUrl = !alignRight
@@ -5388,7 +5327,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   // 44px touch target on phones (the chips are the
                                   // primary intake control); desktop keeps the
                                   // brand's compact height.
-                                  className="transition-all hover:opacity-90 font-medium min-h-11 md:min-h-0 qr-chip"
+                                  className="transition-all hover-elevate font-medium min-h-11 md:min-h-0 qr-chip"
                                   style={{
                                     borderRadius: "var(--quick-reply-radius, 999px)",
                                     paddingLeft: "var(--quick-reply-px, 14px)",

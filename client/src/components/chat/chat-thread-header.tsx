@@ -146,7 +146,7 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
               data-testid="btn-talk-to-team"
             >
               <Headphones className="w-3.5 h-3.5" />
-              <span className="sm:hidden">Human</span>
+              <span className="sm:hidden">Team</span>
               <span className="hidden sm:inline">Talking with Human</span>
             </div>
           ) : (

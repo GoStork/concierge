@@ -316,6 +316,7 @@ export function SwipeDeckCard({
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
                 className="absolute top-6 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
+                aria-label="View full profile"
                 data-testid={`button-view-profile-${id}`}
               >
                 <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
@@ -638,7 +639,8 @@ export function SwipeDeckCard({
                 <button
                   onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
                   className={`ml-auto shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`}
-                  data-testid={`button-view-profile-${id}`}
+                  aria-label="View full profile"
+                data-testid={`button-view-profile-${id}`}
                 >
                   <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
                 </button>
@@ -863,6 +865,7 @@ export function SwipeDeckCard({
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
                 className="shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto"
+                aria-label="View full profile"
                 data-testid={`button-view-profile-${id}`}
               >
                 <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
@@ -1156,6 +1159,7 @@ export function SwipeDeckCard({
                 size="icon"
                 onClick={(e) => { e.stopPropagation(); isPassed ? onUndo?.() : (disableSwipe ? onPass() : animateSwipe("left")); }}
                 className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center`}
+                aria-label={isPassed ? "Undo pass" : "Not the right fit - pass"}
                 data-testid={isPassed ? `button-undo-${id}` : `button-pass-${id}`}
               >
                 {/* In the skipped/hidden view a passed card's primary action is to
@@ -1175,6 +1179,7 @@ export function SwipeDeckCard({
                 size="icon"
                 onClick={(e) => { e.stopPropagation(); disableSwipe ? onSave() : animateSwipe("right"); }}
                 className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center`}
+                aria-label={isSaved ? "Saved as favorite" : "Save as favorite"}
                 data-testid={`button-save-${id}`}
               >
                 <Heart className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-save)" }} strokeWidth={3} fill={isSaved ? "currentColor" : "none"} />

@@ -452,8 +452,8 @@ function injectMissingQuickReplies(content: string): string {
     [/ready to see some (?:surrogate|donor|clinic|match)/i, "[[QUICK_REPLY:Yes, show me matches!|Not yet]]"],
     [/shall i find your (?:perfect )?matches/i, "[[QUICK_REPLY:Yes, find my matches!|I have a question first]]"],
     // Post-surrogate match conversion follow-up
-    [/does she feel like (?:a |she could be a )?good (?:match|fit)/i, "[[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]"],
-    [/ready to take the next step.*schedule/i, "[[QUICK_REPLY:Yes, schedule a call|I don't like her]]"],
+    [/does she feel like (?:a |she could be a )?good (?:match|fit)/i, "[[QUICK_REPLY:I have questions about her|Schedule a free consultation|Not the right fit for us]]"],
+    [/ready to take the next step.*schedule/i, "[[QUICK_REPLY:Yes, schedule a call|Not the right fit for us]]"],
     // Surrogate decline education follow-up
     [/what didn't feel right|didn't feel right to you|what.*not.*right/i, "[[QUICK_REPLY:Her location|Her age|Her BMI|Too many pregnancies|Too many C-sections|Her medical history|Her appearance|Her vibe or personality|The cost|Something else]]"],
     [/find.*someone.*better|schedule.*call.*anyway/i, "[[QUICK_REPLY:Find me a better match|Schedule a call with her anyway]]"],
@@ -1656,6 +1656,11 @@ aiRouter.use(async (req: any, _res: any, next: any) => {
         const token = authHeader.slice(7);
         const secret = jwtSecret();
         const payload = jwt.verify(token, secret) as any;
+        // A 2FA challenge ticket is signed with the same key but is NOT a
+        // session: it means "password accepted, second factor still owed".
+        // Every place that turns a Bearer token into req.user must refuse it,
+        // or the second factor is bypassable by replaying the ticket.
+        if (payload?.purpose === "2fa_challenge") throw new Error("2fa_challenge_not_a_session");
         if (payload?.sub) {
           const user = await prisma.user.findUnique({ where: { id: payload.sub } });
           if (user && !user.isDisabled) {
@@ -7097,7 +7102,7 @@ CRITICAL: The providerId in the MATCH_CARD MUST be the "id" field from the searc
 Use this EXACT format:
 [[MATCH_CARD:{"name":"displayName field","type":"${serviceType}","location":"location field","photo":"","reasons":["reason1","reason2","reason3"],"providerId":"id field value (UUID)"}]]
 
-Write 2-3 warm sentences BEFORE the card. After the card: "Does she feel like a good match?" [[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]
+Write 2-3 warm sentences BEFORE the card. After the card: "Does she feel like a good match?" [[QUICK_REPLY:I have questions about her|Schedule a free consultation|Not the right fit for us]]
 
 Rules: Use real values from the data. The providerId = the "id" UUID field. Never fabricate. Never say search failed.`;
         const retryMessages = [

@@ -125,7 +125,7 @@ export function buildD1HasEmbryos(costs: D1Costs = {}): string {
 Here's a quick breakdown:
 ${priceLine("- United States:", costs.us, " and up (surrogate compensation, agency fee, legal, insurance)", "programs available - I'll show exact pricing in a moment (surrogate compensation, agency fee, legal, insurance)")}
 ${priceLine("- Mexico: starting from", costs.mexico, " all-in", "programs available - I'll show exact pricing in a moment")}
-${priceLine("- Colombia: starting from", costs.colombia, " all-in - our most popular option", "programs available - our most popular option")}
+${priceLine("- Colombia: starting from", costs.colombia, " all-in - the shortest stay after birth of the three", "programs available - the shortest stay after birth of the three")}
 
 Colombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.
 
@@ -138,9 +138,9 @@ export function buildD1NoEmbryos(costs: D1Costs = {}): string {
 Here's a quick comparison:
 ${priceLine("- United States:", costs.us, "+ for surrogacy alone (IVF and egg donor are separate additional costs)", "programs available - I'll show exact pricing in a moment for US surrogacy (IVF and egg donor are separate additional costs)")}
 ${priceLine("- Mexico: starting from", costs.mexico, " for a complete program including IVF, egg donor, and surrogate", "programs available - I'll show exact pricing in a moment")}
-${priceLine("- Colombia: starting from", costs.colombia, " for a complete program - our most popular option", "programs available - our most popular option")}
+${priceLine("- Colombia: starting from", costs.colombia, " for a complete program - the shortest stay after birth of the three", "programs available - the shortest stay after birth of the three")}
 
-Colombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.
+Colombia's program is particularly well-regarded: the legal process is clean, the agencies we work with there were vetted in person, and you only need to stay a few weeks after birth.
 
 With all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
 }
@@ -798,7 +798,16 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
 
     // D CURATION: build from profile data when D questions are answered
     if (d1Answered && (twinsAlreadyAnswered || !selectedUSA || !!(profile?.surrogateTermination) || d2Asked)) {
-      const familyType = profile?.familyType || "your family";
+      // Same derivation as the "So far" strip: profile.familyType is rarely
+      // stored, so the summary used to say "open to surrogacy in USA" under a
+      // strip that already said "Two dads".
+      const familyType = profile?.familyType
+        || (isMaleGender && isGayMale ? "two dads"
+          : isTwoMoms ? "two moms"
+          : isMaleGender && isSoloSkip ? "solo dad"
+          : isFemaleGender && isSoloSkip ? "solo mom"
+          : (isMaleGender || isFemaleGender) ? "mom and dad"
+          : "your family");
       const countries = surrogateCountries || "USA";
       const termPref = profile?.surrogateTermination || null;
       const twinsPref = twinsSaved === "yes" ? "hoping for twins"
@@ -811,9 +820,15 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
       if (!alreadySentDCuration) {
         let summary = `Here's what I have: `;
         const parts: string[] = [];
+        // One readable sentence, no colons inside the comma list (it is read
+        // at 21px on a phone): "two dads, open to surrogacy in Mexico and
+        // Colombia, no termination preference, singleton preferred".
         if (familyType && familyType !== "your family") parts.push(familyType.replace(/_/g, " "));
-        if (countries) parts.push(`open to surrogacy in ${countries}`);
-        if (termPref) parts.push(`termination preference: ${termPref}`);
+        if (countries) {
+          const list = String(countries).split(",").map((c) => c.trim()).filter(Boolean);
+          parts.push(`open to surrogacy in ${list.length > 1 ? list.slice(0, -1).join(", ") + " and " + list[list.length - 1] : list[0] || countries}`);
+        }
+        if (termPref) parts.push(/no preference/i.test(termPref) ? "no termination preference" : `prefer a ${termPref.toLowerCase()}`);
         if (twinsPref) parts.push(twinsPref);
         // Closing question is PATH-aware. International-only (Mexico/Colombia,
         // no USA) means we're about to call search_surrogacy_agencies and

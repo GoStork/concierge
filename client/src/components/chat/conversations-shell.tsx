@@ -162,8 +162,8 @@ export function ConversationsShell({
           <div className="flex-1 flex items-center justify-center text-center px-8">
             <div>
               <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-              <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
-              <p className="t-helper">Choose a conversation from the list to view messages</p>
+              <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Your conversations live here</h3>
+              <p className="t-helper">Pick a thread on the left to continue where you left off.</p>
             </div>
           </div>
         ) : detailContent}
