@@ -34,6 +34,7 @@ import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { DonorStatusPill, getDonorStatusStyle, isMarketplaceProfileSubject } from "@/lib/donor-status";
+import { ChatThreadHeader } from "@/components/chat/chat-thread-header";
 import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
@@ -2110,125 +2111,58 @@ const sendMessageMutation = useMutation({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Centering wrapper: constrains both header and content to max-w-3xl in AI-only mode; fills flex-1 in consultation mode */}
         <div className={`flex flex-col flex-1 min-h-0 overflow-hidden${parentShowSidebar ? "" : " max-w-3xl mx-auto w-full"}`}>
-        <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0" data-testid="parent-chat-header">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-8 w-8 p-0 ${parentShowSidebar ? "md:hidden" : ""}`}
-            onClick={() => setSelectedParentSession(null)}
-            aria-label="Back to conversations"
-            data-testid="btn-back-parent-chat"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          {/* Provider session: stacked layout - donor (primary) + provider (subtitle).
-              Only render this layout once the parent has ACTUALLY connected with the
-              provider (booking placed, joined, or 3-way chat started). An AI Concierge
-              session can carry a stale providerId from the marketplace context it was
-              opened in (e.g. clicking a sperm-bank donor), but until the parent books
-              a consultation the chat is still the parent's general AI concierge - not
-              that provider's consultation channel - so "via Sperm Bank" misattributes
-              it after the parent has moved on to a different agency in conversation. */}
-          {selectedParentSession!.providerId && selectedParentSession!.title && (
-            !!selectedParentSession!.providerJoinedAt ||
-            selectedParentSession!.status === "CONSULTATION_BOOKED" ||
-            selectedParentSession!.status === "PROVIDER_CONNECTED"
-          ) ? (
-            <button
-              type="button"
-              onClick={() => setParentHeaderPanelOpen(o => !o)}
-              aria-expanded={parentHeaderPanelOpen}
-              aria-controls="parent-header-context-panel"
-              className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-[var(--radius)] -mx-1 px-1 py-1 lg:cursor-default active:bg-muted/40 lg:active:bg-transparent"
-              data-testid="btn-parent-header-context"
-            >
-              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
-                {selectedParentSession!.profilePhotoUrl ? (
-                  <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                ) : parentHeaderAvatar ? (
-                  <img src={parentHeaderAvatar} alt="" className="w-10 h-10 rounded-full object-contain p-0.5 bg-background border" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{selectedParentSession!.title}</span>
-                  {selectedParentSession!.subjectProfileId && selectedParentSession!.profileStatus
+        <ChatThreadHeader
+          brandColor={brandColor}
+          testId="parent-chat-header"
+          onBack={() => setSelectedParentSession(null)}
+          backClassName={parentShowSidebar ? "md:hidden" : ""}
+          identity={{
+            name: parentHeaderName,
+            // The persona's own title ("The Straight Talker"), not a generic label.
+            subtitle: hasProvider ? null : (selectedParentSession?.matchmakerTitle || "AI Concierge"),
+            avatarUrl: parentHeaderAvatar,
+            avatarFit: hasProvider ? "contain" : "cover",
+          }}
+          subject={
+            // Subject layout only once the parent has ACTUALLY connected with the
+            // provider (booking placed, joined, or 3-way chat started). A stale
+            // providerId from how the chat was opened must not relabel Eva's thread.
+            selectedParentSession!.providerId && selectedParentSession!.title && (
+              !!selectedParentSession!.providerJoinedAt ||
+              selectedParentSession!.status === "CONSULTATION_BOOKED" ||
+              selectedParentSession!.status === "PROVIDER_CONNECTED"
+            )
+              ? {
+                  title: selectedParentSession!.title,
+                  photoUrl: selectedParentSession!.profilePhotoUrl,
+                  viaName: parentHeaderName,
+                  viaLogo: parentHeaderAvatar,
+                  badge: selectedParentSession!.subjectProfileId && selectedParentSession!.profileStatus
                     ? <DonorStatusPill status={selectedParentSession!.profileStatus} />
-                    : selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] ? (
-                      <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Provider online" />
-                    ) : null}
-                </div>
-                <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <span className="t-helper flex-shrink-0">via</span>
-                  {parentHeaderAvatar && (
-                    <img src={parentHeaderAvatar} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                  )}
-                  <span className="t-helper truncate">{parentHeaderName}</span>
-                </div>
-              </div>
-              <ChevronRight
-                className="w-4 h-4 text-muted-foreground flex-shrink-0 lg:hidden"
-                aria-hidden
-              />
-            </button>
-          ) : (
-            /* Concierge or no-subject: single line */
-            <>
-              <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
-                {parentHeaderAvatar ? (
-                  <img src={parentHeaderAvatar} alt={parentHeaderName} className={`w-10 h-10 rounded-full ${hasProvider ? "object-contain p-0.5 bg-background border" : "object-cover"}`} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                ) : (
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
-                    {parentHeaderName.charAt(0)}
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
-                <p className="t-helper font-ui truncate">AI Concierge Chat</p>
-              </div>
-            </>
-          )}
-          {/* Talk to GoStork Team - available on EVERY parent chat (AI concierge
-              and provider sessions alike, any status). Triggers the inline chat's
-              escalation flow (via talkToTeamRef) so the parent gets the triage
-              question with quick-reply options instead of a silent notification. */}
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
-              <div
-                className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
-                style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
-                data-testid="btn-talk-to-team"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Talking with Human</span>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs gap-1.5 h-8"
-                style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-                onClick={() => {
-                  if (talkToTeamRef.current?.trigger) {
-                    setTalkToTeamEscalated(true);
-                    talkToTeamRef.current.trigger();
-                  }
-                }}
-                disabled={talkToTeamEscalated || !!selectedParentSession!.humanRequested}
-                aria-label={(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team notified" : "Talk to GoStork Team"}
-                data-testid="btn-talk-to-team"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team Notified" : "Talk to GoStork Team"}</span>
-              </Button>
-            )}
-          </div>
-        </div>
+                    : selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId]
+                    ? <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Provider online" />
+                    : null,
+                  onToggle: () => setParentHeaderPanelOpen(o => !o),
+                  panelOpen: parentHeaderPanelOpen,
+                }
+              : null
+          }
+          team={
+            // Available on EVERY parent chat; triggers the inline chat's escalation
+            // flow so the parent gets the triage question, not a silent notification.
+            selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt
+              ? { state: "talking" }
+              : {
+                  state: (talkToTeamEscalated || selectedParentSession!.humanRequested) ? "notified" : "available",
+                  onClick: () => {
+                    if (talkToTeamRef.current?.trigger) {
+                      setTalkToTeamEscalated(true);
+                      talkToTeamRef.current.trigger();
+                    }
+                  },
+                }
+          }
+        />
         {selectedParentSession!.providerId && selectedParentSession!.title && (
           <ChatHeaderContextPanel
             open={parentHeaderPanelOpen}

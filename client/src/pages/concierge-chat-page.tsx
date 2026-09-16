@@ -16,6 +16,7 @@ import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 import { PartnerInviteCard } from "@/components/chat/partner-invite-card";
 import { WhatIKnowStrip } from "@/components/chat/what-i-know-strip";
+import { ChatThreadHeader } from "@/components/chat/chat-thread-header";
 import { DonorReleaseWarningButtons } from "@/components/chat/special-message-card";
 import { ReviewPromptCard } from "@/components/reviews/reviews-ui";
 import { IpFormPromptCard } from "@/components/chat/ip-form-prompt-card";
@@ -4990,103 +4991,36 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             </div>
           </div>
         )}
-        {!isEmbedded && !isInline && <div
-          className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
-          data-testid="concierge-chat-header"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => navigate("/chat")}
-            aria-label="Back to conversations"
-            data-testid="btn-back-to-chats"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          {providerInChat && (sessionBookings?.length ?? 0) > 0 && subjectInfo ? (
-            /* Consultation mode: subject as primary, provider as "via" subtitle */
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
-                {subjectInfo.profilePhotoUrl ? (
-                  <img src={getPhotoSrc(subjectInfo.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{subjectInfo.profileLabel || providerChatName}</span>
-                </div>
-                <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <span className="t-helper flex-shrink-0">via</span>
-                  {subjectInfo.providerLogo ? (
-                    <img src={getPhotoSrc(subjectInfo.providerLogo) || undefined} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" />
-                  ) : null}
-                  <span className="t-helper truncate">{providerChatName}</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Default: matchmaker avatar + name */
-            <>
-              <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
-                {!providerInChat && resolvedAvatarUrl && (
-                  <img
-                    src={resolvedAvatarUrl}
-                    alt={selectedMatchmaker?.name || aiName || "AI Concierge"}
-                    className="w-12 h-12 rounded-full object-cover border absolute inset-0"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                )}
-                <div
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  {(providerInChat && providerChatName ? providerChatName : (aiName || "?")).charAt(0)}
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-[17px] font-ui" style={{ fontWeight: 600 }}>
-                  {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
-                </h2>
-                <p className="t-helper font-ui truncate" data-testid="chat-subject-label">
-                  {providerInChat && sessionTitle
-                    ? sessionTitle
-                    : (selectedMatchmaker?.title || "AI Concierge")}
-                </p>
-              </div>
-            </>
-          )}
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {!providerInChat && sessionLoaded && (
-              humanInChat ? (
-                <div
-                  className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-full"
-                  style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
-                  data-testid="btn-talk-to-team"
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span>Talking with Human</span>
-                </div>
-              ) : (
-                <Button
-                  size="sm"
-                  className="text-xs gap-1.5 h-8"
-                  style={{ ...chipDeclineStyle, borderRadius: "999px" }}
-                  onClick={handleTalkToTeam}
-                  disabled={sending || humanEscalated}
-                  data-testid="btn-talk-to-team"
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span>{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
-                </Button>
-              )
-            )}
-          </div>
-        </div>}
+        {!isEmbedded && !isInline && (
+          <ChatThreadHeader
+            brandColor={brandColor}
+            testId="concierge-chat-header"
+            onBack={() => navigate("/chat")}
+            identity={{
+              name: providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge"),
+              subtitle: providerInChat && sessionTitle ? sessionTitle : (selectedMatchmaker?.title || "AI Concierge"),
+              avatarUrl: !providerInChat ? resolvedAvatarUrl : null,
+              avatarFit: "cover",
+            }}
+            subject={
+              providerInChat && (sessionBookings?.length ?? 0) > 0 && subjectInfo
+                ? {
+                    title: subjectInfo.profileLabel || providerChatName || "",
+                    photoUrl: subjectInfo.profilePhotoUrl || null,
+                    viaName: providerChatName || "",
+                    viaLogo: subjectInfo.providerLogo || null,
+                  }
+                : null
+            }
+            team={
+              !providerInChat && sessionLoaded
+                ? (humanInChat
+                    ? { state: "talking" }
+                    : { state: humanEscalated ? "notified" : "available", onClick: handleTalkToTeam, disabled: sending })
+                : null
+            }
+          />
+        )}
 
         {/* "So far": what Eva has saved about the family, folded to one line.
             Eva's own session only - provider threads never show it. */}
