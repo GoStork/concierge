@@ -564,21 +564,36 @@ export default function OnboardingPage() {
   // more existed. Fade the scroller's bottom edge and rule the CTA bar while
   // there is content below the fold.
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const scrollerObserverRef = useRef<ResizeObserver | null>(null);
   const [hasMoreBelow, setHasMoreBelow] = useState(false);
   const measureOverflow = useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
     setHasMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
   }, []);
-  useEffect(() => {
-    measureOverflow();
-    const el = scrollerRef.current;
+  // Callback ref, not an effect: the scroller is not in the tree during the
+  // auth-loading and welcome renders, so an effect keyed on step ran once
+  // against a null ref and never came back. This attaches the observer the
+  // moment the element mounts and detaches when it leaves.
+  const setScrollerRef = useCallback((el: HTMLDivElement | null) => {
+    scrollerObserverRef.current?.disconnect();
+    scrollerObserverRef.current = null;
+    scrollerRef.current = el;
     if (!el) return;
     const ro = new ResizeObserver(measureOverflow);
     ro.observe(el);
     Array.from(el.children).forEach(c => ro.observe(c));
+    scrollerObserverRef.current = ro;
+    measureOverflow();
+  }, [measureOverflow]);
+  // Each step swaps the keyed child: observe the new one and re-measure.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    const ro = scrollerObserverRef.current;
+    if (el && ro) Array.from(el.children).forEach(c => ro.observe(c));
+    const raf = requestAnimationFrame(measureOverflow);
     window.addEventListener("resize", measureOverflow);
-    return () => { ro.disconnect(); window.removeEventListener("resize", measureOverflow); };
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", measureOverflow); };
   }, [step, measureOverflow]);
 
   // Focus management: after a step change, if nothing claimed focus (steps
@@ -926,7 +941,7 @@ export default function OnboardingPage() {
       </div>
 
       <div
-        ref={scrollerRef}
+        ref={setScrollerRef}
         onScroll={measureOverflow}
         className={`flex-1 overflow-y-auto px-6 pb-8 ${hasMoreBelow ? "scroll-fade-bottom" : ""}`}
       >
