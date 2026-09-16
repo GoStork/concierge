@@ -1123,6 +1123,8 @@ function StepAccount({
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const summaryRows = summary.filter(r => r.value);
 
   return (
     <div>
@@ -1134,30 +1136,49 @@ function StepAccount({
       >
         Create your account
       </h1>
-      <p className="t-helper mb-6">Enter your email and choose a password to get started.</p>
+      <p className="t-helper mb-4">Enter your email and choose a password to get started.</p>
 
-      {/* Read-back: the parent commits five answers here, so show them once
-          more with a way back to each. Linen recedes under the form. */}
-      <div className="rounded-[var(--radius)] border border-border bg-secondary/60 px-4 py-3 mb-8 space-y-2" data-testid="account-summary">
-        <p className="t-micro-label">What you told us</p>
-        {summary.filter(r => r.value).map(r => (
-          <div key={r.step} className="flex items-baseline justify-between gap-3">
-            <div className="min-w-0">
-              <span className="t-helper">{r.label}: </span>
-              <span className="t-field-value" data-testid={`summary-${r.step}`}>{r.value}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => onEditStep(r.step)}
-              className="t-helper text-primary hover:underline shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-              data-testid={`summary-edit-${r.step}`}
-            >
-              Edit
-            </button>
+      {/* Read-back: the parent commits five answers here, so restate them once
+          with a way back to each. One line by default so the form still fits
+          above the Continue bar on a laptop; expands inline to per-row Edit. */}
+      <div className="rounded-[var(--radius)] border border-border bg-secondary/60 px-4 py-2.5 mb-6" data-testid="account-summary">
+        <div className="flex items-center justify-between gap-3">
+          <p className="t-helper min-w-0 truncate" data-testid="summary-line">
+            {summaryRows.map(r => r.value).join(" · ")}
+          </p>
+          <button
+            type="button"
+            onClick={() => setSummaryOpen(o => !o)}
+            aria-expanded={summaryOpen}
+            aria-controls="account-summary-rows"
+            className="t-helper text-primary hover:underline shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            data-testid="summary-toggle"
+          >
+            {summaryOpen ? "Done" : "Change"}
+          </button>
+        </div>
+        {summaryOpen && (
+          <div id="account-summary-rows" className="mt-2 pt-2 border-t border-border space-y-1.5">
+            {summaryRows.map(r => (
+              <div key={r.step} className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0 truncate">
+                  <span className="t-helper">{r.label}: </span>
+                  <span className="t-field-value" data-testid={`summary-${r.step}`}>{r.value}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onEditStep(r.step)}
+                  className="t-helper text-primary hover:underline shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                  data-testid={`summary-edit-${r.step}`}
+                >
+                  Edit
+                </button>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
-      <div className="space-y-6">
+      <div className="space-y-5">
         <div>
           <label htmlFor="ob-email" className="t-form-label block mb-1">Email</label>
           <input
