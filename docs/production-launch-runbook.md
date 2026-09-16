@@ -1512,6 +1512,44 @@ Also required on the production host before this ships:
 - `DAILY_WEBHOOK_SECRET` (now fails closed instead of accepting anything).
 - `TEST_RUNNER_TOKEN` if the admin test-runner dashboard is used there.
 
+### 10f. Why Prisma was NOT downgraded
+
+`npm audit` reports `prisma` as high and offers `prisma@6.19.3` as the fix,
+which reads like "downgrade from 7 to 6". That is misleading, and acting on it
+would have been a serious mistake.
+
+Prisma itself has no advisory. The high rating is inherited from two
+dependencies of the CLI:
+
+- `mysql2` (<3.22.0) - plaintext credential leak via an auth-plugin downgrade,
+  plus a decompression-bomb DoS. It ships with the CLI for MySQL users. This
+  datasource is `postgresql`, the app never connects to MySQL, and `mysql2`
+  does not appear in the built server bundle at all.
+- `deepmerge-ts` (<8.0.0), via `@prisma/config` - stack exhaustion on recursive
+  object graphs, reached when the CLI loads `prisma.config.ts`. The input is
+  our own config file, not attacker data, and it runs at command time, not in
+  the server.
+
+npm suggests 6.19.3 only because that is the newest release whose tree happens
+to be clean; it is not a statement that 7.x is vulnerable.
+
+**The fix used instead** (package.json `overrides`):
+
+```
+"mysql2": ">=3.23.1",
+"deepmerge-ts": ">=8.0.0"
+```
+
+Lifting the dependencies rather than dropping the ORM. All four highs cleared
+(`prisma`, `@prisma/config`, `mysql2`, `deepmerge-ts`), Prisma stays on 7.10.0
+with `@prisma/client` 7.4.0 and the pg adapter this app is built on, and the
+187 migrations are untouched. Verified: `prisma generate` and
+`prisma migrate status` both still run, and the latter exercises the exact
+`prisma.config.ts` load path that `deepmerge-ts` sits on.
+
+**If a future audit suggests downgrading a major dependency, check whether the
+advisory is on the package itself or on something underneath it first.**
+
 ### 10e. Two-factor enforcement is ON - first-login enrolment (was a lockout)
 
 `TWO_FACTOR_ENFORCE_AT=2026-09-16T00:00:00Z` is set on the production VM and on
@@ -1574,9 +1612,13 @@ shown once at enrolment were actually saved.
    stranding providers mid-signature; they pick up a deadline on the next send.
    **Open follow-up:** revocation has no admin button yet - the column is
    honoured, but switching a link off today means setting it directly.
-6. **21 npm vulnerabilities remain** (10 high, 10 moderate, 1 low) needing major
-   upgrades: `prisma`, `drizzle-orm` (SQL injection via unescaped identifiers),
-   `googleapis`, `exceljs`, `esbuild`, `sharp`. Each needs its own test pass.
+6. **npm vulnerabilities: 21 -> 15** (4 high, 10 moderate, 1 low) as of
+   2026-09-16. Done so far: Drizzle deleted rather than upgraded (it was
+   unused), `sharp` 0.34.5 -> 0.35.4 for the libvips/libheif CVEs, and the
+   Prisma chain resolved by override (see 10f). Remaining, all needing their
+   own test pass: the `@nestjs/*` trio -> 12, `@google-cloud/storage` -> 8,
+   `googleapis` -> 181, `exceljs` -> 3.4, `react-router-dom` -> 7,
+   `esbuild` -> 0.28 (low, build-time only).
 7. **`cookies.txt` / `cookies2.txt` were committed with real session cookies.**
    Untracked and gitignored 2026-09-16, but they are still in git history -
    removing them needs a history rewrite, which is Eran's call. The cookies are

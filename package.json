@@ -184,5 +184,9 @@
     "tailwindcss": "^3.4.17",
     "typescript": "5.6.3",
     "vite": "^7.3.0"
+  },
+  "overrides": {
+    "mysql2": ">=3.23.1",
+    "deepmerge-ts": ">=8.0.0"
   }
 }
