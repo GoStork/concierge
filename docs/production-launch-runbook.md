@@ -1620,11 +1620,35 @@ log has no retention policy or off-box copy.
 `server/src/lib/csp.ts`, sent on document responses only (never on /api, which
 saves bytes and avoids fighting the image proxy's own tighter sandbox policy).
 
-**Kill switch: `CSP_MODE`.** `enforce` (default), `report` (send
+**Kill switch: `CSP_MODE`.** `enforce` (code default), `report` (send
 Content-Security-Policy-Report-Only, so nothing breaks while violations are
 collected) or `off`. Changing it needs a restart. If anything is reported
 broken in production and the cause is not obvious, set `CSP_MODE=report` and
 restart rather than debugging live.
+
+**CURRENT STATE (2026-09-16): `CSP_MODE=report` on BOTH the production VM and
+the MacBook.** Set deliberately, not by accident. The four surfaces that could
+not be exercised from a dev box (a live Stripe payment, a live Daily call, a
+PandaDoc signing iframe, the LiveAvatar talking head) are being observed in
+real use first. Nothing is blocked in this mode, so the protection is NOT yet
+active - the finding is not closed until this flips.
+
+To flip it, on the production host set `CSP_MODE=enforce` in
+`/srv/gostork/app/.env` (replace the line, do not add a second), restart, and
+confirm the response header is `content-security-policy` rather than
+`content-security-policy-report-only`.
+
+Before flipping, check that the reports are clean AND that those four surfaces
+were actually used during the window - zero violations from a quiet period
+proves nothing:
+
+```
+sudo journalctl -u gostork --since "3 days ago" --no-pager | grep "csp-violation"
+```
+
+A scheduled task ("Review CSP violations and switch to enforcing") is set for
+2026-09-18 to do exactly this. If it is ever deleted, the flip still needs
+doing.
 
 Violations POST to `/api/csp-report` and are logged as `[csp-violation]`, so
 grep the server log. The endpoint is unauthenticated by necessity (browsers
