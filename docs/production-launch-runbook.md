@@ -1593,7 +1593,14 @@ the production VM (`/srv/gostork/app/.env`, `systemctl restart gostork`) and
 both dev Macs (`~/Documents/GitHub/concierge/.env` on the MacBook,
 `~/GitHub-iMac/concierge/.env` on the iMac).
 
-Coverage at the time of the flip was 1 of 1 in BOTH databases - `eran.amir@`
+**Nothing to redo at the app.gostork.com flip.** Per the staged-launch decision
+in section 0, `app.gostork.com` flips to the SAME origin that serves
+`test-app.gostork.com` today - same VM, same `/srv/gostork/app/.env`. The flip
+changes `APP_URL` and restarts; `TWO_FACTOR_ENFORCE_AT` carries over untouched
+and enforcement stays on. Only a genuinely NEW production host would need the
+variable set again, and the current plan has none.
+
+Coverage when enforcement was switched on was 1 of 1 in BOTH databases - `eran.amir@`
 (`GOSTORK_ADMIN`) was the only account carrying any of the three required roles
 and was already enrolled - so nobody was locked out. **Before onboarding any new
 `GOSTORK_ADMIN` / `GOSTORK_CONCIERGE` / `GOSTORK_DEVELOPER` account, note that
