@@ -184,7 +184,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `pdf-parse@^2.4.5`
 - `pdfjs-dist@^5.4.296`
 - `pdfkit@^0.18.0`
-- `sharp@^0.34.5`
+- `sharp@^0.35.4`
 
 **Integrations**
 - `@daily-co/daily-js@^0.87.0`

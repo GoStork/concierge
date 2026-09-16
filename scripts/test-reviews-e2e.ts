@@ -190,8 +190,12 @@ async function main() {
     // ── 7. Admin queue ──
     const adminUser = await makeUser("admin");
     created.userIds.push(adminUser.id);
-    await prisma.user.update({ where: { id: adminUser.id }, data: { roles: ["GOSTORK_ADMIN"] } });
+    // Sign in BEFORE promoting: once TWO_FACTOR_ENFORCE_AT has passed, a
+    // GOSTORK_* account with no authenticator cannot complete a password
+    // login. Roles are re-read from the database per request, so this token
+    // becomes an admin token as soon as the update below lands.
     const adminLogin = await fetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: adminUser.email, password: PW }) });
+    await prisma.user.update({ where: { id: adminUser.id }, data: { roles: ["GOSTORK_ADMIN"] } });
     const adminAuth = `Bearer ${(await adminLogin.json()).token}`;
 
     const adminAll = await (await fetch(`${BASE}/api/admin/reviews`, { headers: hdr(adminAuth) })).json();

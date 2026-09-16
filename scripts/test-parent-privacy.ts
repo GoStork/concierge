@@ -94,6 +94,12 @@ async function getFixture(): Promise<Fixture> {
     data: { mobileNumber: "+19175550142", mobileNumberDisplay: "+1 (917) 555-0142", city: "New York", state: "New York" },
   });
   await p.user.update({ where: { id: provUserId }, data: { providerId: provider.id, roles: { set: ["PROVIDER_ADMIN"] } } });
+  // Sign the admin fixture in BEFORE promoting it. Once TWO_FACTOR_ENFORCE_AT
+  // has passed, a GOSTORK_* account with no authenticator cannot complete a
+  // password login at all, so promoting first leaves this fixture unable to
+  // get a session. Roles are re-read from the database on every request, so
+  // the token taken here acts as an admin as soon as the promotion lands.
+  const adminAuth = await login(adminEmail);
   await p.user.update({ where: { id: adminId }, data: { roles: { set: ["GOSTORK_ADMIN"] } } });
 
   // Releases are keyed on `parentAccountId ?? id`, and registration creates a
@@ -115,7 +121,7 @@ async function getFixture(): Promise<Fixture> {
   fixture = {
     parentId, parentEmail, parentAuth: await login(parentEmail), accountKey,
     provAuth: await login(provEmail), providerId: provider.id, providerName: provider.name,
-    adminAuth: await login(adminEmail),
+    adminAuth,
     sessionId: session.id,
   };
   return fixture;

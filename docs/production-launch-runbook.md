@@ -1512,6 +1512,36 @@ Also required on the production host before this ships:
 - `DAILY_WEBHOOK_SECRET` (now fails closed instead of accepting anything).
 - `TEST_RUNNER_TOKEN` if the admin test-runner dashboard is used there.
 
+### 10e. Two-factor enforcement is ON - and it can lock out a NEW staff account
+
+`TWO_FACTOR_ENFORCE_AT=2026-09-16T00:00:00Z` is set on the production VM and on
+the MacBook. Eran's account is enrolled, so day-to-day access is fine.
+
+**The trap.** A GoStork staff account that has never enrolled cannot complete a
+password login once that date has passed - and enrolment happens *inside* the
+app, after logging in. So the next person added to the team, or any account
+promoted to a GOSTORK_* role before enrolling, is locked out with no self-serve
+way back. This is not hypothetical: it broke four test fixtures the moment
+enforcement went on, every one of which promoted a throwaway user to
+GOSTORK_ADMIN and only then logged in.
+
+Today's workarounds, both requiring someone with database access:
+- promote the account only AFTER its owner has signed in once and enrolled, or
+- clear `TWO_FACTOR_ENFORCE_AT`, let them enrol, and set it back.
+
+The proper fix, not built yet: a first-login enrolment path. When a covered
+account has no authenticator and enforcement is on, issue the same short-lived
+challenge ticket the second-factor step already uses, but scoped so it only
+opens the 2FA setup and enable endpoints. The user enrols, then gets a real
+session. Everything needed for this already exists in
+`server/src/modules/auth/auth.controller.ts`; it is a scoping change, not new
+machinery.
+
+Until that lands, **do not promote anyone to a GoStork role before they have
+enrolled**, and keep at least two enrolled admin accounts so one lost phone
+cannot lock the whole team out. Recovery codes exist (ten per account, shown
+once at enrolment) - make sure they were actually saved.
+
 **Still open after this pass (ranked, none fixed yet):**
 1. ~~No Content-Security-Policy~~ **DONE 2026-09-16.** See 10d. (The earlier
    note here was wrong: the built index.html carries no inline script, so no
