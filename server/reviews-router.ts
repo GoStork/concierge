@@ -32,6 +32,11 @@ reviewsRouter.use(async (req: any, _res: any, next: any) => {
         const token = authHeader.slice(7);
         const secret = jwtSecret();
         const payload = jwt.verify(token, secret) as any;
+        // A 2FA challenge ticket is signed with the same key but is NOT a
+        // session: it means "password accepted, second factor still owed".
+        // Every place that turns a Bearer token into req.user must refuse it,
+        // or the second factor is bypassable by replaying the ticket.
+        if (payload?.purpose === "2fa_challenge") throw new Error("2fa_challenge_not_a_session");
         if (payload?.sub) {
           const user = await prisma.user.findUnique({ where: { id: payload.sub } });
           if (user && !user.isDisabled) {

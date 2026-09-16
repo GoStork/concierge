@@ -282,6 +282,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.otpAttempt;
   }
 
+  get authAuditLog() {
+    return prisma.authAuditLog;
+  }
+
   get securityEmailAllow() {
     return prisma.securityEmailAllow;
   }

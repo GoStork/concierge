@@ -493,6 +493,17 @@ model User {
   // Stripe Customer id - lazily created the first time the parent triggers a
   // payment method that requires it (currently: bank-transfer / customer_balance).
   // Card payments still go through guest checkout and do not populate this.
+  /// ── Admin two-factor (TOTP, RFC 6238) ────────────────────────────────────
+  /// AES-256-GCM encrypted base32 TOTP secret (server/src/lib/encrypt.ts).
+  /// Present but with totpEnabledAt null = enrollment started, not confirmed.
+  totpSecret             String?
+  /// Set when the user proves one correct code. Null = 2FA not active.
+  totpEnabledAt          DateTime?
+  /// Last accepted 30s time step, so a stolen code cannot be replayed inside
+  /// its own validity window.
+  totpLastStep           Int?
+  /// scrypt hashes of single-use recovery codes. Never the codes themselves.
+  totpRecoveryCodes      String[]                @default([])
   stripeCustomerId       String?                 @unique
   availabilityOverrides  AvailabilityOverride[]
   bookingsAsParent       Booking[]               @relation("ParentBookings")
@@ -3832,4 +3843,36 @@ model GeminiUsage {
 
   @@unique([day, subsystem, model])
   @@index([day])
+}
+
+/// Security audit trail for authentication and privilege events (OWASP A09).
+/// Append-only in practice: nothing in the app updates or deletes a row.
+/// Deliberately stores NO credential material - never a password, code, token
+/// or TOTP secret, only what happened, to whom, and from where.
+model AuthAuditLog {
+  id         String   @id @default(uuid())
+  /// LOGIN_SUCCESS | LOGIN_FAILURE | TWO_FACTOR_SUCCESS | TWO_FACTOR_FAILURE |
+  /// TWO_FACTOR_ENABLED | TWO_FACTOR_DISABLED | RECOVERY_CODE_USED |
+  /// PASSWORD_RESET_REQUESTED | PASSWORD_RESET_COMPLETED | ROLES_CHANGED |
+  /// USER_CREATED_BY_ADMIN | USER_DELETED_BY_ADMIN | USER_DISABLED
+  event      String
+  /// Null when the login failed against an address with no account - we still
+  /// log the attempt, we just have nobody to attach it to.
+  userId     String?
+  /// Lower-cased address as supplied, so failures against unknown accounts are
+  /// still greppable.
+  email      String?
+  /// The acting admin, when the event was performed ON someone else.
+  actorId    String?
+  ip         String?
+  userAgent  String?
+  /// Short reason or context, e.g. "bad_password", "no_totp_code". Free text,
+  /// never sensitive.
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([event, createdAt])
+  @@index([email, createdAt])
+  @@index([createdAt])
 }

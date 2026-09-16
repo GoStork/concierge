@@ -35,6 +35,7 @@ import { VideoService } from "../video/video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { AppEventsService } from "../notifications/app-events.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { recordAuthEvent, requestIp, requestUserAgent } from "../../lib/auth-audit";
 import { insertUserSchema } from "@shared/schema";
 import { hasProviderRole, PROVIDER_ROLES, GOSTORK_ROLES, PARENT_ACCOUNT_ROLES, isParentAccountAdmin } from "@shared/roles";
 import { z } from "zod";
@@ -116,7 +117,10 @@ export class UsersController {
     await this.ensureParentAccount(user.id);
     const enriched = await this.authService.getUserWithProvider(user.id);
     const result = enriched || user;
-    const { password: _, ...safe } = result;
+    // Never ship credential material to the client: the password hash, the
+    // encrypted TOTP secret, or the recovery-code hashes. totpEnabledAt stays,
+    // because the UI needs to know whether to show the enrolment prompt.
+    const { password: _, totpSecret: __, totpRecoveryCodes: ___, totpLastStep: ____, ...safe } = result as any;
     return safe;
   }
 
@@ -856,7 +860,16 @@ export class UsersController {
         include: { provider: { select: { id: true, name: true } }, assignedLocations: { include: { location: true } } },
       });
       const dailyRoomUrl = await this.provisionVideoRoom(created.id, roles);
-      const { password: _, ...safe } = created;
+      await recordAuthEvent(this.prisma, {
+        event: "USER_CREATED_BY_ADMIN",
+        userId: created.id,
+        email: created.email,
+        actorId: user.id,
+        ip: requestIp(req),
+        userAgent: requestUserAgent(req),
+        detail: `roles: ${roles.join(",")}`,
+      });
+      const { password: _, totpSecret: __, totpRecoveryCodes: ___, totpLastStep: ____, ...safe } = created as any;
       return { ...safe, dailyRoomUrl: dailyRoomUrl ?? safe.dailyRoomUrl };
     } catch (err) {
       if (err instanceof z.ZodError) throw new BadRequestException({ message: "Validation error", errors: err.errors });
@@ -980,7 +993,35 @@ export class UsersController {
       data: updateData,
       include: { provider: { select: { id: true, name: true } }, assignedLocations: { include: { location: true } } },
     });
-    const { password: _, ...safe } = updated;
+
+    // OWASP A09: a privilege change is the single most security-relevant thing
+    // an admin can do, and it used to leave no trace anywhere.
+    const before = (target.roles || []).slice().sort().join(",");
+    const after = (updated.roles || []).slice().sort().join(",");
+    if (Array.isArray(body.roles) && before !== after) {
+      await recordAuthEvent(this.prisma, {
+        event: "ROLES_CHANGED",
+        userId: updated.id,
+        email: updated.email,
+        actorId: user.id,
+        ip: requestIp(req),
+        userAgent: requestUserAgent(req),
+        detail: `${before || "(none)"} -> ${after || "(none)"}`,
+      });
+    }
+    if (body.isDisabled !== undefined && !!body.isDisabled !== !!target.isDisabled) {
+      await recordAuthEvent(this.prisma, {
+        event: "USER_DISABLED",
+        userId: updated.id,
+        email: updated.email,
+        actorId: user.id,
+        ip: requestIp(req),
+        userAgent: requestUserAgent(req),
+        detail: body.isDisabled ? "disabled" : "re-enabled",
+      });
+    }
+
+    const { password: _, totpSecret: __, totpRecoveryCodes: ___, totpLastStep: ____, ...safe } = updated as any;
     return safe;
   }
 
@@ -1003,6 +1044,17 @@ export class UsersController {
     if (target.dailyRoomUrl) {
       this.videoService.deleteRoom(target.dailyRoomUrl).catch(() => {});
     }
+    // Recorded BEFORE the delete: once the row is gone there is nothing left
+    // to attach the event to (OWASP A09).
+    await recordAuthEvent(this.prisma, {
+      event: "USER_DELETED_BY_ADMIN",
+      userId: target.id,
+      email: target.email,
+      actorId: user.id,
+      ip: requestIp(req),
+      userAgent: requestUserAgent(req),
+      detail: `roles: ${(target.roles || []).join(",") || "(none)"}`,
+    });
     await this.prisma.user.delete({ where: { id } });
     return { message: "User deleted" };
   }

@@ -6,6 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { OtpGuardService } from "./otp-guard.service";
 import { getTwilioClient } from "./twilio-client";
 import { parsePhoneIso, pickChannel, type VerificationChannel } from "./verification-channel";
+import { recordAuthEvent } from "../../lib/auth-audit";
 
 const scryptAsync = promisify(scrypt);
 
@@ -80,6 +81,29 @@ export class AuthService {
   }
 
   /**
+   * Short-lived ticket handed out when a password was correct but the second
+   * factor is still owed. It is NOT a session: `purpose` marks it, and the JWT
+   * strategy refuses anything carrying that claim, so it can never be used as
+   * a bearer token for the API.
+   */
+  createTwoFactorChallenge(userId: string): string {
+    return this.jwtService.sign(
+      { sub: userId, purpose: "2fa_challenge" },
+      { expiresIn: "5m" },
+    );
+  }
+
+  verifyTwoFactorChallenge(token: string): string | null {
+    try {
+      const payload: any = this.jwtService.verify(token);
+      if (payload?.purpose !== "2fa_challenge" || !payload?.sub) return null;
+      return payload.sub as string;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * One-time set-password token. Default TTL is one hour (forgot-password);
    * member invitations pass a longer TTL because the partner may open the
    * email days later.
@@ -87,6 +111,12 @@ export class AuthService {
   async createPasswordResetToken(email: string, ttlMs = 60 * 60 * 1000): Promise<{ token: string; userName: string | null } | null> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) return null;
+
+    await recordAuthEvent(this.prisma, {
+      event: "PASSWORD_RESET_REQUESTED",
+      userId: user.id,
+      email: user.email,
+    });
 
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + ttlMs);
@@ -135,6 +165,11 @@ export class AuthService {
         data: { usedAt: new Date() },
       }),
     ]);
+
+    await recordAuthEvent(this.prisma, {
+      event: "PASSWORD_RESET_COMPLETED",
+      userId: valid.userId,
+    });
 
     return true;
   }

@@ -7,6 +7,7 @@ import { LocalStrategy } from "./local.strategy";
 import { JwtStrategy } from "./jwt.strategy";
 import { SessionSerializer } from "./session.serializer";
 import { OtpGuardService } from "./otp-guard.service";
+import { TwoFactorService } from "./two-factor.service";
 import { NotificationModule } from "../notifications/notification.module";
 import { jwtSecret } from "../../lib/app-secrets";
 
@@ -20,7 +21,7 @@ import { jwtSecret } from "../../lib/app-secrets";
     NotificationModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, JwtStrategy, SessionSerializer, OtpGuardService],
-  exports: [AuthService],
+  providers: [AuthService, LocalStrategy, JwtStrategy, SessionSerializer, OtpGuardService, TwoFactorService],
+  exports: [AuthService, TwoFactorService],
 })
 export class AuthModule {}

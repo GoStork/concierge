@@ -22,6 +22,11 @@ import { NotificationService } from "../notifications/notification.service";
 import { LoginDto, LoginResponseDto, LogoutResponseDto, ErrorResponseDto } from "../../dto/auth.dto";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { verifyTurnstile, turnstileSiteKey } from "../../../turnstile";
+import { TwoFactorService } from "./two-factor.service";
+import { recordAuthEvent, requestIp, requestUserAgent } from "../../lib/auth-audit";
+import { roleRequiresTwoFactor, twoFactorEnforcedNow } from "../../lib/totp";
+import { PrismaService } from "../prisma/prisma.service";
+import { SessionOrJwtGuard } from "./guards/auth.guard";
 import { prisma as dbPrisma } from "../../../db";
 
 @ApiTags("Auth")
@@ -32,40 +37,41 @@ export class AuthController {
   constructor(
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(NotificationService) private readonly notificationService: NotificationService,
+    @Inject(TwoFactorService) private readonly twoFactor: TwoFactorService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
-  @UseGuards(AuthGuard("local"))
-  @Post("login")
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Login with email and password" })
-  @ApiBody({ type: LoginDto })
-  @ApiResponse({ status: 200, description: "Login successful", type: LoginResponseDto })
-  @ApiResponse({ status: 401, description: "Invalid credentials", type: ErrorResponseDto })
-  async login(@Req() req: Request) {
-    const user = req.user as any;
+  /**
+   * Shared tail of a successful authentication: regenerate the session id
+   * (fixation), log the user in, stamp lastLoginAt, write the audit row and
+   * hand back the sanitised user plus a JWT. Used by both the password-only
+   * path and the second-factor path so the two can never drift.
+   */
+  private finishLogin(req: Request, user: any, detail?: string) {
     return new Promise<any>((resolve, reject) => {
-      // OWASP A07 (session fixation): issue a NEW session id at the moment of
-      // authentication. Without this, a session id planted before login (via a
-      // shared link, a subdomain, or any pre-auth fixation) stays valid and
-      // becomes an authenticated session belonging to the victim.
       const proceed = () =>
-      req.logIn(user, async (err) => {
-        if (err) {
-          reject(new InternalServerErrorException("Login session error"));
-          return;
-        }
-        const enriched = await this.authService.getUserWithProvider(user.id);
-        // First-login tracking: null lastLoginAt = never logged in, which
-        // gates onboarding emails (e.g. the task digest stays silent until
-        // the provider actually has a working login).
-        (dbPrisma as any).user
-          .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-          .catch(() => {});
-        const result = enriched || user;
-        const { password: _, ...safe } = result;
-        const token = this.authService.generateToken(user);
-        resolve({ ...safe, token });
-      });
+        req.logIn(user, async (err) => {
+          if (err) {
+            reject(new InternalServerErrorException("Login session error"));
+            return;
+          }
+          const enriched = await this.authService.getUserWithProvider(user.id);
+          (dbPrisma as any).user
+            .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+            .catch(() => {});
+          await recordAuthEvent(this.prisma, {
+            event: "LOGIN_SUCCESS",
+            userId: user.id,
+            email: user.email,
+            ip: requestIp(req),
+            userAgent: requestUserAgent(req),
+            detail: detail ?? null,
+          });
+          const result = enriched || user;
+          const { password: _, totpSecret: __, totpRecoveryCodes: ___, totpLastStep: ____, ...safe } = result as any;
+          const token = this.authService.generateToken(user);
+          resolve({ ...safe, token });
+        });
 
       const session = (req as any).session;
       if (session?.regenerate) {
@@ -79,6 +85,120 @@ export class AuthController {
       } else {
         proceed();
       }
+    });
+  }
+
+  @UseGuards(AuthGuard("local"))
+  @Post("login")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Login with email and password" })
+  @ApiBody({ type: LoginDto })
+  @ApiResponse({ status: 200, description: "Login successful", type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: "Invalid credentials", type: ErrorResponseDto })
+  async login(@Req() req: Request) {
+    const user = req.user as any;
+
+    // Password was correct. Now the second factor, if this account has one.
+    // OWASP A07: staff accounts can read every family's record and move money,
+    // and GoStork 1.0 lost its Stripe account to exactly this gap.
+    if (user.totpEnabledAt) {
+      await recordAuthEvent(this.prisma, {
+        event: "LOGIN_SUCCESS",
+        userId: user.id,
+        email: user.email,
+        ip: requestIp(req),
+        userAgent: requestUserAgent(req),
+        detail: "password_ok_awaiting_2fa",
+      });
+      return {
+        requiresTwoFactor: true,
+        challengeToken: this.authService.createTwoFactorChallenge(user.id),
+      };
+    }
+
+    // Covered role that never enrolled. During the grace period they are let
+    // in and nagged; once TWO_FACTOR_ENFORCE_AT passes, they are not.
+    const mustEnrol = roleRequiresTwoFactor(user.roles);
+    if (mustEnrol && twoFactorEnforcedNow()) {
+      await recordAuthEvent(this.prisma, {
+        event: "LOGIN_FAILURE",
+        userId: user.id,
+        email: user.email,
+        ip: requestIp(req),
+        userAgent: requestUserAgent(req),
+        detail: "2fa_required_not_enrolled",
+      });
+      throw new BadRequestException(
+        "Two-factor authentication is required for GoStork staff accounts. Ask an admin to reset your enrollment.",
+      );
+    }
+
+    const result = await this.finishLogin(req, user);
+    // Lets the UI show the enrolment prompt during the grace period.
+    return { ...result, twoFactorRequired: mustEnrol, twoFactorEnabled: false };
+  }
+
+  @Post("2fa/verify-login")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Complete a login by supplying the TOTP or recovery code" })
+  async verifyTwoFactorLogin(
+    @Body() body: { challengeToken: string; code: string },
+    @Req() req: Request,
+  ) {
+    if (!body?.challengeToken || !body?.code) {
+      throw new BadRequestException("Challenge token and code are required");
+    }
+    const userId = this.authService.verifyTwoFactorChallenge(body.challengeToken);
+    if (!userId) {
+      throw new BadRequestException("That sign-in attempt expired. Please start again.");
+    }
+    const meta = { ip: requestIp(req), userAgent: requestUserAgent(req) };
+    const ok = await this.twoFactor.verifyForLogin(userId, body.code, meta);
+    if (!ok) {
+      throw new BadRequestException("That code is not right.");
+    }
+    const user = await this.authService.getUserById(userId);
+    if (!user || user.isDisabled) throw new BadRequestException("Account unavailable");
+    const result = await this.finishLogin(req, user, "2fa");
+    return { ...result, twoFactorRequired: true, twoFactorEnabled: true };
+  }
+
+  @Get("2fa/status")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiOperation({ summary: "Whether this account has, or needs, a second factor" })
+  async twoFactorStatus(@Req() req: Request) {
+    return this.twoFactor.status((req.user as any).id);
+  }
+
+  @Post("2fa/setup")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Start enrollment: returns the QR code to scan" })
+  async twoFactorSetup(@Req() req: Request) {
+    return this.twoFactor.beginEnrollment((req.user as any).id);
+  }
+
+  @Post("2fa/enable")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Confirm enrollment with a code; returns recovery codes once" })
+  async twoFactorEnable(@Body() body: { code: string }, @Req() req: Request) {
+    if (!body?.code) throw new BadRequestException("Code is required");
+    return this.twoFactor.completeEnrollment((req.user as any).id, body.code, {
+      ip: requestIp(req),
+      userAgent: requestUserAgent(req),
+    });
+  }
+
+  @Post("2fa/disable")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Turn off two-factor authentication (needs a live code)" })
+  async twoFactorDisable(@Body() body: { code: string }, @Req() req: Request) {
+    if (!body?.code) throw new BadRequestException("Code is required");
+    return this.twoFactor.disable((req.user as any).id, body.code, {
+      ip: requestIp(req),
+      userAgent: requestUserAgent(req),
     });
   }
 

@@ -12,6 +12,7 @@ type AuthContextType = {
   isLoading: boolean;
   error: Error | null;
   loginMutation: any;
+  verifyTwoFactorMutation: any;
   logoutMutation: any;
 };
 
@@ -43,12 +44,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await apiRequest("POST", api.auth.login.path, credentials);
       return await res.json();
     },
+    onSuccess: (result: any) => {
+      // A staff account with two-factor on gets a challenge instead of a
+      // session. The auth page reads this and asks for the code; there is no
+      // user to cache yet.
+      if (result?.requiresTwoFactor) return;
+      queryClient.setQueryData([api.auth.me.path], result as User);
+      dispatch(setUser(result as User));
+      queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
+    },
+    onError: () => {
+    },
+  });
+
+  /** Second step of a two-factor login: exchange the challenge plus a code
+   *  (authenticator or recovery) for a real session. */
+  const verifyTwoFactorMutation = useMutation({
+    mutationFn: async (input: { challengeToken: string; code: string }) => {
+      const res = await apiRequest("POST", "/api/auth/2fa/verify-login", input);
+      return await res.json();
+    },
     onSuccess: (user: User) => {
       queryClient.setQueryData([api.auth.me.path], user);
       dispatch(setUser(user));
       queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
-    },
-    onError: () => {
     },
   });
 
@@ -79,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         error,
         loginMutation,
+        verifyTwoFactorMutation,
         logoutMutation,
       }}
     >

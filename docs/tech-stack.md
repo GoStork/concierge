@@ -20,6 +20,8 @@
 - **sanitize-html** - server-side allowlist sanitizer for rich-text CRM note bodies (write + read paths in `server/note-html.ts`).
 - **NestJS 11** on **Express 5** (`@nestjs/platform-express`)
 - **Auth:** Passport.js + JWT, with `express-session` stored in **PostgreSQL** via `connect-pg-simple` (no Redis), multi-role RBAC. Session id regenerated on login; cookie is `httpOnly` + `sameSite=lax` + `secure` in production. Signing secrets come from `server/src/lib/app-secrets.ts`, which refuses to boot without `SESSION_SECRET` / `JWT_SECRET` (no hardcoded fallbacks).
+- **Two-factor (staff):** TOTP (RFC 6238) via `otpauth`, QR enrollment via `qrcode`. Secret stored AES-256-GCM encrypted; recovery codes stored as scrypt hashes. Required roles and the grace-period cutoff live in `server/src/lib/totp.ts` (`TWO_FACTOR_ENFORCE_AT`).
+- **Auth audit trail:** every login, second-factor event, password reset, role change and admin account action is written to `AuthAuditLog` by `server/src/lib/auth-audit.ts`, and read at `/admin/security`. Never stores credential material.
 - **Abuse controls:** `express-rate-limit` on the unauthenticated auth surface (`server/src/lib/rate-limits.ts`), Turnstile + `OtpGuardService` on OTP send, and `server/src/lib/ssrf-guard.ts` for every server-side fetch of a user-supplied URL (image proxy, knowledge website sync).
 - **Security headers:** `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and HSTS in production, set in `server/index.ts`. No CSP yet (tracked in the launch runbook).
 - **API docs:** Swagger (`@nestjs/swagger`)
@@ -143,10 +145,10 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 
 **Backend (server)**
 - `@nestjs/common@^11.2.5`
-- `@nestjs/core@^11.1.14`
+- `@nestjs/core@^11.2.5`
 - `@nestjs/jwt@^11.0.2`
 - `@nestjs/passport@^11.0.5`
-- `@nestjs/platform-express@^11.1.14`
+- `@nestjs/platform-express@^11.2.5`
 - `@nestjs/swagger@^11.2.6`
 - `class-transformer@^0.5.1`
 - `class-validator@^0.14.3`
@@ -219,6 +221,8 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 **Other (review & categorize)**
 - `canvas-confetti@^1.9.4`
 - `livekit-client@^2.21.0`
+- `otpauth@^9.5.2`
+- `qrcode@^1.5.4`
 - `sanitize-html@^2.17.6`
 
 ### Dev / build dependencies
@@ -245,6 +249,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@types/node@20.19.27`
 - `@types/passport@^1.0.16`
 - `@types/passport-local@^1.0.38`
+- `@types/qrcode@^1.5.6`
 - `@types/react@^18.3.11`
 - `@types/react-dom@^18.3.1`
 - `@types/ws@^8.5.13`

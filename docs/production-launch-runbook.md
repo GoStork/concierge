@@ -1516,12 +1516,11 @@ Also required on the production host before this ships:
 1. **No Content-Security-Policy.** The SPA ships inline bootstrap script, so a
    CSP needs a nonce/hash pass through the Vite build. Highest-value remaining
    header.
-2. **No 2FA for `GOSTORK_ADMIN`**, and no account lockout - only the new IP rate
-   limit. For a platform that already lost a Stripe account to takeover, admin
-   2FA belongs before Phase B.
-3. **No authentication audit log.** Login success/failure, password reset use,
-   role changes and admin actions write no row anywhere. `OtpAttempt` is the
-   only security log we have.
+2. ~~No 2FA for `GOSTORK_ADMIN`~~ **DONE 2026-09-16** - TOTP two-factor for the
+   three GoStork staff roles, with recovery codes, replay protection and a
+   grace period. See 10c. Account lockout is still not implemented; only the IP
+   rate limit stands between an attacker and unlimited password guesses.
+3. ~~No authentication audit log~~ **DONE 2026-09-16** - see 10c.
 4. **Password reset does not invalidate existing sessions or issued JWTs**, and
    a logout does not revoke the 7-day JWT (no jti/denylist/token-version).
    Someone who took over an account keeps their token after the victim resets.
@@ -1551,6 +1550,44 @@ Also required on the production host before this ships:
     should use `path.basename` like `uploads.controller.ts` does.
 13. **No `engines` / `.nvmrc`** - prod, both Macs and CI can run different Node
     majors.
+
+### 10c. Staff two-factor + authentication audit log (shipped 2026-09-16)
+
+Closes the two highest-ranked open items from the OWASP review in 10b.
+
+**Two-factor (OWASP A07).** TOTP, not SMS: GoStork 1.0's Stripe account was
+taken over against SMS 2FA, so a SIM swap must not be enough here either.
+- Covered roles: `GOSTORK_ADMIN`, `GOSTORK_CONCIERGE`, `GOSTORK_DEVELOPER`
+  (`TWO_FACTOR_REQUIRED_ROLES` in `server/src/lib/totp.ts`).
+- Enrollment is two-step: `/api/auth/2fa/setup` mints an encrypted but INACTIVE
+  secret, `/api/auth/2fa/enable` turns it on only after a working code, so a
+  failed QR scan cannot lock anyone out.
+- Ten single-use recovery codes, shown once, stored only as scrypt hashes.
+- The accepted 30-second step is persisted, so a code cannot be replayed inside
+  its own validity window.
+- A password-only login for an enrolled account returns a 5-minute challenge
+  ticket instead of a session. That ticket carries `purpose: "2fa_challenge"`
+  and is refused by the JWT strategy AND by all six Express routers that decode
+  bearer tokens themselves - that last part was a real bypass found in testing,
+  because `req.user` set by any middleware makes `isAuthenticated()` true.
+- The secret is AES-256-GCM encrypted at rest, so **`FIELD_ENCRYPTION_KEY` must
+  be set on every host** or enrollment throws.
+
+**ENFORCEMENT IS OFF until you set it.** `TWO_FACTOR_ENFORCE_AT` (an ISO date)
+is the hard cutoff. Until that date passes, a covered account that has not
+enrolled is prompted but still gets in. Set it on the production host once the
+team has enrolled; check coverage first at `/admin/security`.
+
+**Audit log (OWASP A09).** `AuthAuditLog` records login success and failure,
+second-factor success/failure/enable/disable, recovery-code use, password reset
+requested and completed, role changes, account disable, and admin account
+creation and deletion. It stores no credential material of any kind. Read it at
+`/admin/security` ("Sign-in activity"), filterable by event, email and window,
+with the addresses producing the most failures surfaced at the top.
+
+Still missing on top of this: no account lockout after N failures, no alerting
+when the failure rate spikes (the rows exist, nothing watches them), and the
+log has no retention policy or off-box copy.
 
 **Not tested in this pass** (needs access or authorization we did not have):
 the production host and its `.env`, the PROD Supabase project, Cloudflare/WAF

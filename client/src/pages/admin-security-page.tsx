@@ -17,6 +17,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { countryCodeToFlag } from "@/lib/country-flag";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
+import { TwoFactorCard } from "@/components/security/two-factor-card";
+import { StaffTwoFactorCard } from "@/components/security/staff-two-factor-card";
+import { AuthLogCard } from "@/components/security/auth-log-card";
 
 interface CountryRow {
   isoCode: string;
@@ -438,6 +441,10 @@ export default function AdminSecurityPage() {
           </div>
         )}
       </div>
+
+      <TwoFactorCard />
+      <StaffTwoFactorCard />
+      <AuthLogCard />
     </div>
   );
 }

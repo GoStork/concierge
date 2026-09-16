@@ -268,3 +268,87 @@ securityRouter.put("/api/admin/security/settings", requireGostorkAdmin, async (r
     res.status(500).json({ message: e?.message || "Failed to save settings" });
   }
 });
+
+/**
+ * GET /api/admin/security/auth-log - the authentication audit trail.
+ *
+ * OWASP A09. Until this existed, a failed login, a password reset, a role
+ * change and an admin minting another admin all left zero trace, so after an
+ * incident there was nothing to read. Rows are written by
+ * server/src/lib/auth-audit.ts and never contain credential material.
+ *
+ * Filters: ?event=LOGIN_FAILURE&email=x&userId=y&days=7&limit=200
+ */
+securityRouter.get("/api/admin/security/auth-log", requireGostorkAdmin, async (req: Request, res: Response) => {
+  try {
+    const days = Math.min(Math.max(parseInt(String(req.query.days || "7"), 10) || 7, 1), 90);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || "200"), 10) || 200, 1), 1000);
+    const event = typeof req.query.event === "string" && req.query.event ? req.query.event : undefined;
+    const email = typeof req.query.email === "string" && req.query.email ? req.query.email.trim().toLowerCase() : undefined;
+    const userId = typeof req.query.userId === "string" && req.query.userId ? req.query.userId : undefined;
+
+    const where: any = { createdAt: { gte: new Date(Date.now() - days * 86_400_000) } };
+    if (event) where.event = event;
+    if (userId) where.userId = userId;
+    if (email) where.email = { contains: email, mode: "insensitive" };
+
+    const [rows, byEvent] = await Promise.all([
+      prisma.authAuditLog.findMany({ where, orderBy: { createdAt: "desc" }, take: limit }),
+      prisma.authAuditLog.groupBy({
+        by: ["event"],
+        where: { createdAt: { gte: new Date(Date.now() - days * 86_400_000) } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // Repeated failures from one address are the signal worth surfacing, so
+    // the page can lead with them instead of making someone scan the list.
+    const failureCounts = new Map<string, number>();
+    for (const r of rows) {
+      if (r.event !== "LOGIN_FAILURE" && r.event !== "TWO_FACTOR_FAILURE") continue;
+      const key = r.ip || "unknown";
+      failureCounts.set(key, (failureCounts.get(key) || 0) + 1);
+    }
+    const topFailureIps = Array.from(failureCounts.entries())
+      .map(([ip, count]) => ({ ip, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    res.json({
+      days,
+      rows,
+      summary: byEvent.map((b: any) => ({ event: b.event, count: b._count._all })).sort((a: any, b: any) => b.count - a.count),
+      topFailureIps,
+    });
+  } catch (e: any) {
+    console.error("[security] auth-log failed:", e?.message);
+    res.status(500).json({ message: "Failed to load the authentication log" });
+  }
+});
+
+/**
+ * GET /api/admin/security/two-factor - enrollment state for every staff
+ * account that is required to have a second factor, so an admin can see at a
+ * glance who is still exposed during the grace period.
+ */
+securityRouter.get("/api/admin/security/two-factor", requireGostorkAdmin, async (_req: Request, res: Response) => {
+  try {
+    const { TWO_FACTOR_REQUIRED_ROLES, twoFactorEnforcedNow } = await import("./src/lib/totp");
+    const staff = await prisma.user.findMany({
+      where: { roles: { hasSome: TWO_FACTOR_REQUIRED_ROLES as any } },
+      select: { id: true, email: true, name: true, roles: true, totpEnabledAt: true, isDisabled: true, lastLoginAt: true },
+      orderBy: { email: "asc" },
+    });
+    res.json({
+      enforced: twoFactorEnforcedNow(),
+      enforceAt: process.env.TWO_FACTOR_ENFORCE_AT || null,
+      requiredRoles: TWO_FACTOR_REQUIRED_ROLES,
+      staff: staff.map((u: any) => ({ ...u, twoFactorEnabled: !!u.totpEnabledAt, totpEnabledAt: undefined })),
+      enrolled: staff.filter((u: any) => u.totpEnabledAt).length,
+      total: staff.length,
+    });
+  } catch (e: any) {
+    console.error("[security] two-factor overview failed:", e?.message);
+    res.status(500).json({ message: "Failed to load two-factor status" });
+  }
+});

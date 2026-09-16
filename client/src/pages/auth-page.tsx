@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertCircle, Baby, Loader2, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Baby, Loader2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState} from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
 // A clicked link WINS after login: multi-segment paths (a specific
@@ -23,7 +23,10 @@ function isDeepLinkReturn(returnTo: string | undefined): boolean {
 }
 
 export default function AuthPage() {
-  const { user, loginMutation } = useAuth();
+  const { user, loginMutation, verifyTwoFactorMutation } = useAuth();
+  // Set when a staff account with two-factor on gets past the password step.
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
   const companyName = useCompanyName();
@@ -53,8 +56,21 @@ export default function AuthPage() {
   }, [prefillEmail, loginForm]);
 
   const onLogin = useCallback((data: any) => {
-    loginMutation.mutate(data);
+    loginMutation.mutate(data, {
+      onSuccess: (result: any) => {
+        if (result?.requiresTwoFactor) setChallengeToken(result.challengeToken);
+      },
+    });
   }, [loginMutation]);
+
+  const onVerifyTwoFactor = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challengeToken || !twoFactorCode.trim()) return;
+    verifyTwoFactorMutation.mutate(
+      { challengeToken, code: twoFactorCode.trim() },
+      { onError: () => setTwoFactorCode("") },
+    );
+  }, [challengeToken, twoFactorCode, verifyTwoFactorMutation]);
 
   useEffect(() => {
     if (autoLoginAttempted.current || user) return;
@@ -176,6 +192,57 @@ export default function AuthPage() {
                     Your password has been reset successfully. Please sign in with your new password.
                   </div>
                 )}
+                {challengeToken ? (
+                  /* Second factor. A full inline step, not a dialog - the app
+                     is built for native mobile where modals do not translate. */
+                  <form onSubmit={onVerifyTwoFactor} className="space-y-4" data-testid="form-two-factor">
+                    <div className="flex items-start gap-2 p-3 rounded-[var(--radius)] bg-secondary text-sm">
+                      <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+                      <span>
+                        Open your authenticator app and enter the 6-digit code for {companyName}.
+                        You can also use one of your recovery codes.
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="twoFactorCode">Verification code</Label>
+                      <Input
+                        id="twoFactorCode"
+                        inputMode="text"
+                        autoComplete="one-time-code"
+                        autoFocus
+                        placeholder="123456"
+                        className="h-12 rounded-[var(--radius)] tracking-[0.3em] text-center font-ui"
+                        data-testid="input-two-factor-code"
+                        value={twoFactorCode}
+                        onChange={(e) => setTwoFactorCode(e.target.value)}
+                      />
+                    </div>
+                    {verifyTwoFactorMutation.isError && (
+                      <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-destructive/10 border border-destructive/20 text-sm text-destructive" data-testid="text-two-factor-error">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>That code is not right. Try the next one from your app.</span>
+                      </div>
+                    )}
+                    <Button
+                      type="submit"
+                      className="w-full h-12 text-base font-ui shadow-lg shadow-primary/25"
+                      disabled={verifyTwoFactorMutation.isPending || !twoFactorCode.trim()}
+                      data-testid="button-verify-two-factor"
+                    >
+                      {verifyTwoFactorMutation.isPending ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</>
+                      ) : "Verify"}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => { setChallengeToken(null); setTwoFactorCode(""); }}
+                      className="w-full t-helper text-primary hover:text-primary/80 font-ui"
+                      data-testid="button-two-factor-back"
+                    >
+                      Use a different account
+                    </button>
+                  </form>
+                ) : (
                 <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
@@ -219,6 +286,9 @@ export default function AuthPage() {
                     ) : "Sign In"}
                   </Button>
                 </form>
+                )}
+                {!challengeToken && (
+                <>
                 <p className="t-helper text-center">
                   Forgot your password?{" "}
                   <button
@@ -241,6 +311,8 @@ export default function AuthPage() {
                     Join us
                   </button>
                 </p>
+                </>
+                )}
               </div>
           </CardContent>
         </Card>
