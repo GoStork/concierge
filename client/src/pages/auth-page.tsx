@@ -33,6 +33,7 @@ export default function AuthPage() {
   const { data: brandSettings } = useBrandSettings();
   const autoLoginAttempted = useRef(false);
   const passwordReset = (location.state as any)?.passwordReset;
+  const passwordSet = (location.state as any)?.passwordSet;
   const returnTo = (location.state as any)?.returnTo;
   const prefillEmail = (location.state as any)?.prefillEmail;
 
@@ -186,6 +187,12 @@ export default function AuthPage() {
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
+                {passwordSet && (
+                  <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-set">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    Your password is set. Sign in to join your family's account.
+                  </div>
+                )}
                 {passwordReset && (
                   <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-reset-success">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />

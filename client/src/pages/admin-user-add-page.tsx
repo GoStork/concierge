@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -74,6 +74,8 @@ export default function AdminUserAddPage() {
   const isProviderMode = !!providerId;
   const isGostorkTeamMode = teamContext === "gostork";
   const isParentAccountMode = searchParams.get("parentAccount") === "true";
+
+  useEffect(() => { const prev = document.title; document.title = "Invite a member - GoStork"; return () => { document.title = prev; }; }, []);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -300,20 +302,20 @@ export default function AdminUserAddPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Full Name</Label>
-              <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Jane Smith" data-testid="input-staff-name" />
+              <Label htmlFor="member-name">Full name</Label>
+              <Input id="member-name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Jane Smith" data-testid="input-staff-name" />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
-              <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setEmailError(null); }} placeholder="e.g. jane@example.com" required data-testid="input-staff-email" className={emailError ? "border-destructive" : ""} />
+              <Label htmlFor="member-email">Email <span aria-hidden="true">*</span><span className="sr-only">(required)</span></Label>
+              <Input id="member-email" type="email" value={email} onChange={e => { setEmail(e.target.value); setEmailError(null); }} placeholder="e.g. jane@example.com" required data-testid="input-staff-email" className={emailError ? "border-destructive" : ""} />
               {emailError && <p className="text-xs text-destructive">{emailError}</p>}
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Mobile Number</Label>
-              <Input value={mobileNumber} onChange={e => setMobileNumber(e.target.value)} placeholder="e.g. +1 (555) 123-4567" data-testid="input-staff-mobile" />
+              <Label htmlFor="member-mobile">Mobile number</Label>
+              <Input id="member-mobile" value={mobileNumber} onChange={e => setMobileNumber(e.target.value)} placeholder="e.g. +1 (555) 123-4567" data-testid="input-staff-mobile" />
             </div>
             {!isProviderMode && (
               <div className="space-y-2">

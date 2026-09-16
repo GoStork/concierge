@@ -163,6 +163,8 @@ interface ChatMessage {
   partnerInvite?: { offered: boolean; asked?: boolean; form?: boolean };
   /** A question Eva sent to the agency on this turn (uiCardData.whisper); status flips when they answer. */
   whisper?: { queryId: string; providerLabel?: string; status: "pending" | "answered" };
+  /** The concierge's one-time welcome to an invited member (uiCardData.memberWelcome). */
+  memberWelcome?: { userId: string };
   consultationCard?: ConsultationCardData;
   /** Hydrated Booking objects for existing-meeting questions (join/reschedule/cancel). */
   meetingCards?: any[];
@@ -3163,6 +3165,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const pendingClientMsgIdRef = useRef<string | null>(null); // idempotency key for retry dedup
   const lastQrClickRef = useRef<number>(0); // timestamp of last QR button click
   const lastPollTimeRef = useRef<string | null>(null);
+  const memberWelcomeAskedRef = useRef(false);
   const knownMessageIds = useRef<Set<string>>(new Set());
   const statusPollCounter = useRef(0);
 
@@ -3418,6 +3421,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             prepDoc: extras.prepDoc,
             partnerInvite: extras.partnerInvite,
             whisper: extras.whisper,
+            memberWelcome: extras.memberWelcome,
             consultationCard: extras.consultationCard,
             agreementCard: extras.agreementCard,
             // Restore quick replies for the last message so buttons reappear on navigation
@@ -3435,6 +3439,35 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
         if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
         markSessionRead(existingSessionId);
+        // An invited member's first open: ask the concierge to greet THEM once
+        // (server posts a deterministic welcome keyed by user id).
+        const me: any = user;
+        const isMemberSeat = !!me?.parentAccountRole && me.parentAccountRole !== "INTENDED_PARENT_1";
+        if (isMemberSeat && !parsed.some((m) => m.memberWelcome?.userId === me.id) && !memberWelcomeAskedRef.current) {
+          memberWelcomeAskedRef.current = true;
+          fetch("/api/ai-concierge/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+            credentials: "include",
+            body: JSON.stringify({ message: "member_first_open", sessionId: existingSessionId, matchmakerId: effectiveMatchmakerIdRef.current, isSystemTrigger: true }),
+          }).then(async (r) => {
+            if (!r.ok) return;
+            const text = await r.text();
+            for (const line of text.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const ev = JSON.parse(line.slice(6));
+                if (ev.type === "done" && ev.message?.id && ev.message.content) {
+                  knownMessageIds.current.add(ev.message.id);
+                  setMessages((prev) => prev.some((m) => m.id === ev.message.id) ? prev : [...prev, {
+                    role: "assistant" as const, id: ev.message.id, content: ev.message.content, senderType: ev.message.senderType, senderName: ev.message.senderName,
+                    createdAt: ev.message.createdAt || new Date().toISOString(), memberWelcome: ev.memberWelcome,
+                  }]);
+                }
+              } catch { /* ignore */ }
+            }
+          }).catch(() => {});
+        }
       }
     } catch { return false; }
     return true;
@@ -3494,6 +3527,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   prepDoc: extras.prepDoc,
                   partnerInvite: extras.partnerInvite,
             whisper: extras.whisper,
+            memberWelcome: extras.memberWelcome,
                   consultationCard: extras.consultationCard,
                   quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
                   uiCardType: m.uiCardType,
@@ -3832,6 +3866,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 prepDoc: extras.prepDoc,
                 partnerInvite: extras.partnerInvite,
             whisper: extras.whisper,
+            memberWelcome: extras.memberWelcome,
                 consultationCard: extras.consultationCard,
                 agreementCard: extras.agreementCard,
                 quickReplies: extras.quickReplies,
@@ -5208,20 +5243,27 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 : rawDisplay;
               const hasQuickReplies = !!(msg.quickReplies?.length || (msg as any).uiCardData?.quickReplies?.length);
               const showBubble = !isAttachmentMsg || displayContent.length > 0 || hasQuickReplies;
+              // The other parent's words must never sit under the concierge's
+              // face: a monogram from their name, on the secondary tint.
               const msgAvatarUrl = !alignRight
-                ? (msg.senderType === "provider"
+                ? (isOtherParent
+                    ? null
+                    : msg.senderType === "provider"
                     ? (getPhotoSrc(sessionSubjectInfo?.providerLogo || sessionProviderLogo) || null)
                     : msg.senderType === "human"
                     ? (getPhotoSrc(humanAgentPhotoUrl) || null)
                     : resolvedAvatarUrl)
                 : null;
               const msgAvatarInitial = !alignRight
-                ? (msg.senderType === "provider"
+                ? (isOtherParent
+                    ? (msg.senderName?.trim().charAt(0).toUpperCase() || "P")
+                    : msg.senderType === "provider"
                     ? "P"
                     : msg.senderType === "human"
                     ? (msg.senderName?.charAt(0) || "G")
                     : (aiName?.charAt(0) || "A"))
                 : null;
+              const msgAvatarIsPerson = !alignRight && isOtherParent;
               // Key by stable message id (NOT index) so React mounts new
               // messages cleanly. With index keys, polling-appended messages
               // can inherit the React state of a sibling at the same index -
@@ -5257,8 +5299,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       <img src={msgAvatarUrl} alt={msgNameLabel} className="w-full h-full object-cover" />
                     ) : (
                       <div
-                        className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
-                        style={{ backgroundColor: brandColor }}
+                        className={`w-full h-full flex items-center justify-center text-xs font-semibold ${msgAvatarIsPerson ? "bg-secondary text-foreground border border-border" : "text-primary-foreground"}`}
+                        style={msgAvatarIsPerson ? undefined : { backgroundColor: brandColor }}
+                        aria-hidden="true"
                       >
                         {msgAvatarInitial}
                       </div>

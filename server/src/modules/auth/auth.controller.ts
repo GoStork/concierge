@@ -231,11 +231,26 @@ export class AuthController {
     const result = await this.authService.createPasswordResetToken(email);
 
     if (result) {
-      const resetLink = `${getBaseUrl()}/reset-password/${result.token}`;
-      try {
-        await this.notificationService.sendPasswordResetEmail(email, result.userName, resetLink);
-      } catch (err: any) {
-        this.logger.error(`Failed to send password reset email to ${email}: ${err.message}`);
+      // An invited family member who never set a password is asking for a
+      // fresh INVITATION, not a reset: same 7-day link, invite wording, the
+      // page's ?invite=1 variant. Before this, the expired-invite page sent
+      // them into the reset flow while the email said to ask the inviter.
+      const account = await this.prisma.user.findUnique({ where: { email }, select: { id: true, name: true, mobileNumber: true, password: true, parentAccountId: true } });
+      if (account && !account.password && account.parentAccountId) {
+        const inviter = await this.prisma.user.findFirst({ where: { parentAccountId: account.parentAccountId, parentAccountRole: "INTENDED_PARENT_1" }, select: { name: true } });
+        const inviteLink = `${getBaseUrl()}/reset-password/${result.token}?invite=1`;
+        try {
+          await this.notificationService.sendMemberInvitation(inviter?.name || "Your partner", { id: account.id, email, name: account.name, mobileNumber: account.mobileNumber }, inviteLink);
+        } catch (err: any) {
+          this.logger.error(`Failed to re-send member invitation to ${email}: ${err.message}`);
+        }
+      } else {
+        const resetLink = `${getBaseUrl()}/reset-password/${result.token}`;
+        try {
+          await this.notificationService.sendPasswordResetEmail(email, result.userName, resetLink);
+        } catch (err: any) {
+          this.logger.error(`Failed to send password reset email to ${email}: ${err.message}`);
+        }
       }
     }
 
@@ -248,7 +263,11 @@ export class AuthController {
     if (!valid) {
       throw new BadRequestException("Invalid or expired reset token");
     }
-    return { valid: true };
+    // The email lets the set-password page pre-fill sign-in afterwards; the
+    // invite flag lets it choose first-password wording. Neither is secret to
+    // the holder of a valid token.
+    const owner = await this.prisma.user.findUnique({ where: { id: valid.userId }, select: { email: true, password: true } });
+    return { valid: true, email: owner?.email ?? null, invite: !!owner && !owner.password };
   }
 
   @Post("reset-password")

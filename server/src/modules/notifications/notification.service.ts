@@ -1824,18 +1824,18 @@ export class NotificationService implements OnModuleInit {
     const brandData = await this.getBrandData();
 
     const html = buildBrandedEmail(brandData, {
-      title: "You've Been Invited",
+      title: `${esc(getFirstName(inviterName) || inviterName)} added you`,
       greeting: `Hi ${esc(getFirstName(newUser.name) || "there")},`,
-      body: `<strong>${esc(inviterName)}</strong> invited you to join their family account on ${esc(brandData.companyName)}, so you both see the same conversations, Match Calls and documents. Choose a password to get started.`,
+      body: `<strong>${esc(inviterName)}</strong> added you to your family's account on ${esc(brandData.companyName)}, so you both see the same conversations, documents and Match Calls (the video calls with providers). Choose a password to get started; you will verify your own phone the first time you sign in.`,
       detailRows: [
         { label: "Your login email", value: esc(newUser.email) },
       ],
-      alertBox: { text: "This link works for 7 days. If it expires, ask the person who invited you to send a new invitation.", type: "info" },
+      alertBox: { text: "This link works for 7 days. If it expires, choose Forgot password on the sign-in page with this email and we will send a fresh invitation.", type: "info" },
       buttons: [{ label: "Set my password", url: setPasswordLink }],
     });
 
     await this.dispatchNotification({ userId: newUser.id, type: "EMAIL", channel: "member_invitation", recipient: newUser.email,
-      subject: `${inviterName} invited you to ${brandData.companyName}`, body: html,
+      subject: `${getFirstName(inviterName) || inviterName} added you to ${brandData.companyName}`, body: html,
     });
 
     if (newUser.mobileNumber) {

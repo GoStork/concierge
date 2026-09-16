@@ -21,6 +21,13 @@ export default function ResetPasswordPage() {
   const [isValidating, setIsValidating] = useState(true);
   const [tokenValid, setTokenValid] = useState(false);
   const [error, setError] = useState("");
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const prev = document.title;
+    document.title = isInvite ? "Set your password - GoStork" : "Reset your password - GoStork";
+    return () => { document.title = prev; };
+  }, [isInvite]);
 
   useEffect(() => {
     if (!token) {
@@ -28,8 +35,11 @@ export default function ResetPasswordPage() {
       return;
     }
     fetch(`/api/auth/validate-reset-token/${token}`)
-      .then((res) => {
+      .then(async (res) => {
         setTokenValid(res.ok);
+        if (res.ok) {
+          try { const d = await res.json(); if (d?.email) setAccountEmail(String(d.email)); } catch { /* optional */ }
+        }
         setIsValidating(false);
       })
       .catch(() => {
@@ -38,21 +48,17 @@ export default function ResetPasswordPage() {
       });
   }, [token]);
 
-  const checks = useMemo(() => ({
-    length: password.length >= 8,
-    uppercase: /[A-Z]/.test(password),
-    lowercase: /[a-z]/.test(password),
-    number: /[0-9]/.test(password),
-  }), [password]);
-
-  const allChecksPassed = checks.length && checks.uppercase && checks.lowercase && checks.number;
+  // One rule, the same one signup enforces: 8 characters. The partner used
+  // to meet four rules the owner never met, on the same account.
+  const checks = useMemo(() => ({ length: password.length >= 8 }), [password]);
+  const allChecksPassed = checks.length;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     if (!allChecksPassed) {
-      setError("Please meet all password requirements.");
+      setError("Use at least 8 characters.");
       return;
     }
 
@@ -75,7 +81,7 @@ export default function ResetPasswordPage() {
         throw new Error(data.message || "Failed to reset password");
       }
 
-      navigate("/auth", { state: { passwordReset: true } });
+      navigate("/auth", { state: isInvite ? { passwordSet: true, prefillEmail: accountEmail } : { passwordReset: true, prefillEmail: accountEmail } });
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -94,24 +100,24 @@ export default function ResetPasswordPage() {
   if (!tokenValid) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-background">
-        <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
+        <Card className="w-full max-w-md border border-border shadow-none">
           <CardHeader className="text-center pb-4">
-            <CardTitle className="font-display text-2xl font-heading text-destructive" data-testid="text-page-title">
+            <CardTitle className="font-display text-2xl font-heading text-foreground" data-testid="text-page-title">
               {isInvite ? "This invitation link has expired" : "Invalid Reset Link"}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="t-helper">
               {isInvite
-                ? "Invitation links work for 7 days. Request a new link with the email address you were invited on and you can still set your password."
+                ? "Invitation links work for 7 days. Request a new one with the email address you were invited on and we will send a fresh invitation."
                 : "This password reset link is invalid or has expired. Please request a new one."}
             </p>
             <Button
-              onClick={() => navigate("/forgot-password")}
-              className="font-ui"
+              onClick={() => navigate(isInvite ? "/forgot-password?invite=1" : "/forgot-password")}
+              className="font-ui rounded-full h-11"
               data-testid="button-request-new"
             >
-              Request New Link
+              {isInvite ? "Send me a new invitation" : "Request a new link"}
             </Button>
           </CardContent>
         </Card>
@@ -121,26 +127,26 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
-      <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
+      <Card className="w-full max-w-md border border-border shadow-none">
         <CardHeader className="space-y-2 text-center pb-4">
           <CardTitle className="font-display t-page-title text-primary" data-testid="text-page-title">
             {isInvite ? "Welcome - set your password" : "Reset your password"}
           </CardTitle>
           <p className="t-helper">
             {isInvite
-              ? "You've been invited to join a family account. Choose a password, then sign in to finish setting up."
+              ? "You've been added to your family's account. Choose a password, then sign in to finish setting up."
               : "Please enter your new password."}
           </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
+              <Label htmlFor="new-password">{isInvite ? "Password" : "New password"}</Label>
               <div className="relative">
                 <Input
                   id="new-password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="New Password"
+                  placeholder={isInvite ? "At least 8 characters" : "New password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="h-12 rounded-[var(--radius)] pr-10"
@@ -149,7 +155,9 @@ export default function ResetPasswordPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   data-testid="button-toggle-password"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -158,12 +166,12 @@ export default function ResetPasswordPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
+              <Label htmlFor="confirm-password">{isInvite ? "Confirm password" : "Confirm new password"}</Label>
               <div className="relative">
                 <Input
                   id="confirm-password"
                   type={showConfirmPassword ? "text" : "password"}
-                  placeholder="Confirm New Password"
+                  placeholder={isInvite ? "Type it again" : "Confirm new password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="h-12 rounded-[var(--radius)] pr-10"
@@ -172,7 +180,9 @@ export default function ResetPasswordPage() {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showConfirmPassword ? "Hide confirmation" : "Show confirmation"}
+                  aria-pressed={showConfirmPassword}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   data-testid="button-toggle-confirm-password"
                 >
                   {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -180,25 +190,10 @@ export default function ResetPasswordPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs" data-testid="password-requirements">
-              {[
-                { key: "length", label: "At least 8 characters", met: checks.length },
-                { key: "uppercase", label: "At least 1 capital letter", met: checks.uppercase },
-                { key: "lowercase", label: "At least 1 lowercase letter", met: checks.lowercase },
-                { key: "number", label: "At least 1 number", met: checks.number },
-              ].map((req) => (
-                <div key={req.key} className="flex items-center gap-1.5">
-                  {req.met ? (
-                    <Check className="w-3.5 h-3.5 text-[hsl(var(--brand-success))]" />
-                  ) : (
-                    <X className="w-3.5 h-3.5 text-muted-foreground" />
-                  )}
-                  <span className={req.met ? "text-foreground" : "text-muted-foreground"}>
-                    {req.label}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <p className="t-helper flex items-center gap-1.5" data-testid="password-requirements">
+              {checks.length ? <Check className="w-3.5 h-3.5 text-[hsl(var(--brand-success))]" aria-hidden="true" /> : <X className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />}
+              At least 8 characters
+            </p>
 
             {error && (
               <p className="text-sm text-destructive" data-testid="text-reset-error">{error}</p>
@@ -206,16 +201,16 @@ export default function ResetPasswordPage() {
 
             <Button
               type="submit"
-              className="w-full h-12 text-base font-ui shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all"
+              className="w-full h-12 text-base font-ui rounded-full"
               disabled={isSubmitting || !allChecksPassed}
               data-testid="button-save-password"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {isInvite ? "Setting up..." : "Saving..."}
                 </>
-              ) : "Save"}
+              ) : (isInvite ? "Set password and continue" : "Save new password")}
             </Button>
           </form>
         </CardContent>

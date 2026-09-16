@@ -506,10 +506,25 @@ export default function OnboardingPage() {
         // The family already met their concierge and chose a persona; the
         // member joins the conversation in progress instead of re-running
         // the intro and the persona picker.
+        // "Taking you to the conversation" means the conversation, on every
+        // width: open the family's concierge thread directly rather than the
+        // list (auto-open was desktop-only and single-thread-only).
+        const target = await fetch("/api/my/chat-sessions", { credentials: "include" })
+          .then((r) => (r.ok ? r.json() : []))
+          .then((rows: any[]) => {
+            const all = Array.isArray(rows) ? rows : [];
+            const eva = all.find((x) => x.matchmakerId && !x.providerJoinedAt) || all[0];
+            if (!eva?.id) return "/chat";
+            const params = new URLSearchParams({ session: eva.id });
+            if (eva.matchmakerId) params.set("matchmaker", eva.matchmakerId);
+            return `/chat/concierge?${params.toString()}`;
+          })
+          .catch(() => "/chat");
         setTimeout(() => {
           setPhase(null);
           setSubmitting(false);
           navigate("/chat", { replace: true });
+          if (target !== "/chat") navigate(target);
         }, 2000);
         return;
       }
@@ -714,7 +729,7 @@ export default function OnboardingPage() {
       <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-50">
         <div className="animate-[fadeIn_0.8s_ease-out_forwards] opacity-0 text-center px-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-4 text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            Welcome to the family{data.firstName ? `, ${data.firstName}` : ""}.
+            Welcome to the family{(data.firstName || (isInvitedMember ? (user?.name || "").split(" ")[0] : "")) ? `, ${data.firstName || (user?.name || "").split(" ")[0]}` : ""}.
           </h1>
           <p className="text-muted-foreground text-lg">
             {isInvitedMember

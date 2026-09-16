@@ -333,10 +333,10 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                         {isSelf && <span className="t-helper ml-1">(you)</span>}
                       </div>
                       {member.isDisabled && (
-                        <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-member-${member.id}`}>Disabled</span>
+                        <span className="shrink-0 inline-flex items-center text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-member-${member.id}`}>Disabled</span>
                       )}
                       {member.invitePending && !member.isDisabled && (
-                        <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]" data-testid={`badge-invite-pending-${member.id}`}>Invitation pending</span>
+                        <span className="shrink-0 inline-flex items-center text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-[hsl(var(--brand-warning))]/15 text-foreground" data-testid={`badge-invite-pending-${member.id}`}>Invitation pending</span>
                       )}
                     </div>
                   </TableCell>
@@ -439,6 +439,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                             size="sm"
                             onClick={() => resendInviteMutation.mutate(member)}
                             disabled={resendInviteMutation.isPending}
+                            aria-label="Resend invitation"
                             data-testid={`button-resend-invite-${member.id}`}
                           >
                             {resendInviteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

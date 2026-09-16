@@ -90,6 +90,10 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
   const ownerFirstName = memberList.find(m => m.parentAccountRole === "INTENDED_PARENT_1")?.name?.split(" ")[0] || null;
   const otherFirstName = memberList.find(m => m.parentAccountRole !== "INTENDED_PARENT_1")?.name?.split(" ")[0] || null;
   const meFirstName = (u?.firstName || u?.name?.split(" ")[0] || null) as string | null;
+  // Home and ages live on the OWNER's row (they answered the intake). A
+  // partner's own row has neither, so read the family's facts, not the seat's.
+  const ownerRow = memberList.find(m => m.parentAccountRole === "INTENDED_PARENT_1") || null;
+  const factsRow: any = isMember && ownerRow ? ownerRow : u;
 
   const p = profile || {};
   const facts: Fact[] = [];
@@ -110,7 +114,7 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
   if (family) facts.push({ key: "family", label: "Family", value: family });
 
   // "New York, New York" reads as a stutter; one name when city and state match.
-  const home = [u?.city, u?.state].filter(Boolean).filter((v, i, arr) => i === 0 || String(v).trim().toLowerCase() !== String(arr[0]).trim().toLowerCase()).join(", ");
+  const home = [factsRow?.city, factsRow?.state].filter(Boolean).filter((v, i, arr) => i === 0 || String(v).trim().toLowerCase() !== String(arr[0]).trim().toLowerCase()).join(", ");
   if (home) facts.push({ key: "home", label: "Home", value: home });
 
   // An explicit "no" (the parent deselected it) beats the onboarding list.
@@ -128,12 +132,15 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
   if (p.hasEmbryos === true) facts.push({ key: "embryos", label: "Embryos", value: p.embryoCount ? `${p.embryoCount} frozen` : "Yes, frozen" });
   else if (p.hasEmbryos === false) facts.push({ key: "embryos", label: "Embryos", value: "None yet" });
 
-  const age = ageFrom(u?.dateOfBirth);
-  const partnerAge = typeof u?.partnerAge === "number" && u.partnerAge >= 18 ? u.partnerAge : null;
+  const age = ageFrom(factsRow?.dateOfBirth);
+  const partnerAge = typeof factsRow?.partnerAge === "number" && factsRow.partnerAge >= 18 ? factsRow.partnerAge : null;
   // With two members on the account, "Partner age" is ambiguous (from the
   // partner's seat it is the owner's age). Name them.
-  const partnerLabel = isMember ? ownerFirstName : otherFirstName;
-  if (age && partnerAge) facts.push({ key: "ages", label: "Ages", value: meFirstName && partnerLabel ? `${meFirstName} ${age} · ${partnerLabel} ${partnerAge}` : `${age} and ${partnerAge}` });
+  // On the owner's row "age" is the owner and "partnerAge" is the partner,
+  // whichever seat is reading; name them accordingly.
+  const ownerLabel = isMember ? ownerFirstName : meFirstName;
+  const partnerLabel = isMember ? meFirstName : otherFirstName;
+  if (age && partnerAge) facts.push({ key: "ages", label: "Ages", value: ownerLabel && partnerLabel ? `${ownerLabel} ${age} · ${partnerLabel} ${partnerAge}` : `${age} and ${partnerAge}` });
   else if (age) facts.push({ key: "ages", label: "Age", value: String(age) });
 
   if (p.eggSource) facts.push({ key: "eggs", label: "Eggs", value: EGG_LABEL[String(p.eggSource).toLowerCase()] || titleCase(String(p.eggSource)) });
@@ -189,7 +196,7 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
 
       {isMember && (
         <p className="mt-2 flex items-center gap-2 t-helper text-foreground" data-testid="what-i-know-member">
-          <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: "hsl(var(--brand-success))" }} aria-hidden="true" />
+          <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: "hsl(var(--primary))" }} aria-hidden="true" />
           {ownerFirstName ? `You're on ${ownerFirstName}'s account. Everything here is shared with you both.` : "You're on your family's account. Everything here is shared with you both."}
         </p>
       )}

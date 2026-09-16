@@ -2856,8 +2856,11 @@ export class UsersController {
     const members = await this.prisma.user.findMany({
       where: { parentAccountId: currentUser.parentAccountId },
       select: {
-        id: true, email: true, name: true, photoUrl: true, mobileNumber: true,
+        id: true, email: true, name: true, firstName: true, photoUrl: true, mobileNumber: true,
         city: true, state: true, country: true,
+        // The "So far" strip names both partners' ages and the family's home
+        // from the OWNER's row, whichever seat is reading.
+        dateOfBirth: true, partnerAge: true,
         parentAccountRole: true, createdAt: true, isDisabled: true,
         password: true,
       },

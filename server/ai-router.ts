@@ -2765,7 +2765,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const clientMsgId: string | undefined = req.body.clientMsgId;
     const isPhase0Init = req.body.isSystemTrigger === true && req.body.message === "phase0_init";
     const isPhase1Init = req.body.isSystemTrigger === true && req.body.message === "phase1_init";
-    const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init || isPhase1Init;
+    const isMemberFirstOpen = req.body.isSystemTrigger === true && req.body.message === "member_first_open";
+    const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init || isPhase1Init || isMemberFirstOpen;
 
     // For system triggers, don't save a user message - just inject context and let AI respond.
     // For normal messages, deduplicate by clientMsgId (retry guard): if the client retries after
@@ -2902,6 +2903,63 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         ]) as Promise<[string, any[], any[]]>)
       : Promise.resolve(["", [], []] as [string, any[], any[]]);
     mark("pw:tier2_lookups_kickoff");
+
+    // MEMBER FIRST OPEN: an invited partner used to open a transcript that
+    // began "Hi Eran!" with forty turns of "you" meaning someone else. The
+    // first time a member opens the thread, the concierge posts one message
+    // to THEM by name: welcome, what the family has covered, where things
+    // stand. Deterministic (no model call), once per member per session.
+    if (isMemberFirstOpen && currentSessionId) {
+      const sse = setupSSE(res);
+      try {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, name: true, parentAccountId: true, parentAccountRole: true } });
+        const isMember = !!me?.parentAccountRole && me.parentAccountRole !== "INTENDED_PARENT_1";
+        const already = isMember
+          ? await prisma.aiChatMessage.findFirst({ where: { sessionId: currentSessionId, uiCardData: { path: ["memberWelcome", "userId"], equals: userId } }, select: { id: true } })
+          : { id: "not-a-member" };
+        if (already) {
+          sse.sendDone({ message: { id: null, content: "", senderType: "ai", role: "assistant" }, sessionId: currentSessionId, skipAiResponse: true });
+          return;
+        }
+        const [owner, sess, profileRow, cardMsgs, booked] = await Promise.all([
+          prisma.user.findFirst({ where: { parentAccountId: me!.parentAccountId!, parentAccountRole: "INTENDED_PARENT_1" }, select: { firstName: true, name: true } }),
+          prisma.aiChatSession.findUnique({ where: { id: currentSessionId }, select: { matchmakerId: true, status: true, providerName: true } }),
+          prisma.intendedParentProfile.findUnique({ where: { parentAccountId: me!.parentAccountId! }, select: { interestedServices: true, needsClinic: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, hasEmbryos: true } }),
+          prisma.aiChatMessage.count({ where: { sessionId: currentSessionId, uiCardType: "rich" } }),
+          prisma.aiChatSession.count({ where: { userId: { in: (await prisma.user.findMany({ where: { parentAccountId: me!.parentAccountId! }, select: { id: true } })).map((u) => u.id) }, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } } }),
+        ]);
+        const persona = sess?.matchmakerId ? await prisma.matchmaker.findUnique({ where: { id: sess.matchmakerId }, select: { name: true } }) : null;
+        const meFirst = me?.firstName || me?.name?.split(" ")[0] || "there";
+        const ownerFirst = owner?.firstName || owner?.name?.split(" ")[0] || "your partner";
+        const p: any = profileRow || {};
+        const services: string[] = [];
+        if (p.needsClinic === true || (p.needsClinic !== false && (p.interestedServices || []).includes("Fertility Clinic"))) services.push("an IVF clinic");
+        if (p.needsEggDonor === true || (p.needsEggDonor !== false && (p.interestedServices || []).includes("Egg Donor"))) services.push("an egg donor");
+        if ((p.interestedServices || []).includes("Sperm Donor")) services.push("a sperm donor");
+        if (p.needsSurrogate === true || (p.needsSurrogate !== false && (p.interestedServices || []).includes("Surrogate"))) services.push("a surrogate");
+        const list = services.length > 1 ? services.slice(0, -1).join(", ") + " and " + services[services.length - 1] : services[0] || "the right providers";
+        const covered: string[] = [];
+        covered.push(`that you are looking for ${list}`);
+        if (p.hasEmbryos === true) covered.push("that you already have frozen embryos");
+        if (p.surrogateCountries) covered.push(`that you are open to surrogacy in ${String(p.surrogateCountries).split(",").map((c: string) => c.trim()).join(" and ")}`);
+        const state = booked > 0
+          ? `Right now a call with ${sess?.providerName ? sess.providerName : "a provider"} is booked; the details are further up in this thread.`
+          : cardMsgs > 0
+            ? `Right now we are looking at matches together; the cards are in the thread above.`
+            : `Right now we are still on the getting-to-know-you questions, so nothing has been decided without you.`;
+        const text = `${meFirst}, welcome. I'm ${persona?.name || "your concierge"}. ${ownerFirst} and I have already covered ${covered.join(", ")}. ${state} Everything here is shared between you both, so ask me anything or correct anything - I will address each of you by name from here on.`;
+        const created = await prisma.aiChatMessage.create({
+          data: { sessionId: currentSessionId, role: "assistant", content: text, senderType: "ai", senderName: persona?.name || null, uiCardData: { memberWelcome: { userId, at: new Date().toISOString() } } },
+          select: { id: true, content: true, createdAt: true, senderType: true, senderName: true },
+        });
+        console.log(`[MEMBER WELCOME] Posted first-open welcome for ${meFirst} in session ${currentSessionId}`);
+        sse.sendDone({ message: { id: created.id, content: created.content, senderType: created.senderType, senderName: created.senderName, role: "assistant", createdAt: created.createdAt }, sessionId: currentSessionId, memberWelcome: { userId } });
+      } catch (e: any) {
+        console.error("[MEMBER WELCOME] failed:", e?.message);
+        sse.sendDone({ message: { id: null, content: "", senderType: "ai", role: "assistant" }, sessionId: currentSessionId, skipAiResponse: true });
+      }
+      return;
+    }
 
     // If a GoStork human concierge has joined and not yet concluded, silence the AI
     if (currentSession?.humanJoinedAt && !currentSession.humanConcludedAt) {
@@ -3163,8 +3221,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // Household expansion, folded into this batch (it only needs
       // currentUser.parentAccountId, which is already loaded).
       currentUser?.parentAccountId
-        ? prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })
-        : Promise.resolve([] as { id: string }[]),
+        ? prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true, name: true, firstName: true, parentAccountRole: true } })
+        : Promise.resolve([] as { id: string; name?: string | null; firstName?: string | null; parentAccountRole?: string | null }[]),
     ]);
     mark("pw:history_user_tools_loaded");
 
@@ -5604,6 +5662,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     if (userRecord?.dateOfBirth) {
       const savedAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       skipDirectives.push(`DO NOT ask for the parent's age (A1) - already saved: ${savedAge} years old.`);
+    }
+    // Two people share this thread: say who is typing, and never let "you"
+    // silently mean the owner (the partner opened a transcript of forty
+    // "you"s addressed to someone else).
+    if (accountUserRows.length >= 2) {
+      const nameOf = (u: any) => u?.firstName || String(u?.name || "").split(" ")[0] || "";
+      const names = accountUserRows.map(nameOf).filter(Boolean);
+      const speaker = nameOf(accountUserRows.find((u: any) => u.id === userId)) || "the person writing";
+      const owner = nameOf(accountUserRows.find((u: any) => u.parentAccountRole === "INTENDED_PARENT_1"));
+      if (names.length >= 2) {
+        skipDirectives.push(`SHARED THREAD: ${names.join(" and ")} both read and write here. The message you are answering now is from ${speaker}. Address ${speaker} by name when it matters, and never assume "you" means ${owner || names[0]}; when a fact is about one of them (age, eggs, carrying), say whose it is.`);
+      }
     }
     if (userRecord?.partnerAge) {
       skipDirectives.push(`DO NOT ask for the partner's age (A2) - already saved: ${userRecord.partnerAge} years old.`);

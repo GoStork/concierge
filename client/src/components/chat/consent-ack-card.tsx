@@ -24,6 +24,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { Check, Clock, Users, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { chipBase, chatBubbleStyle } from "@/components/chat/chip-styles";
@@ -106,6 +107,7 @@ export function ConsentAckCard({
   positiveChipStyle,
 }: ConsentAckCardProps) {
   const queryClient = useQueryClient();
+  const { user: viewer } = useAuth();
   const [acknowledgedAt, setAcknowledgedAt] = useState<string | null>(data.acknowledgedAt ?? null);
   // Distinct from "acknowledged": the gate stopped applying (the family is not
   // a couple after all, the form got submitted). Hiding the button is right;
@@ -194,7 +196,7 @@ export function ConsentAckCard({
       >
         <Check className="w-3.5 h-3.5" />
         {chosenIntent === "INFO_ONLY" ? "Info call requested" : "Confirmed"}
-        {data.acknowledgedByName ? ` by ${data.acknowledgedByName}` : ""}
+        {data.acknowledgedByName ? (data.acknowledgedByName === (viewer as any)?.name ? " by you" : ` by ${data.acknowledgedByName}`) : ""}
       </div>
     );
   }
