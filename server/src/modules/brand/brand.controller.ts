@@ -101,7 +101,7 @@ const DEFAULTS = {
   chatBubbleMaxWidth: 85,
   chatBubbleRadius: 20,
   chatTimestampFontSize: 11,
-  chatTimestampOpacity: 0.45,
+  chatTimestampOpacity: 0.7,
   chatInputFontSize: 17,
   chatInputFontSizeDesktop: 15,
   chatInputHeight: 36,

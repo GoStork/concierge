@@ -168,13 +168,17 @@ export default function MatchmakerSelectionPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap justify-center gap-4">
+      <div className="flex flex-wrap justify-center gap-4" role="radiogroup" aria-label="Choose your concierge">
         {matchmakers.map((m) => {
           const isSelected = selectedId === m.id;
           return (
             <Card
               key={m.id}
-              className={`relative cursor-pointer transition-all duration-200 p-5 flex flex-col gap-3 self-stretch hover:shadow-md w-full sm:w-[280px] ${
+              role="radio"
+              aria-checked={isSelected}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(m.id); } }}
+              className={`relative cursor-pointer transition-all duration-200 p-5 flex flex-col gap-3 self-stretch hover:shadow-md w-full sm:w-[280px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                 isSelected
                   ? "ring-2 ring-primary shadow-lg"
                   : "hover:ring-1 hover:ring-primary/30"
@@ -188,6 +192,7 @@ export default function MatchmakerSelectionPage() {
                   className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-primary-foreground text-xs"
                   style={{ backgroundColor: brand?.primaryColor || BRAND_PRIMARY_FALLBACK }}
                   data-testid={`matchmaker-selected-badge-${m.id}`}
+                  aria-hidden="true"
                 >
                   ✓
                 </div>

@@ -6765,7 +6765,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // one mentioned LAST wins - a curation ends on the thing it is asking
       // about ("...ready to meet your egg donor matches?").
       const readyServicePatterns: Array<{ svc: string; re: RegExp }> = [
-        { svc: "surrogate", re: /surroga|carrier|agency/g },
+        { svc: "surrogate", re: /surroga|carrier|agency|program/g },
         { svc: "egg", re: /egg donor/g },
         { svc: "sperm", re: /sperm donor/g },
         { svc: "clinic", re: /clinic|ivf/g },
@@ -6779,15 +6779,35 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         .map((p) => ({ svc: p.svc, at: lastMentionIndex(p.re) }))
         .filter((p) => p.at >= 0 && !typeSatisfied(p.svc))
         .sort((a, b) => b.at - a.at);
-      const pendingReadyService =
-        mentionedUnsatisfied[0]?.svc ??
-        ((profile?.needsSurrogate && !surrogateSatisfied) ? "surrogate" :
-         (profile?.needsEggDonor && !presentedCardTypes.has("egg")) ? "egg" :
-         // There is no needsSpermDonor column, so the sperm lane falls back to
-         // the parent's stated interest. Without this the LAST cycle of a
-         // three-service journey resolved to "none" and the ready turn was
-         // never forced (seen on SW-08/TM-09, the only 3-cycle scenarios).
-         (services.some((x: string) => /sperm/i.test(x)) && !presentedCardTypes.has("sperm")) ? "sperm" : null);
+      // The parent's own words outrank the last AI message: "Yes, find me the
+      // right international agency" after the agency card names the surrogate
+      // lane (already satisfied -> no forced search), where the AI text's
+      // passing "egg donor" mention used to force an egg-donor search and
+      // present a donor the parent never asked for (TD-13).
+      const userMsgL = (userMessage || "").toLowerCase();
+      const userNamedService = readyServicePatterns
+        .map((p) => { let at = -1; for (const m of userMsgL.matchAll(p.re)) at = Math.max(at, m.index ?? -1); return { svc: p.svc, at }; })
+        .filter((p) => p.at >= 0)
+        .sort((a, b) => b.at - a.at)[0]?.svc;
+      // Resolution order: the parent's words, then the AI's last message, then
+      // the profile. A service the parent NAMED that is already satisfied ends
+      // the search here (null, no force) instead of falling through to the
+      // profile fallback, which used to arm an egg-donor search on "find me
+      // the right international agency" one turn after the program card.
+      // An international program bundles IVF and the egg donor with the
+      // agency, so once the program is on screen nothing else is forced.
+      const profileFallbackService: string | null =
+        (profile?.needsSurrogate && !surrogateSatisfied) ? "surrogate" :
+        (internationalOnly && surrogateSatisfied) ? null :
+        (profile?.needsEggDonor && !presentedCardTypes.has("egg")) ? "egg" :
+        // There is no needsSpermDonor column, so the sperm lane falls back to
+        // the parent's stated interest. Without this the LAST cycle of a
+        // three-service journey resolved to "none" and the ready turn was
+        // never forced (seen on SW-08/TM-09, the only 3-cycle scenarios).
+        (services.some((x: string) => /sperm/i.test(x)) && !presentedCardTypes.has("sperm")) ? "sperm" : null;
+      const pendingReadyService: string | null = userNamedService
+        ? (typeSatisfied(userNamedService) ? null : userNamedService)
+        : (mentionedUnsatisfied[0]?.svc ?? profileFallbackService);
       const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools &&
         (presentedProviderIds.size === 0 ||
           (pendingReadyService != null && !typeSatisfied(pendingReadyService)));
@@ -6872,12 +6892,32 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         const yes = (v: any) => /^(yes|true|open|ok|agree|pro-choice|comfortable)/i.test(String(v || ""));
         const no = (v: any) => /^(no|false|not|against|pro-life)/i.test(String(v || ""));
         let toolName = "";
-        if (pendingReadyService === "clinic") {
+        // A parent who already has a clinic (CLINIC_HAVE) or who is on an
+        // international program (the clinic is bundled with the agency) must
+        // never be force-searched for US clinics: on TD-13 the second ready
+        // turn armed search_clinics with the parent's home state, presented a
+        // California clinic, and the model then narrated it as "the Colombia
+        // program" and booked it instead of the agency + partner clinic.
+        const clinicSearchAllowed = !alreadyHasClinic && profile?.needsClinic !== false && !internationalOnly;
+        if (pendingReadyService === "clinic" && !clinicSearchAllowed) {
+          console.log(`[READY_TURN] clinic pre-search suppressed (alreadyHasClinic=${alreadyHasClinic} needsClinic=${profile?.needsClinic} internationalOnly=${internationalOnly})`);
+        } else if (pendingReadyService === "clinic") {
           // The block above only arms on a specific curation phrase ("your
           // perfect clinic matches"); when the wording differs, a forced
           // clinic ready turn was left with no search at all.
           toolName = "search_clinics";
           Object.assign(args, buildClinicSearchArgs());
+        } else if (pendingReadyService === "surrogate" && internationalOnly) {
+          // PATH A: an international-only parent's "ready" means the AGENCY
+          // search (the CountryProgram card), never a US surrogate profile.
+          // The old branch always armed search_surrogates, so TD-13 got a
+          // surrogate card on the Colombia ready turn and the agency search
+          // that finally ran two turns later was ignored by the model.
+          toolName = "search_surrogacy_agencies";
+          const intlCountry = /\bcolombia\b/i.test(dCountries) ? "Colombia" : /\bmexico\b/i.test(dCountries) ? "Mexico" : null;
+          if (intlCountry) args.agencyLocation = intlCountry;
+          if (userRecord?.country) args.servesParentFromCountry = userRecord.country;
+          if (yes(profile?.surrogateTwins)) args.twinsAllowed = true;
         } else if (pendingReadyService === "surrogate") {
           toolName = "search_surrogates";
           if (yes(profile?.surrogateTwins)) args.agreesToTwins = true;
@@ -10868,6 +10908,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
       let consultProviderId = consultationMatch[1].trim();
+      // True when this booking is a leg of an international program (the
+      // partner IVF clinic of a program agency). Read by the confidentiality
+      // block below: a program leg has no person-profile subject.
+      let programBookingLeg = false;
       console.log(`[CONSULTATION] Processing CONSULTATION_BOOKING for providerId="${consultProviderId}"`);
       if (!consultProviderId) {
         console.warn("[CONSULTATION] Empty provider ID in CONSULTATION_BOOKING tag");
@@ -10896,8 +10940,30 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               const partners = await getProgramPartnerClinics(correctOwnerId, acctIds);
               isPartnerClinic = partners.some((p) => p.id === consultProviderId);
             } catch { /* fall through to override */ }
+            // A provider the parent was actually SHOWN in this session (as a
+            // card's provider or as the agency behind one) is a legitimate
+            // booking target even when a newer card exists. Without this, an
+            // egg-donor card shown after the Colombia program card made every
+            // later booking of the program's agency and its partner clinic
+            // rewrite to the donor's agency (TD-13: 0 booking cards).
+            let shownInSession = false;
+            if (!isPartnerClinic) {
+              try {
+                const richMessages = await prisma.aiChatMessage.findMany({
+                  where: { sessionId: currentSessionId, uiCardType: "rich" },
+                  orderBy: { createdAt: "desc" },
+                  take: 30,
+                  select: { uiCardData: true },
+                });
+                shownInSession = richMessages.some((m) =>
+                  ((m.uiCardData as any)?.matchCards || []).some((c: any) => c?.providerId === consultProviderId || c?.ownerProviderId === consultProviderId));
+              } catch { /* fall through to override */ }
+            }
             if (isPartnerClinic) {
+              programBookingLeg = true;
               console.log(`[CONSULTATION] Keeping partner IVF clinic id "${consultProviderId}" - it is a partner of program agency "${correctOwnerId}" (international two-call flow); not overriding.`);
+            } else if (shownInSession) {
+              console.log(`[CONSULTATION] Keeping provider id "${consultProviderId}" - it was presented on a card in this session; latest card owner "${correctOwnerId}" does not override it.`);
             } else {
               console.warn(`[CONSULTATION] Provider ID mismatch: AI used "${consultProviderId}" but latest match card's ownerProviderId is "${correctOwnerId}". Overriding to latest match card's agency.`);
               consultProviderId = correctOwnerId;
@@ -10935,6 +11001,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             if (priorAgencyCard) {
               console.log(`[CONSULTATION] International program second leg: agency "${consultProviderId}" already has a booking card in this session -> redirecting to partner IVF clinic "${unbooked[0].id}" (${unbooked[0].name}).`);
               consultProviderId = unbooked[0].id;
+              programBookingLeg = true;
             }
           }
         } catch (e) {
@@ -11216,8 +11283,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             // the coordinator's surname. Applies ONLY to donor/surrogate agencies;
             // clinics, lawyers, and GoStork are direct providers whose names are
             // always visible. Full names appear post-booking in the 3-way chat.
+            // An international PROGRAM card is different: its subject is the
+            // agency's own program, not a person it represents. The card
+            // already names the agency, and the preliminary-step ack ("real
+            // interest in THIS profile") has no profile to point at, so
+            // neither the masking nor the ack gate applies. Without this the
+            // Colombia program's agency card was held behind an ack card the
+            // parent never saw as a booking, and the partner clinic's second
+            // leg never fired because no agency booking card existed (TD-13).
+            const subjectIsProgram =
+              programBookingLeg ||
+              /countryprogram|program|agency/i.test(subjectType || "") ||
+              (!!subjectProfileId && subjectProfileId === consultProviderId);
             let isConfidentialAgency = false;
             try {
+              if (subjectIsProgram) throw Object.assign(new Error("program subject"), { skip: true });
               const CONFIDENTIAL_AGENCY_TYPES = ["Surrogacy Agency", "Egg Donor Agency"];
               const svcTypes = await prisma.provider.findUnique({
                 where: { id: consultProvider.id },
@@ -11236,8 +11316,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 }
                 console.log(`[CONSULTATION] Agency identity masked on pre-booking card (${consultationCard.providerName}, coordinator "${consultationCard.memberName || ""}")`);
               }
-            } catch (e) {
-              console.error("[CONSULTATION] Agency confidentiality masking failed:", e);
+            } catch (e: any) {
+              if (e?.skip) console.log(`[CONSULTATION] Program subject (${subjectType || "n/a"}) - agency name stays visible, no preliminary ack gate for ${consultProviderId}`);
+              else console.error("[CONSULTATION] Agency confidentiality masking failed:", e);
             }
 
             // ASK FIRST, CALENDAR SECOND. The preliminary-step ack used to be

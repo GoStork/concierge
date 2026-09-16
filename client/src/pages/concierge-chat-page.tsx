@@ -3211,6 +3211,29 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
   const aiName = selectedMatchmaker?.name || resolvedMatchmakerName || null;
 
+  // Browser tab / recent-tabs title: the conversation partner, then the brand.
+  useEffect(() => {
+    const who = providerInChat && providerChatName ? providerChatName : (aiName || "Chat");
+    const prev = document.title;
+    document.title = `${who} - ${brand?.companyName || "GoStork"}`;
+    return () => { document.title = prev; };
+  }, [aiName, providerInChat, providerChatName, brand?.companyName]);
+
+  // Keep the composer focused: on landing (desktop only - a phone would pop
+  // the keyboard over the first message) and again after each reply lands.
+  const prevSendingRef = useRef(false);
+  useEffect(() => {
+    if (prevSendingRef.current && !sending) {
+      requestAnimationFrame(() => chatInputRef.current?.focus());
+    }
+    prevSendingRef.current = sending;
+  }, [sending]);
+  useEffect(() => {
+    if (!sessionLoaded || window.innerWidth < 768) return;
+    const t = setTimeout(() => { if (document.activeElement === document.body) chatInputRef.current?.focus(); }, 400);
+    return () => clearTimeout(t);
+  }, [sessionLoaded]);
+
   // Keep sessionIdRef in sync so the online/offline handlers always see the current session
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
@@ -4972,6 +4995,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             size="sm"
             className="h-8 w-8 p-0"
             onClick={() => navigate("/chat")}
+            aria-label="Back to conversations"
             data-testid="btn-back-to-chats"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -5027,7 +5051,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 <p className="t-helper font-ui truncate" data-testid="chat-subject-label">
                   {providerInChat && sessionTitle
                     ? sessionTitle
-                    : (selectedMatchmaker?.title || "Your AI Matchmaker")}
+                    : (selectedMatchmaker?.title || "AI Concierge")}
                 </p>
               </div>
             </>
@@ -5074,6 +5098,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             + Pay button fit on screen without scroll. */}
         <div
           className={`flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 ${inlinePaymentToken ? "hidden" : ""}`}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Conversation"
           data-testid="concierge-messages"
         >
           {(() => {
@@ -5862,7 +5890,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               onChange={(e) => { setInput(e.target.value); if (contactNotice) setContactNotice(null); }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              disabled={sending || parentUploading || !isOnline}
+              aria-label={`Message ${providerInChat && providerChatName ? providerChatName : (aiName || "your concierge")}`}
+              // Stay enabled while a reply is in flight: a disabled textarea
+              // drops keyboard focus to the page body after every send
+              // (observed: eleven re-clicks in eleven turns). sendMessage's
+              // own in-flight guard already blocks a double submit.
+              disabled={!isOnline}
               className="flex-1 border border-input bg-background text-foreground placeholder:text-muted-foreground rounded-full shadow-sm resize-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50"
               style={{
                 fontSize: "var(--chat-input-font-size, 17px)",
@@ -5898,6 +5931,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading || !isOnline}
               className="h-10 w-10 p-0 rounded-full text-primary-foreground shrink-0"
               style={{ backgroundColor: brandColor }}
+              aria-label="Send message"
               data-testid="btn-send-message"
             >
               {(sending || parentUploading) ? (

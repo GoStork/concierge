@@ -922,6 +922,35 @@ export default function ConversationsPage() {
     urlSubjectId,
   ]);
 
+  // A one-thread account (a new parent, or a partner who just joined) must
+  // never land on "Select a conversation" on desktop: open the only thread.
+  const autoOpenedOnly = useRef(false);
+  useEffect(() => {
+    if (autoOpenedOnly.current || isProvider) return;
+    if (window.innerWidth < 768) return;
+    const hasUrlSelection = !!urlEntityId || !!urlSubjectId || window.location.search.includes("session=");
+    if (window.location.pathname !== "/chat" || hasUrlSelection) return;
+    if (parentSessionsQuery.isLoading || parentSessionsQuery.data === undefined) return;
+    const sessions = (parentSessionsQuery.data || []) as any[];
+    if (sessions.length !== 1) return;
+    const only = sessions[0];
+    if (!only?.id) return;
+    autoOpenedOnly.current = true;
+    const params = new URLSearchParams();
+    if (only.matchmakerId) params.set("matchmaker", only.matchmakerId);
+    params.set("session", only.id);
+    navigate(`/chat/concierge?${params.toString()}`, { replace: true });
+  }, [isProvider, parentSessionsQuery.isLoading, parentSessionsQuery.data, urlEntityId, urlSubjectId]);
+
+  // Tab title for the list view; an open thread sets its own.
+  useEffect(() => {
+    const hasSelection = !!urlEntityId || !!urlSubjectId || window.location.search.includes("session=");
+    if (hasSelection) return;
+    const prev = document.title;
+    document.title = "Chats - GoStork";
+    return () => { document.title = prev; };
+  }, [urlEntityId, urlSubjectId]);
+
   const sessionDetailQuery = useQuery<SessionDetail>({
     queryKey: ["/api/provider/concierge-sessions", selectedSessionId],
     queryFn: async () => {

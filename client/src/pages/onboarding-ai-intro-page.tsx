@@ -1,14 +1,14 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { Stethoscope, Heart, Baby, FlaskConical } from "lucide-react";
+import { Stethoscope, Heart, Baby, FlaskConical, Sparkles } from "lucide-react";
 
 // Service-to-visual config
-const SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; gradient: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
-  "Fertility Clinic": { icon: Stethoscope, gradient: "from-primary/20 to-primary/5", label: "Top Clinics", imageKey: "onboardingClinicImageUrl", chatText: "I found a great match for you! A top-rated fertility clinic near you", replyText: "Tell me more about the clinic!" },
-  "Egg Donor": { icon: FlaskConical, gradient: "from-pink-100 to-rose-50", label: "Egg Donors", imageKey: "onboardingEggDonorImageUrl", chatText: "I found an amazing egg donor that matches your preferences!", replyText: "She sounds great!" },
-  "Surrogate": { icon: Baby, gradient: "from-amber-100 to-orange-50", label: "Surrogates", imageKey: "onboardingSurrogateImageUrl", chatText: "I found a wonderful surrogate who's a perfect fit for your journey!", replyText: "Tell me more about her!" },
-  "Sperm Donor": { icon: Heart, gradient: "from-blue-100 to-sky-50", label: "Sperm Donors", imageKey: "onboardingSpermDonorImageUrl", chatText: "I found a great sperm donor that matches what you're looking for!", replyText: "Tell me more!" },
+const SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; hue: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
+  "Fertility Clinic": { icon: Stethoscope, hue: "--service-ivf", label: "Top Clinics", imageKey: "onboardingClinicImageUrl", chatText: "I found a great match for you! A top-rated fertility clinic near you", replyText: "Tell me more about the clinic!" },
+  "Egg Donor": { icon: FlaskConical, hue: "--service-egg-donation", label: "Egg Donors", imageKey: "onboardingEggDonorImageUrl", chatText: "I found an amazing egg donor that matches your preferences!", replyText: "She sounds great!" },
+  "Surrogate": { icon: Baby, hue: "--service-surrogacy", label: "Surrogates", imageKey: "onboardingSurrogateImageUrl", chatText: "I found a wonderful surrogate who's a perfect fit for your journey!", replyText: "Tell me more about her!" },
+  "Sperm Donor": { icon: Heart, hue: "--service-sperm-donation", label: "Sperm Donors", imageKey: "onboardingSpermDonorImageUrl", chatText: "I found a great sperm donor that matches what you're looking for!", replyText: "Tell me more!" },
 };
 
 function ServiceCard({
@@ -27,8 +27,8 @@ function ServiceCard({
 
   return (
     <div
-      className={`absolute w-48 h-60 rounded-2xl border border-border shadow-lg overflow-hidden ${!resolvedUrl ? `bg-gradient-to-br ${config.gradient}` : ""}`}
-      style={style}
+      className="absolute w-48 h-60 rounded-[var(--container-radius)] border border-border shadow-lg overflow-hidden"
+      style={{ ...style, ...(resolvedUrl ? {} : { background: `linear-gradient(135deg, hsl(var(${config.hue}) / 0.18), hsl(var(${config.hue}) / 0.04))` }) }}
     >
       {resolvedUrl ? (
         <>
@@ -45,7 +45,7 @@ function ServiceCard({
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-3">
           <div className="w-16 h-16 rounded-full bg-background/80 flex items-center justify-center">
-            <Icon className="w-8 h-8 text-primary" />
+            <Icon className="w-8 h-8" style={{ color: `hsl(var(${config.hue}))` }} />
           </div>
           <span className="text-sm font-semibold text-foreground/80">{config.label}</span>
         </div>
@@ -62,11 +62,14 @@ export default function OnboardingAiIntroPage() {
   const goalsParam = searchParams.get("goals") || "";
   const goals = goalsParam ? decodeURIComponent(goalsParam).split(",") : [];
 
-  // Get the first active matchmaker for the avatar
+  // The persona is chosen on the NEXT screen, so this preview shows the one
+  // named in ?matchmaker= when present and no specific face otherwise. It used
+  // to always show the first persona (Ariel) regardless of who was picked.
   const matchmakers: Matchmaker[] = (brand?.matchmakers || [])
     .filter(m => m.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  const concierge = matchmakers[0];
+  const requestedId = searchParams.get("matchmaker");
+  const concierge = requestedId ? matchmakers.find(m => m.id === requestedId) || null : null;
 
   // Pick up to 2 services to show as cards
   const visibleServices = goals
@@ -125,8 +128,8 @@ export default function OnboardingAiIntroPage() {
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 border-2 border-background">
-                <span className="text-primary-foreground text-sm font-bold">AI</span>
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 border-2 border-background" aria-hidden="true">
+                <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
             )}
             <div className="bg-muted rounded-[var(--radius)] rounded-bl-none px-4 py-3 shadow-sm max-w-[220px]">
@@ -146,7 +149,7 @@ export default function OnboardingAiIntroPage() {
 
         {/* Disclaimer */}
         <p className="t-helper text-center leading-relaxed max-w-sm mx-auto">
-          Our AI is not perfect yet. It can have some glitches.
+          Your concierge can answer most questions right away. When something needs a person, the GoStork team steps in.
         </p>
       </div>
 

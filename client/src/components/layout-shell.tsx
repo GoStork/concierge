@@ -1347,6 +1347,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 <DropdownMenu key={`submenu-${item.to}`}>
                   <DropdownMenuTrigger asChild>
                     <button
+                      aria-label={item.label}
                       data-testid={`tab-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                       className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui transition-colors duration-200 focus:outline-none ${iconOnly ? 'text-[0px]' : 'text-[13px]'}`}
                       style={{ color: submenuActive ? activeColor : inactiveColor }}
@@ -1398,6 +1399,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 to={item.to}
                 onClick={handleClick}
                 aria-current={active ? 'page' : undefined}
+                aria-label={item.label}
                 data-testid={`tab-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                 className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui transition-colors duration-200 ${iconOnly ? 'text-[0px]' : 'text-[13px]'}`}
                 style={{ color: active ? activeColor : inactiveColor }}

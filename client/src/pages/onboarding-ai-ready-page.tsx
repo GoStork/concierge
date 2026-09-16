@@ -2,7 +2,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { useQuery } from "@tanstack/react-query";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { CalendarCheck, Clock, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 
 const SERVICE_LABELS: Record<string, string> = {
   "Fertility Clinic": "fertility clinic",
@@ -27,6 +27,7 @@ export default function OnboardingAiReadyPage() {
   const services = profileQuery.data?.interestedServices || [];
   const primaryService = services[0] || "Fertility Clinic";
   const serviceLabel = SERVICE_LABELS[primaryService] || "fertility provider";
+  const firstName = selected?.name?.split(" ")[0] || "your concierge";
 
   const handleStart = () => {
     // Same as the picker's shortcut: /chat sits behind the chat in history so
@@ -66,52 +67,34 @@ export default function OnboardingAiReadyPage() {
           {selected ? `${selected.name} is ready...` : "Your AI concierge is ready..."}
         </h1>
 
-        <div className="text-foreground text-base leading-relaxed text-center space-y-1 mb-8">
-          <p>On {brandName}, each match leads to a scheduled meeting.</p>
-          <p>Your AI sets up the meetings directly.</p>
-        </div>
+        <p className="t-field-prose text-center max-w-sm mx-auto mb-6" data-testid="text-ai-ready-intro">
+          Here is how the next few minutes go.
+        </p>
 
-        {/* Mock chat with booking confirmation */}
-        <div className="relative mx-auto max-w-sm w-full">
-          {/* AI message */}
-          <div className="flex items-start gap-3 mb-3">
-            {selected?.avatarUrl ? (
-              <img
-                src={getPhotoSrc(selected.avatarUrl) || undefined}
-                alt=""
-                className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
-            ) : (
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: "hsl(var(--primary))" }}
+        {/* What happens next - true steps, no mock booking. The previous mock
+            "Meeting Confirmed" card told a nervous first-timer that calls get
+            booked without them; the product promise is the opposite. */}
+        <ol className="mx-auto max-w-sm w-full space-y-3" data-testid="ai-ready-steps">
+          {[
+            { n: 1, title: `Tell ${firstName} about your journey`, body: "A few short questions, one at a time. Answer in your own words or tap a reply." },
+            { n: 2, title: `${firstName} brings you hand-picked matches`, body: "One at a time, from our vetted network, with real costs shown up front." },
+            { n: 3, title: "You decide when to book a Match Call", body: "Nothing is booked, and no provider sees your name, until you say so." },
+          ].map((step) => (
+            <li key={step.n} className="flex items-start gap-3 rounded-[var(--container-radius)] border border-border bg-card px-4 py-3">
+              <span
+                className="mt-0.5 w-7 h-7 rounded-full flex items-center justify-center text-primary-foreground shrink-0 font-ui"
+                style={{ backgroundColor: "hsl(var(--primary))", fontSize: "var(--micro-value-size)" }}
+                aria-hidden="true"
               >
-                <MessageSquare className="w-4 h-4 text-primary-foreground" />
+                {step.n}
+              </span>
+              <div className="min-w-0">
+                <p className="t-field-value font-medium">{step.title}</p>
+                <p className="t-helper mt-0.5">{step.body}</p>
               </div>
-            )}
-            <div className="bg-muted rounded-[var(--radius)] rounded-bl-none p-4 max-w-[300px]">
-              <p className="text-sm text-foreground">
-                Glad to connect you here! I have just booked a meeting with your {serviceLabel}, based on your availabilities.
-              </p>
-
-              {/* Booking confirmation card */}
-              <div className="bg-background rounded-[var(--radius)] border border-border overflow-hidden mt-3">
-                <div className="p-3 space-y-2">
-                  <p className="font-semibold text-sm">Meeting Confirmed</p>
-                  <div className="flex items-center gap-1.5 text-xs text-foreground">
-                    <CalendarCheck className="w-3.5 h-3.5 text-primary" />
-                    <span>Fri, Apr 4 - 10:00 AM</span>
-                  </div>
-                  <div className="t-helper flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>30 min - Free consultation</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            </li>
+          ))}
+        </ol>
       </div>
 
       {/* CTA */}
