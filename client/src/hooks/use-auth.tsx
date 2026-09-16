@@ -13,6 +13,8 @@ type AuthContextType = {
   error: Error | null;
   loginMutation: any;
   verifyTwoFactorMutation: any;
+  enrollTwoFactorSetupMutation: any;
+  enrollTwoFactorCompleteMutation: any;
   logoutMutation: any;
 };
 
@@ -54,6 +56,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
     },
     onError: () => {
+    },
+  });
+
+  /** First-login enrollment: a staff account that has never set up an
+   *  authenticator cannot sign in once enforcement is on, and cannot enrol
+   *  without signing in. The ticket from /login opens these two calls only. */
+  const enrollTwoFactorSetupMutation = useMutation({
+    mutationFn: async (input: { enrollmentToken: string }) => {
+      const res = await apiRequest("POST", "/api/auth/2fa/enroll/setup", input);
+      return await res.json();
+    },
+  });
+
+  const enrollTwoFactorCompleteMutation = useMutation({
+    mutationFn: async (input: { enrollmentToken: string; code: string }) => {
+      const res = await apiRequest("POST", "/api/auth/2fa/enroll/complete", input);
+      return await res.json();
+    },
+    onSuccess: (user: User) => {
+      queryClient.setQueryData([api.auth.me.path], user);
+      dispatch(setUser(user));
+      queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
     },
   });
 
@@ -99,6 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         loginMutation,
         verifyTwoFactorMutation,
+        enrollTwoFactorSetupMutation,
+        enrollTwoFactorCompleteMutation,
         logoutMutation,
       }}
     >

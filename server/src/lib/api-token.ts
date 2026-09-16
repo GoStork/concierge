@@ -41,7 +41,13 @@ export async function userFromBearer(
   try {
     const jwt = (await import("jsonwebtoken")).default;
     const payload = jwt.verify(token, jwtSecret()) as any;
-    if (payload?.purpose === "2fa_challenge") return null;
+    // A session token carries no `purpose`. Every purpose-tagged token is a
+    // single-use ticket (2fa_challenge, 2fa_enrollment, and anything added
+    // later) and must never work as an API credential. Denying by default
+    // means a new ticket type cannot silently become a login bypass, which is
+    // exactly how the 2fa_challenge ticket slipped through the six copies of
+    // this logic before it was centralised here.
+    if (payload?.purpose) return null;
     if (!payload?.sub) return null;
     const user = await db.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.isDisabled) return null;

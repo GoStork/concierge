@@ -117,20 +117,27 @@ export class AuthController {
     }
 
     // Covered role that never enrolled. During the grace period they are let
-    // in and nagged; once TWO_FACTOR_ENFORCE_AT passes, they are not.
+    // in and nagged; once TWO_FACTOR_ENFORCE_AT passes they must enrol first.
+    //
+    // Refusing outright (what this did originally) is a lockout: enrolment
+    // happens inside the app, so an account that cannot log in can never set
+    // up the factor it is being refused for. The next person added to the team
+    // would have needed a database edit to get in. Instead, hand out a
+    // 15-minute ticket that opens the enrolment endpoints and nothing else.
     const mustEnrol = roleRequiresTwoFactor(user.roles);
     if (mustEnrol && twoFactorEnforcedNow()) {
       await recordAuthEvent(this.prisma, {
-        event: "LOGIN_FAILURE",
+        event: "LOGIN_SUCCESS",
         userId: user.id,
         email: user.email,
         ip: requestIp(req),
         userAgent: requestUserAgent(req),
-        detail: "2fa_required_not_enrolled",
+        detail: "password_ok_must_enrol_2fa",
       });
-      throw new BadRequestException(
-        "Two-factor authentication is required for GoStork staff accounts. Ask an admin to reset your enrollment.",
-      );
+      return {
+        requiresTwoFactorEnrollment: true,
+        enrollmentToken: this.authService.createTwoFactorEnrollmentTicket(user.id),
+      };
     }
 
     const result = await this.finishLogin(req, user);
@@ -161,6 +168,61 @@ export class AuthController {
     if (!user || user.isDisabled) throw new BadRequestException("Account unavailable");
     const result = await this.finishLogin(req, user, "2fa");
     return { ...result, twoFactorRequired: true, twoFactorEnabled: true };
+  }
+
+  @Post("2fa/enroll/setup")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "First-login enrollment: QR code, using the ticket from /login" })
+  async twoFactorEnrollSetup(@Body() body: { enrollmentToken: string }) {
+    const userId = await this.resolveEnrollmentTicket(body?.enrollmentToken);
+    return this.twoFactor.beginEnrollment(userId);
+  }
+
+  @Post("2fa/enroll/complete")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "First-login enrollment: confirm the code, then sign in" })
+  async twoFactorEnrollComplete(
+    @Body() body: { enrollmentToken: string; code: string },
+    @Req() req: Request,
+  ) {
+    if (!body?.code) throw new BadRequestException("Code is required");
+    const userId = await this.resolveEnrollmentTicket(body?.enrollmentToken);
+    const meta = { ip: requestIp(req), userAgent: requestUserAgent(req) };
+    const result = await this.twoFactor.completeEnrollment(userId, body.code, meta);
+
+    const user = await this.authService.getUserById(userId);
+    if (!user || user.isDisabled) throw new BadRequestException("Account unavailable");
+    // They proved the factor in the same request, so this IS the second
+    // factor: sign them in rather than making them type a second code.
+    const session = await this.finishLogin(req, user, "2fa_enrollment");
+    return {
+      ...session,
+      twoFactorRequired: true,
+      twoFactorEnabled: true,
+      recoveryCodes: result.recoveryCodes,
+    };
+  }
+
+  /**
+   * Validates an enrolment ticket. Refuses one for an account that already has
+   * an authenticator: otherwise a stolen password could be used to enrol a new
+   * device and bypass the existing factor entirely.
+   */
+  private async resolveEnrollmentTicket(token: string | undefined): Promise<string> {
+    if (!token) throw new BadRequestException("Enrollment token is required");
+    const userId = this.authService.verifyTwoFactorEnrollmentTicket(token);
+    if (!userId) {
+      throw new BadRequestException("That sign-in attempt expired. Please start again.");
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, totpEnabledAt: true, isDisabled: true },
+    });
+    if (!user || user.isDisabled) throw new BadRequestException("Account unavailable");
+    if (user.totpEnabledAt) {
+      throw new BadRequestException("This account already has two-factor authentication.");
+    }
+    return userId;
   }
 
   @Get("2fa/status")

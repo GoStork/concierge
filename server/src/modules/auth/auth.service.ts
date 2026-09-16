@@ -121,6 +121,34 @@ export class AuthService {
     );
   }
 
+  /**
+   * Ticket for a covered account that has NEVER enrolled, issued only after a
+   * correct password. It exists because enrolment lives inside the app: once
+   * enforcement is on, such an account cannot log in, and cannot enrol without
+   * logging in. This ticket opens the enrolment endpoints and nothing else.
+   *
+   * It is only ever minted when totpEnabledAt is null. An account that already
+   * has an authenticator must go through the normal challenge instead -
+   * otherwise someone holding a stolen password could enrol their own device
+   * and walk straight past the second factor.
+   */
+  createTwoFactorEnrollmentTicket(userId: string): string {
+    return this.jwtService.sign(
+      { sub: userId, purpose: "2fa_enrollment" },
+      { expiresIn: "15m" },
+    );
+  }
+
+  verifyTwoFactorEnrollmentTicket(token: string): string | null {
+    try {
+      const payload: any = this.jwtService.verify(token);
+      if (payload?.purpose !== "2fa_enrollment" || !payload?.sub) return null;
+      return payload.sub as string;
+    } catch {
+      return null;
+    }
+  }
+
   verifyTwoFactorChallenge(token: string): string | null {
     try {
       const payload: any = this.jwtService.verify(token);

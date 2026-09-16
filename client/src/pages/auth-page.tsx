@@ -23,7 +23,13 @@ function isDeepLinkReturn(returnTo: string | undefined): boolean {
 }
 
 export default function AuthPage() {
-  const { user, loginMutation, verifyTwoFactorMutation } = useAuth();
+  const { user, loginMutation, verifyTwoFactorMutation, enrollTwoFactorSetupMutation, enrollTwoFactorCompleteMutation } = useAuth();
+  // Set when a staff account must set up an authenticator before it can sign
+  // in at all. Enrolment lives behind the login, so this is the only way in.
+  const [enrollToken, setEnrollToken] = useState<string | null>(null);
+  const [enrollQr, setEnrollQr] = useState<{ qrDataUrl: string; secret: string } | null>(null);
+  const [enrollCode, setEnrollCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   // Set when a staff account with two-factor on gets past the password step.
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
@@ -60,9 +66,32 @@ export default function AuthPage() {
     loginMutation.mutate(data, {
       onSuccess: (result: any) => {
         if (result?.requiresTwoFactor) setChallengeToken(result.challengeToken);
+        if (result?.requiresTwoFactorEnrollment) {
+          setEnrollToken(result.enrollmentToken);
+          enrollTwoFactorSetupMutation.mutate(
+            { enrollmentToken: result.enrollmentToken },
+            { onSuccess: (d: any) => setEnrollQr({ qrDataUrl: d.qrDataUrl, secret: d.secret }) },
+          );
+        }
       },
     });
   }, [loginMutation]);
+
+  const onCompleteEnrollment = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (!enrollToken || !enrollCode.trim()) return;
+    enrollTwoFactorCompleteMutation.mutate(
+      { enrollmentToken: enrollToken, code: enrollCode.trim() },
+      {
+        onSuccess: (d: any) => {
+          setEnrollCode("");
+          // Shown once, never again - hold the screen until they confirm.
+          if (Array.isArray(d?.recoveryCodes)) setRecoveryCodes(d.recoveryCodes);
+        },
+        onError: () => setEnrollCode(""),
+      },
+    );
+  }, [enrollToken, enrollCode, enrollTwoFactorCompleteMutation]);
 
   const onVerifyTwoFactor = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -199,7 +228,91 @@ export default function AuthPage() {
                     Your password has been reset successfully. Please sign in with your new password.
                   </div>
                 )}
-                {challengeToken ? (
+                {recoveryCodes ? (
+                  <div className="space-y-4" data-testid="panel-enroll-recovery">
+                    <div className="flex items-start gap-2 p-3 rounded-[var(--radius)] bg-secondary text-sm">
+                      <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+                      <span>
+                        You are signed in. Save these recovery codes somewhere safe - each works
+                        once, and this is the only time they are shown. They are how you get back
+                        in if you lose your phone.
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 font-ui text-sm" data-testid="text-recovery-codes">
+                      {recoveryCodes.map((rc) => <span key={rc}>{rc}</span>)}
+                    </div>
+                    <Button
+                      className="w-full h-12 text-base font-ui"
+                      onClick={() => navigate(isDeepLinkReturn(returnTo) ? returnTo : "/dashboard", { replace: true })}
+                      data-testid="button-recovery-saved"
+                    >
+                      I have saved them, continue
+                    </Button>
+                  </div>
+                ) : enrollToken ? (
+                  <form onSubmit={onCompleteEnrollment} className="space-y-4" data-testid="form-two-factor-enroll">
+                    <div className="flex items-start gap-2 p-3 rounded-[var(--radius)] bg-secondary text-sm">
+                      <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+                      <span>
+                        GoStork staff accounts need an authenticator app. Set it up once here and
+                        you are signed in.
+                      </span>
+                    </div>
+                    {enrollQr ? (
+                      <>
+                        <img
+                          src={enrollQr.qrDataUrl}
+                          alt="Two-factor QR code"
+                          width={180}
+                          height={180}
+                          className="rounded-[var(--radius)] border mx-auto"
+                        />
+                        <p className="t-helper text-center">
+                          Cannot scan? Enter this key: <span className="font-ui select-all">{enrollQr.secret}</span>
+                        </p>
+                      </>
+                    ) : (
+                      <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin" /></div>
+                    )}
+                    <div className="space-y-2">
+                      <Label htmlFor="enrollCode">Code from your app</Label>
+                      <Input
+                        id="enrollCode"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="123456"
+                        className="h-12 rounded-[var(--radius)] tracking-[0.3em] text-center font-ui"
+                        data-testid="input-enroll-code"
+                        value={enrollCode}
+                        onChange={(e) => setEnrollCode(e.target.value)}
+                      />
+                    </div>
+                    {enrollTwoFactorCompleteMutation.isError && (
+                      <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-destructive/10 border border-destructive/20 text-sm text-destructive" data-testid="text-enroll-error">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>That code is not right. Try the next one from your app.</span>
+                      </div>
+                    )}
+                    <Button
+                      type="submit"
+                      className="w-full h-12 text-base font-ui shadow-lg shadow-primary/25"
+                      disabled={enrollTwoFactorCompleteMutation.isPending || !enrollCode.trim() || !enrollQr}
+                      data-testid="button-complete-enroll"
+                    >
+                      {enrollTwoFactorCompleteMutation.isPending ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Setting up...</>
+                      ) : "Turn it on and sign in"}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => { setEnrollToken(null); setEnrollQr(null); setEnrollCode(""); }}
+                      className="w-full t-helper text-primary hover:text-primary/80 font-ui"
+                      data-testid="button-enroll-back"
+                    >
+                      Use a different account
+                    </button>
+                  </form>
+                ) : challengeToken ? (
                   /* Second factor. A full inline step, not a dialog - the app
                      is built for native mobile where modals do not translate. */
                   <form onSubmit={onVerifyTwoFactor} className="space-y-4" data-testid="form-two-factor">
@@ -294,7 +407,7 @@ export default function AuthPage() {
                   </Button>
                 </form>
                 )}
-                {!challengeToken && (
+                {!challengeToken && !enrollToken && !recoveryCodes && (
                 <>
                 <p className="t-helper text-center">
                   Forgot your password?{" "}
