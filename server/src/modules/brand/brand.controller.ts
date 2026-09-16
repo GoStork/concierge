@@ -105,7 +105,7 @@ const DEFAULTS = {
   chatInputFontSize: 17,
   chatInputFontSizeDesktop: 15,
   chatInputHeight: 36,
-  quickReplyFontSize: 13,
+  quickReplyFontSize: 14,
   quickReplyRadius: 999,
   quickReplyPaddingX: 14,
   quickReplyPaddingY: 6,

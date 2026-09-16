@@ -1919,6 +1919,7 @@ const sendMessageMutation = useMutation({
                 className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20"
                 style={selectedParentSession?.id === session.id ? { backgroundColor: `${brandColor}15` } : undefined}
                 onClick={() => handleParentSessionClick(session)}
+                aria-label={`${session.title || session.matchmakerName || "Conversation"}, ${timeAgo(session.lastMessageAt)}${session.unreadCount > 0 ? `, ${session.unreadCount} unread` : ""}`}
                 data-selected={selectedParentSession?.id === session.id ? "true" : undefined}
                 data-testid={`chat-session-${session.id}`}
               >
@@ -2010,6 +2011,7 @@ const sendMessageMutation = useMutation({
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
                         style={selectedParentSession?.id === session.id ? { backgroundColor: `${brandColor}15` } : undefined}
                         onClick={() => handleParentSessionClick(session)}
+                        aria-label={`${session.title || session.providerName || "Conversation"}, ${timeAgo(session.lastMessageAt)}${session.unreadCount > 0 ? `, ${session.unreadCount} unread` : ""}`}
                         data-selected={selectedParentSession?.id === session.id ? "true" : undefined}
                 data-testid={`chat-session-provider-${session.id}`}
                       >

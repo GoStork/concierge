@@ -91,7 +91,7 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
       <Button
         variant="ghost"
         size="sm"
-        className={`h-8 w-8 p-0 ${backClassName}`}
+        className={`h-11 w-11 md:h-8 md:w-8 p-0 ${backClassName}`}
         onClick={onBack}
         aria-label="Back to conversations"
         data-testid="btn-back-to-chats"
@@ -142,24 +142,26 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
           {team.state === "talking" ? (
             <div
               className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
-              style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
+              style={{ backgroundColor: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderRadius: "999px" }}
               data-testid="btn-talk-to-team"
             >
               <Headphones className="w-3.5 h-3.5" />
+              <span className="sm:hidden">Human</span>
               <span className="hidden sm:inline">Talking with Human</span>
             </div>
           ) : (
             <Button
               variant="outline"
               size="sm"
-              className="text-xs gap-1.5 h-8"
-              style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+              className="text-xs gap-1.5 h-11 md:h-8 px-3"
+              style={{ borderColor: "hsl(var(--primary) / 0.3)", color: "hsl(var(--primary))", borderRadius: "999px" }}
               onClick={team.onClick}
               disabled={team.disabled || team.state === "notified"}
               aria-label={team.state === "notified" ? "Team notified" : "Talk to GoStork Team"}
               data-testid="btn-talk-to-team"
             >
               <Headphones className="w-3.5 h-3.5" />
+              <span className="sm:hidden">{team.state === "notified" ? "Notified" : "Team"}</span>
               <span className="hidden sm:inline">{team.state === "notified" ? "Team Notified" : "Talk to GoStork Team"}</span>
             </Button>
           )}

@@ -201,7 +201,7 @@ function chatDateLabel(dateStr: string): string {
 
 const CURATION_LINES = [
   "Analyzing your family-building goals...",
-  "Matching your criteria with 1,000+ providers...",
+  "Searching our vetted network...",
   "Finalizing your personalized results...",
 ];
 
@@ -5025,7 +5025,19 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         {/* "So far": what Eva has saved about the family, folded to one line.
             Eva's own session only - provider threads never show it. */}
         {!providerInChat && sessionLoaded && !inlinePaymentToken && (
-          <WhatIKnowStrip conciergeName={selectedMatchmaker?.name || aiName || null} />
+          <WhatIKnowStrip
+            conciergeName={selectedMatchmaker?.name || aiName || null}
+            lastExchange={(() => {
+              // The strip shows a fact the moment Eva hears it (pending) until
+              // the profile poll confirms the save, so the parent sees listening
+              // happen instead of finding out when the question comes back.
+              const lastUser = [...messages].reverse().find((m) => m.role === "user");
+              const lastAiBefore = lastUser
+                ? [...messages].reverse().find((m) => m.role === "assistant" && m.createdAt && lastUser.createdAt && new Date(m.createdAt) < new Date(lastUser.createdAt))
+                : null;
+              return lastUser && lastAiBefore ? { question: lastAiBefore.content || "", answer: lastUser.content || "" } : null;
+            })()}
+          />
         )}
 
         {/* Hide the messages list entirely while the payment panel is
@@ -5376,10 +5388,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   // 44px touch target on phones (the chips are the
                                   // primary intake control); desktop keeps the
                                   // brand's compact height.
-                                  className="transition-all hover:opacity-90 font-medium min-h-11 md:min-h-0"
+                                  className="transition-all hover:opacity-90 font-medium min-h-11 md:min-h-0 qr-chip"
                                   style={{
                                     borderRadius: "var(--quick-reply-radius, 999px)",
-                                    fontSize: "var(--quick-reply-font-size, 13px)",
                                     paddingLeft: "var(--quick-reply-px, 14px)",
                                     paddingRight: "var(--quick-reply-px, 14px)",
                                     paddingTop: "var(--quick-reply-py, 6px)",

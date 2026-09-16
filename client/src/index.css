@@ -837,3 +837,9 @@ input[type="time"]::-webkit-date-and-time-value {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* Quick-reply chips: the parent's answers were 13px under 21px mobile
+   question text. Phones read the brand size but never below 15px; desktop
+   uses the brand size (default 14px). */
+.qr-chip { font-size: max(var(--quick-reply-font-size, 14px), 15px); }
+@media (min-width: 768px) { .qr-chip { font-size: var(--quick-reply-font-size, 14px); } }

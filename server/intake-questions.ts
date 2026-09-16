@@ -191,6 +191,17 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // Never fire intake bypass when:
   // - curation already sent (Tier 2 handles post-curation turns)
   // - Phase 1 not yet complete (Phase 1 bypass handles that)
+  // The prompt's alias for the twins answer is hopingForTwins, but the DB
+  // column is surrogateTwins ("Yes" / "No" / "No preference"). Every check in
+  // this file read profile.hopingForTwins, which never exists on the row, so
+  // the clinic-cycle twins question was never seen as answered and the
+  // surrogate cycle asked it again (observed live: twins asked twice).
+  const twinsSaved: string | null = (() => {
+    const raw = profile?.hopingForTwins ?? profile?.surrogateTwins ?? null;
+    if (raw == null || raw === "") return null;
+    const v = String(raw).toLowerCase();
+    return v === "yes" || v === "true" ? "yes" : v === "no" || v === "false" ? "no" : v;
+  })();
   if (curationAlreadySent) return null;
   if (!phase1Complete) return null;
 
@@ -660,7 +671,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
 
     // A3: Twins preference
     const a3Asked = aiAsked(chatHistory, /are you hoping for twins/i);
-    const a3Answered = !!(profile?.hopingForTwins)
+    const a3Answered = !!(twinsSaved)
       || userSaid(allUserMessages, /hoping for twins|singleton only|no preference.*twins|no twins/i)
       || userAnsweredAfter(chatHistory, /are you hoping for twins/i, /hoping for twins|singleton|no preference/i);
     if (!a3Asked && !a3Answered) {
@@ -703,8 +714,8 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
       const eggSource = allUserMsgs.find((s: string) => /partner'?s eggs|my own eggs|donor eggs/i.test(s))?.match(/partner'?s eggs|my own eggs|donor eggs/i)?.[0] || profile?.eggSource;
       const twins = userSaid(allUserMessages, /hoping for twins/) ? "hoping for twins"
         : userSaid(allUserMessages, /singleton only|no twins/) ? "preferring singleton"
-        : profile?.hopingForTwins === "yes" ? "hoping for twins"
-        : profile?.hopingForTwins === "no" ? "preferring a singleton pregnancy"
+        : twinsSaved === "yes" ? "hoping for twins"
+        : twinsSaved === "no" ? "preferring a singleton pregnancy"
         : null;
       const lastUserMsg = allUserMsgs[allUserMsgs.length - 1] || "";
       const agePart = age ? `you're ${age}` : "";
@@ -713,7 +724,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
       const priorityPart = profile?.clinicPriority ? `, with ${profile.clinicPriority} being your top priority for a clinic` : lastUserMsg ? `, with ${lastUserMsg} being your top priority` : "";
       return {
         step: "a_curation",
-        text: `Here's what I have: ${agePart}${eggPart}${twinsPart}${priorityPart}. Shall I find your perfect clinic matches now? [[CURATION]]`,
+        text: `Here's what I have: ${agePart}${eggPart}${twinsPart}${priorityPart}. Shall I find your perfect clinic matches now? [[QUICK_REPLY:Yes, I'm ready!|One more thing first]] [[CURATION]]`,
       };
     }
   }
@@ -769,8 +780,9 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
 
     // D3: Twins preference for surrogate
     // Skip ONLY if twins preference was explicitly stated earlier (A3 answered OR in allUserMessages)
-    const twinsAlreadyAnswered = !!(profile?.hopingForTwins)
-      || userSaid(allUserMessages, /hoping for twins|singleton only|no preference.*twins/i);
+    const twinsAlreadyAnswered = !!(twinsSaved)
+      || userSaid(allUserMessages, /hoping for twins|singleton only|no preference.*twins/i)
+      || userAnsweredAfter(chatHistory, /are you hoping for twins/i, /hoping for twins|singleton|no preference|^\s*(yes|no)\b/i);
 
     if (d1Answered && !twinsAlreadyAnswered) {
       const d3Asked = aiAsked(chatHistory, /are you hoping to have twins.*singleton|singleton.*twins.*preference/i);
@@ -789,8 +801,8 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
       const familyType = profile?.familyType || "your family";
       const countries = surrogateCountries || "USA";
       const termPref = profile?.surrogateTermination || null;
-      const twinsPref = profile?.hopingForTwins === "yes" ? "hoping for twins"
-        : profile?.hopingForTwins === "no" ? "singleton preferred"
+      const twinsPref = twinsSaved === "yes" ? "hoping for twins"
+        : twinsSaved === "no" ? "singleton preferred"
         : userSaid(allUserMessages, /hoping for twins/) ? "hoping for twins"
         : userSaid(allUserMessages, /singleton/) ? "singleton preferred"
         : null;
@@ -818,7 +830,9 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
         const closing = internationalOnly
           ? "Shall I find you the right international program?"
           : "Shall I find your perfect surrogate matches now?";
-        summary += (parts.length ? parts.join(", ") : "your surrogacy preferences") + ". " + closing + " [[CURATION]]";
+        // The highest-intent turn of the intake used to ship with no button
+        // (observed live: parents typed "ok" into the ambiguous-yes path).
+        summary += (parts.length ? parts.join(", ") : "your surrogacy preferences") + ". " + closing + " [[QUICK_REPLY:Yes, I'm ready!|One more thing first]] [[CURATION]]";
         return { step: "d_curation", text: summary };
       }
     }

@@ -8,7 +8,7 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Sparkles, ArrowRight } from "lucide-react";
+import { Loader2, Sparkles, ArrowRight, Check } from "lucide-react";
 import { PersonaVoicePreviewButton } from "@/components/voice/persona-voice-preview-button";
 
 export default function MatchmakerSelectionPage() {
@@ -164,7 +164,7 @@ export default function MatchmakerSelectionPage() {
           </h1>
         </div>
         <p className="text-foreground text-sm md:text-base max-w-xl mx-auto">
-          Your dedicated concierge will help you navigate providers, compare costs, and organize your path to parenthood. Select the profile that best fits your preferred communication style.
+          Your concierge learns your situation, hand-picks matches from our vetted network, and sets up the calls when you say so. Both are the same matchmaker with a different voice: pick the one you would rather hear from.
         </p>
       </div>
 
@@ -207,7 +207,7 @@ export default function MatchmakerSelectionPage() {
                   data-testid={`matchmaker-selected-badge-${m.id}`}
                   aria-hidden="true"
                 >
-                  ✓
+                  <Check className="w-3.5 h-3.5" strokeWidth={3} />
                 </div>
               )}
               <div className="flex flex-col items-center text-center gap-3">

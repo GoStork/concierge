@@ -39,7 +39,31 @@ function ageFrom(dob: string | Date | null | undefined): number | null {
   return age >= 18 && age <= 80 ? age : null;
 }
 
-export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | null }) {
+const EGG_LABEL: Record<string, string> = { "egg donor": "Donor eggs", "donor eggs": "Donor eggs", "partner eggs": "Partner's eggs", "own eggs": "Own eggs", "self": "Own eggs" };
+
+/**
+ * A scripted answer Eva has just heard but not yet saved. Keyed on the
+ * question that preceded it so a shared chip like "No preference" lands on
+ * the right fact. Cleared automatically once the profile poll carries it.
+ */
+function pendingFactFrom(question: string, answer: string): Fact | null {
+  const q = question.toLowerCase();
+  const a = answer.trim();
+  if (!q || !a || a.length > 60) return null;
+  if (/termination/.test(q)) return { key: "termination", label: "Termination", value: a, pending: true };
+  if (/hoping (for|to have) twins/.test(q)) return { key: "twins", label: "Twins", value: a, pending: true };
+  if (/first ivf journey/.test(q)) return { key: "firstIvf", label: "IVF history", value: a, pending: true };
+  if (/most important to you when choosing a clinic/.test(q)) return { key: "priority", label: "Priority", value: a, pending: true };
+  if (/how old are you/.test(q)) return { key: "ages", label: "Age", value: a, pending: true };
+  if (/how old is your partner/.test(q)) return { key: "partnerAge", label: "Partner age", value: a, pending: true };
+  if (/who is planning to carry|carrying the pregnancy/.test(q)) return { key: "carrier", label: "Carrier", value: a, pending: true };
+  if (/plan for eggs|were the eggs/.test(q)) return { key: "eggs", label: "Eggs", value: a, pending: true };
+  if (/sperm/.test(q) && /own|partner|donor/.test(q)) return { key: "sperm", label: "Sperm", value: a, pending: true };
+  if (/which countr|surrogacy in/.test(q)) return { key: "countries", label: "Countries", value: a, pending: true };
+  return null;
+}
+
+export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?: string | null; lastExchange?: { question: string; answer: string } | null }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const u = user as any;
@@ -87,11 +111,13 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
   const home = [u?.city, u?.state].filter(Boolean).filter((v, i, arr) => i === 0 || String(v).trim().toLowerCase() !== String(arr[0]).trim().toLowerCase()).join(", ");
   if (home) facts.push({ key: "home", label: "Home", value: home });
 
+  // An explicit "no" (the parent deselected it) beats the onboarding list.
   const services: string[] = [];
-  if (p.needsClinic === true || (p.interestedServices || []).includes("Fertility Clinic")) services.push("IVF clinic");
-  if (p.needsEggDonor === true || (p.interestedServices || []).includes("Egg Donor")) services.push("egg donor");
-  if (p.needsSpermDonor === true || (p.interestedServices || []).includes("Sperm Donor")) services.push("sperm donor");
-  if (p.needsSurrogate === true || (p.interestedServices || []).includes("Surrogate")) services.push("surrogate");
+  const wants = (flag: boolean | null | undefined, svc: string) => flag === true || (flag !== false && (p.interestedServices || []).includes(svc));
+  if (wants(p.needsClinic, "Fertility Clinic")) services.push("IVF clinic");
+  if (wants(p.needsEggDonor, "Egg Donor")) services.push("egg donor");
+  if (wants(p.needsSpermDonor, "Sperm Donor")) services.push("sperm donor");
+  if (wants(p.needsSurrogate, "Surrogate")) services.push("surrogate");
   if (services.length) {
     const list = services.length > 1 ? services.slice(0, -1).join(", ") + " and " + services[services.length - 1] : services[0];
     facts.push({ key: "services", label: "Looking for", value: list.charAt(0).toUpperCase() + list.slice(1) });
@@ -105,17 +131,27 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
   if (age && partnerAge) facts.push({ key: "ages", label: "Ages", value: `${age} and ${partnerAge}` });
   else if (age) facts.push({ key: "ages", label: "Age", value: String(age) });
 
-  if (p.eggSource) facts.push({ key: "eggs", label: "Eggs", value: titleCase(String(p.eggSource)) });
+  if (p.eggSource) facts.push({ key: "eggs", label: "Eggs", value: EGG_LABEL[String(p.eggSource).toLowerCase()] || titleCase(String(p.eggSource)) });
   if (p.spermSource) facts.push({ key: "sperm", label: "Sperm", value: titleCase(String(p.spermSource)) });
   if (p.carrier) facts.push({ key: "carrier", label: "Carrier", value: titleCase(String(p.carrier)) });
   if (p.surrogateCountries) facts.push({ key: "countries", label: "Countries", value: String(p.surrogateCountries) });
+  if (p.surrogateTermination) facts.push({ key: "termination", label: "Termination", value: String(p.surrogateTermination) });
+  if (p.surrogateTwins) facts.push({ key: "twins", label: "Twins", value: /^yes$/i.test(String(p.surrogateTwins)) ? "Hoping for twins" : /^no$/i.test(String(p.surrogateTwins)) ? "Singleton" : titleCase(String(p.surrogateTwins)) });
+  if (p.isFirstIvf === true) facts.push({ key: "firstIvf", label: "IVF history", value: "First time" });
+  else if (p.isFirstIvf === false) facts.push({ key: "firstIvf", label: "IVF history", value: "Done IVF before" });
+  if (p.clinicPriority) facts.push({ key: "priority", label: "Priority", value: String(p.clinicPriority) });
+
+  // Heard but not yet saved: show it now, in italics, until the poll confirms.
+  const pending = lastExchange ? pendingFactFrom(lastExchange.question, lastExchange.answer) : null;
+  if (pending && !facts.some(f => f.key === pending.key)) facts.push(pending);
 
   // Nothing worth restating yet: stay out of the way until Eva has learned
   // at least two things.
   if (facts.length < 2 && !isMember) return null;
 
-  // Labelled pairs: a bare "38" or "Egg Donor" is ambiguous on the fold line.
-  const line = facts.map(f => `${f.label} ${f.value}`).join(" · ");
+  // Labelled pairs, most recently learned first: the fold shows ~36 chars on
+  // a phone, so the newest facts (what Eva just heard) must lead.
+  const line = [...facts].reverse().map(f => `${f.label} ${f.value}`).join(" · ");
   const who = conciergeName || "your concierge";
 
   return (
@@ -156,7 +192,7 @@ export function WhatIKnowStrip({ conciergeName }: { conciergeName?: string | nul
           15px), not the profile page's 17px field value, so the strip
           reads as part of the chat rather than a form dropped into it. */}
       {open && (
-        <div id="what-i-know-facts" className="mt-2.5 pt-2.5 border-t border-border grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-baseline">
+        <div id="what-i-know-facts" className="mt-2.5 pt-2.5 border-t border-border grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-baseline max-h-[38dvh] overflow-y-auto scroll-fade-bottom">
           {facts.map(f => (
             <Fragment key={f.key}>
               <span className="t-micro-label whitespace-nowrap">{f.label}</span>

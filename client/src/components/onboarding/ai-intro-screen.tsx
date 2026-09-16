@@ -95,14 +95,14 @@ export function AiIntroScreen({
     <div className="fixed inset-0 bg-background overflow-y-auto px-6" data-testid="onboarding-ai-intro">
       <div
         className="min-h-full max-w-md mx-auto flex flex-col items-center justify-between"
-        style={{ paddingTop: "max(3rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 0px))" }}
+        style={{ paddingTop: "max(2rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="w-full flex flex-col items-center flex-1">
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight text-center mb-8" style={{ fontFamily: "var(--font-display)" }} data-testid="text-ai-intro-title">
+          <h1 className="text-3xl md:text-4xl font-bold leading-tight text-center mb-8 [@media(max-height:700px)]:mb-5" style={{ fontFamily: "var(--font-display)" }} data-testid="text-ai-intro-title">
             {conciergeName ? `Now let's meet ${conciergeName}` : "Now let's meet your AI concierge"}
           </h1>
 
-          <div className="relative w-72 h-72 mx-auto mb-6">
+          <div className="relative w-72 h-72 [@media(max-height:700px)]:h-64 mx-auto mb-6 [@media(max-height:700px)]:mb-3">
             <ServiceCard service={visibleServices[1]} imageUrl={getImageUrl(visibleServices[1])} style={{ left: "8px", top: "16px", transform: "rotate(-6deg)", zIndex: 1 }} />
             <ServiceCard service={visibleServices[0]} imageUrl={getImageUrl(visibleServices[0])} style={{ right: "8px", top: "0px", transform: "rotate(4deg)", zIndex: 2 }} />
             <div className="absolute bottom-0 left-0 right-0 z-10 flex items-end gap-2">

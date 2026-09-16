@@ -102,7 +102,7 @@ export function ChatPlusDrawer({ open, actions, brandColor, onDismiss }: ChatPlu
                   onClick={action.onClick}
                   disabled={action.disabled}
                   data-testid={action.testId || `plus-action-${action.id}`}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/60 active:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-ui rounded-lg"
+                  className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/60 active:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-ui rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 >
                   <span
                     className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white"

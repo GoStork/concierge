@@ -54,7 +54,7 @@ export default function OnboardingAiReadyPage() {
     <div className="fixed inset-0 bg-background overflow-y-auto px-6" data-testid="onboarding-ai-ready">
       <div
         className="min-h-full max-w-md mx-auto flex flex-col items-center justify-between"
-        style={{ paddingTop: "max(3rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 0px))" }}
+        style={{ paddingTop: "max(2rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 0px))" }}
       >
       <div className="w-full flex flex-col items-center flex-1">
         {/* Selected avatar */}
@@ -82,7 +82,7 @@ export default function OnboardingAiReadyPage() {
           style={{ fontFamily: "var(--font-display)" }}
           data-testid="text-ai-ready-title"
         >
-          {selected ? `${selected.name} is ready...` : "Your AI concierge is ready..."}
+          {selected ? `${selected.name} is ready` : "Your AI concierge is ready"}
         </h1>
 
         <p className="t-field-prose text-center max-w-sm mx-auto mb-6" data-testid="text-ai-ready-intro">

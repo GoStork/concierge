@@ -95,6 +95,9 @@ const FIXED_FRAMES: Record<string, string> = {
 export function applyPersonaVoice(text: string, step: string, persona: PersonaLike, turn: number): string {
   const frame = FIXED_FRAMES[step];
   if (frame) return `${frame} ${text}`;
+  // Curation summaries are statements, not questions: "Next: here's what I
+  // have" read as a typo on the most important turn of the intake.
+  if (/curation|summary/i.test(step)) return text;
   const style = styleOf(persona);
   if (!style) return text;
   // Only short, single-question turns. Education blocks, curation summaries

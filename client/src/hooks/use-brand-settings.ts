@@ -287,7 +287,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   chatInputFontSize: 17,
   chatInputFontSizeDesktop: 15,
   chatInputHeight: 36,
-  quickReplyFontSize: 13,
+  quickReplyFontSize: 14,
   quickReplyRadius: 999,
   quickReplyPaddingX: 14,
   quickReplyPaddingY: 6,
@@ -568,7 +568,7 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-timestamp-opacity", String(settings.chatTimestampOpacity ?? 0.45));
   root.style.setProperty("--chat-input-font-size", `${chatInputSize}px`);
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
-  root.style.setProperty("--quick-reply-font-size", `${settings.quickReplyFontSize ?? 13}px`);
+  root.style.setProperty("--quick-reply-font-size", `${settings.quickReplyFontSize ?? 14}px`);
   root.style.setProperty("--quick-reply-radius", `${settings.quickReplyRadius ?? 999}px`);
   root.style.setProperty("--quick-reply-px", `${settings.quickReplyPaddingX ?? 14}px`);
   root.style.setProperty("--quick-reply-py", `${settings.quickReplyPaddingY ?? 6}px`);

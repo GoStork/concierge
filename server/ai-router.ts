@@ -3207,11 +3207,20 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
             const parentAccountId = userRecord.parentAccountId;
             const existingProfile = await prisma.intendedParentProfile.findUnique({ where: { parentAccountId } });
             if (existingProfile) {
-              await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: { interestedServices: selectedServices } });
-              console.log(`[GREETING SERVICE UPDATE] Updated interestedServices for account ${parentAccountId}:`, selectedServices);
+              // An explicit pick is authoritative for the clinic flag both ways:
+              // "Not exactly" + deselecting IVF Clinics used to leave needsClinic
+              // true from onboarding, so the strip still said "IVF clinic" and the
+              // whole clinic cycle ran against the parent's correction. Surrogate
+              // and egg-donor needs are only ever raised here (biology can imply
+              // them for two dads even when unticked).
+              const needPatch: Record<string, boolean> = { needsClinic: selectedServices.includes("Fertility Clinic") };
+              if (selectedServices.includes("Surrogate")) needPatch.needsSurrogate = true;
+              if (selectedServices.includes("Egg Donor")) needPatch.needsEggDonor = true;
+              await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: { interestedServices: selectedServices, ...needPatch } });
+              console.log(`[GREETING SERVICE UPDATE] Updated interestedServices for account ${parentAccountId}:`, selectedServices, needPatch);
               // Patch the in-memory profile so the rest of this request sees the updated services
               if ((userRecord as any).parentAccount?.intendedParentProfile) {
-                (userRecord as any).parentAccount.intendedParentProfile.interestedServices = selectedServices;
+                Object.assign((userRecord as any).parentAccount.intendedParentProfile, { interestedServices: selectedServices, ...needPatch });
               }
             }
           }
@@ -5684,11 +5693,15 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // The D2 quick-reply strings ("Pro-choice surrogate"/"Pro-life surrogate")
     // are unique to that question, so they save even when the parent answers a
     // turn late (out-of-order answers are exactly when Eva loses the thread).
+    const lastAiForSaves = ((messages || []).filter((m: any) => m.role === "assistant").at(-1)?.content || "").toString();
     if (!profile?.surrogateTermination && userRecord?.parentAccountId) {
       const lastUserMsgD = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString().trim();
       const m2 = /^pro-?(choice|life)\s+surrogate[.!]?$/i.exec(lastUserMsgD);
-      if (m2) {
-        const value = m2[1].toLowerCase() === "choice" ? "Pro-choice surrogate" : "Pro-life surrogate";
+      // "No preference" is the third D2 chip; it is shared with other questions,
+      // so it only counts when the termination question was the last thing asked.
+      const noPrefD2 = !m2 && /^no preference[.!]?$/i.test(lastUserMsgD) && /termination/i.test(lastAiForSaves);
+      if (m2 || noPrefD2) {
+        const value = noPrefD2 ? "No preference" : m2![1].toLowerCase() === "choice" ? "Pro-choice surrogate" : "Pro-life surrogate";
         try {
           await prisma.intendedParentProfile.upsert({
             where: { parentAccountId: userRecord.parentAccountId },
@@ -5710,6 +5723,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       const lastUserMsgD = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString().trim();
       const value = /^hoping (for|to have) twins[.!]?$/i.test(lastUserMsgD) ? "Yes"
         : /^singleton( only| pregnancy)?[.!]?$/i.test(lastUserMsgD) ? "No"
+        : (/^no preference[.!]?$/i.test(lastUserMsgD) && /twins/i.test(lastAiForSaves)) ? "No preference"
         : null;
       if (value) {
         try {
@@ -5723,6 +5737,38 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
           console.log(`[D3 SAVE FALLBACK] Patched surrogateTwins=${value} for account ${userRecord.parentAccountId} (Eva missed the SAVE tag)`);
         } catch (e: any) {
           console.log(`[D3 SAVE FALLBACK] Failed to patch: ${e.message}`);
+        }
+      }
+    }
+
+    // A3 / A4 SAVE FALLBACKS - the clinic cycle had none. After three chip taps
+    // a live profile still read surrogateTwins null / isFirstIvf null, so the
+    // curation summary omitted them and the surrogate cycle asked twins again.
+    // Both chip sets are only meaningful right after their own question.
+    if (userRecord?.parentAccountId) {
+      const lastUserMsgA = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString().trim();
+      const patch: Record<string, any> = {};
+      if (profile?.surrogateTwins == null && /are you hoping for twins/i.test(lastAiForSaves)) {
+        const v = /^(yes|hoping for twins)[.!]?$/i.test(lastUserMsgA) ? "Yes"
+          : /^(no|singleton only)[.!]?$/i.test(lastUserMsgA) ? "No"
+          : /^no preference[.!]?$/i.test(lastUserMsgA) ? "No preference" : null;
+        if (v) patch.surrogateTwins = v;
+      }
+      if (profile?.isFirstIvf == null && /first ivf journey/i.test(lastAiForSaves)) {
+        if (/^first time[.!]?$/i.test(lastUserMsgA)) patch.isFirstIvf = true;
+        else if (/done ivf before/i.test(lastUserMsgA)) patch.isFirstIvf = false;
+      }
+      if (Object.keys(patch).length > 0) {
+        try {
+          await prisma.intendedParentProfile.upsert({
+            where: { parentAccountId: userRecord.parentAccountId },
+            update: patch,
+            create: { parentAccountId: userRecord.parentAccountId, ...patch },
+          });
+          Object.assign(profile as any, patch);
+          console.log(`[A3/A4 SAVE FALLBACK] Patched ${JSON.stringify(patch)} for account ${userRecord.parentAccountId}`);
+        } catch (e: any) {
+          console.log(`[A3/A4 SAVE FALLBACK] Failed to patch: ${e.message}`);
         }
       }
     }
@@ -7641,7 +7687,7 @@ ${phase0Section}`;
         const eggSource = eggSourceFromChat || (chatMentionsEggSource ? null : profile?.eggSource) || "your eggs";
         const twins = chatHistory.some((m: any) => m.role === "user" && /hoping for twins|yes.*twins/i.test(m.content || "")) ? "hoping for twins"
           : chatHistory.some((m: any) => m.role === "user" && /singleton|no twins/i.test(m.content || "")) ? "preferring singleton"
-          : profile?.hopingForTwins === "yes" ? "hoping for twins" : profile?.hopingForTwins === "no" ? "preferring a singleton pregnancy" : null;
+          : /^yes$/i.test(String(profile?.hopingForTwins ?? profile?.surrogateTwins ?? "")) ? "hoping for twins" : /^no$/i.test(String(profile?.hopingForTwins ?? profile?.surrogateTwins ?? "")) ? "preferring a singleton pregnancy" : null;
         const priorities = userMessage; // userMessage IS the A5 answer (what parent just typed)
         const agePart = age ? `you're ${age}` : "";
         const partnerPart = partnerAge ? `, your partner is ${partnerAge}` : "";
