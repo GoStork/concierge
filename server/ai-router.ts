@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { isUsableCardId, parseMatchCardTag, topResultId, UUID_RE } from "./match-card-parse";
+import { isUsableCardId, parseMatchCardTag, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession } from "./parent-visibility";
 import {
   listOpenConsultations,
@@ -491,6 +491,10 @@ async function callTier2Claude(
   // the biometric consent stamp requires the parent's own words, never the
   // model's attestation alone (session 7 hardening).
   consentAffirmative: boolean = false,
+  // Router-computed: this is a "ready" turn after a curation, so the parent
+  // is waiting to SEE a match. Any search the model runs on such a turn owes
+  // a card, exactly like a server pre-search does.
+  owedCardTurn: boolean = false,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[]; allToolResults: { toolName: string; resultText: string }[] }> {
   const hasTools = openAiTools.length > 0;
 
@@ -625,7 +629,7 @@ async function callTier2Claude(
         resultText = await maybeRerankClinicsByPriorities(fc.name, resultText, fc.args);
         const MAX_TOOL_RESULT = 8000;
         if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
-          resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first surrogate above as a [[MATCH_CARD]] only]";
+          resultText = truncateToolResultAtItemBoundary(resultText, MAX_TOOL_RESULT, "Present the first result as a [[MATCH_CARD]] unless a later one fits the parent better.");
         }
         out.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
         if (searchToolNames.includes(fc.name)) searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
@@ -993,6 +997,9 @@ async function callTier2Claude(
   // 2+ entities, then emit the tag), so the cap is 8 to leave room to actually emit
   // the card after the lookups. Hard cap to prevent infinite loops.
   const MAX_TOOL_ROUNDS = 8;
+  // Consecutive rounds in which EVERY requested tool call was a refused
+  // repeat search (see overSearchLimit). Two in a row = fixation loop.
+  let refusedOnlyRounds = 0;
   let toolRoundCount = 0;
   // forceToolUse: this turn is ORDERED to search (ready-after-curation with no cards shown
   // for the pending service). If the model answers with text and no tool call anyway, retry
@@ -1088,7 +1095,7 @@ async function callTier2Claude(
       resultText = await maybeRerankClinicsByPriorities(fcLike.name, resultText, fcLike.args);
       const MAX_TOOL_RESULT = 8000;
       if (resultText.length > MAX_TOOL_RESULT) {
-        resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first result above as a [[MATCH_CARD]] only]";
+        resultText = truncateToolResultAtItemBoundary(resultText, MAX_TOOL_RESULT, "Present the first result as a [[MATCH_CARD]] unless a later one fits the parent better.");
       }
       console.log(`[TIER2 PRE-SEARCH] ${fcLike.name} executed server-side in ${Date.now() - tPre}ms (result=${resultText.length} chars)`);
       searchToolResults.push({ toolName: fcLike.name, resultText, toolArgs: fcLike.args });
@@ -1147,7 +1154,7 @@ async function callTier2Claude(
               // 1-2 results to show a match card - truncate to keep the round-trip manageable.
               const MAX_TOOL_RESULT = 8000;
               if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
-                resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first surrogate above as a [[MATCH_CARD]] only]";
+                resultText = truncateToolResultAtItemBoundary(resultText, MAX_TOOL_RESULT, "Present the first result as a [[MATCH_CARD]] unless a later one fits the parent better.");
                 console.log(`[TIER2] Truncated ${fc.name} result to ${MAX_TOOL_RESULT} chars`);
               }
               console.log(`[TIER2] MCP ${fc.name} in ${Date.now() - tMcp}ms (result=${resultText.length} chars)`);
@@ -1208,21 +1215,39 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       const { text: roundText, functionCalls: moreFunctionCalls, response: roundResponse } = await streamToolResponseTurn(currentMessage, lastModelContent);
 
       if (moreFunctionCalls.length > 0) {
-        if (toolRoundCount >= MAX_TOOL_ROUNDS) {
+        if (toolRoundCount >= MAX_TOOL_ROUNDS || refusedOnlyRounds >= 2) {
+          if (refusedOnlyRounds >= 2 && toolRoundCount < MAX_TOOL_ROUNDS) {
+            console.warn(`[TIER2] Model re-requested only refused searches for ${refusedOnlyRounds} rounds - ending the tool loop early instead of burning ${MAX_TOOL_ROUNDS - toolRoundCount} more rounds`);
+          }
           console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - forcing a final no-tools answer. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
           // Bailing with empty content turned a tool loop into a spoken
           // "something went wrong" (observed live uxkp9b). The model has a
           // turn's worth of tool results and a direct question - force one
           // last generation with NO tools instead of giving up.
           try {
-            const forced = await claudeRetry([
+            // A turn that searched owes a card. The old override asked for
+            // "plain language", so a sperm-donor search that looped to the
+            // cap came back as prose with no [[MATCH_CARD]] (TM-09 / SW-05:
+            // "here is a sperm donor from our database:" and nothing after).
+            const lastSearch = searchToolResults[searchToolResults.length - 1];
+            const cardDemand = lastSearch
+              ? ` The parent is waiting to SEE a match: present the single best result from your ${lastSearch.toolName} results with ONE [[MATCH_CARD:<id>]] tag (the exact id from the results) plus a short warm intro, and be honest about any preference that could not be fully matched.`
+              : "";
+            let forced = await claudeRetry([
               ...messages,
               {
                 role: "user",
-                content: `SYSTEM OVERRIDE: You have used all your tool calls for this turn. Do NOT request any more tools. Answer the parent's question NOW in plain language using the tool results you already received and your own general fertility knowledge: "${String(userMessage || "").slice(0, 200)}"`,
+                content: `SYSTEM OVERRIDE: You have used all your tool calls for this turn. Do NOT request any more tools. Answer the parent's question NOW using the tool results you already received and your own general fertility knowledge: "${String(userMessage || "").slice(0, 200)}".${cardDemand}`,
               },
             ]);
             if (forced && forced.trim()) {
+              if (lastSearch && !/\[\[MATCH_CARD/i.test(forced)) {
+                const { id: topId } = topResultId(lastSearch.resultText || "");
+                if (topId) {
+                  console.warn(`[TIER2] Forced answer after ${lastSearch.toolName} carried no MATCH_CARD - appending top result ${topId}`);
+                  forced = `${forced.trimEnd()}\n\n[[MATCH_CARD:${topId}]]`;
+                }
+              }
               console.log(`[TIER2] Forced no-tools answer produced ${forced.length} chars`);
               sse.sendToken(forced);
               mark("tier2_end");
@@ -1238,10 +1263,12 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
         console.log(`[TIER2] Round ${toolRoundCount}/${MAX_TOOL_ROUNDS} - model chained ${moreFunctionCalls.length} more tool call(s): ${moreFunctionCalls.map(f => f.name).join(",")}`);
         mark(`tier2_round_${toolRoundCount}`);
         const moreResponses: any[] = [];
+        let refusedThisRound = 0;
         for (const fc of moreFunctionCalls) {
           if (mcpClientRef) {
             const overLimitMsg = overSearchLimit(fc as any);
             if (overLimitMsg) {
+              refusedThisRound += 1;
               moreResponses.push({ functionResponse: { name: fc.name, response: { output: overLimitMsg } } });
               continue;
             }
@@ -1254,7 +1281,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
               resultText = await maybeRerankClinicsByPriorities(fc.name, resultText, fc.args);
               const MAX_TOOL_RESULT = 8000;
               if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
-                resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first result above as a [[MATCH_CARD]] only]";
+                resultText = truncateToolResultAtItemBoundary(resultText, MAX_TOOL_RESULT, "Present the first result as a [[MATCH_CARD]] unless a later one fits the parent better.");
                 console.log(`[TIER2] Truncated ${fc.name} result to ${MAX_TOOL_RESULT} chars`);
               }
               console.log(`[TIER2] MCP ${fc.name} in ${Date.now() - tMcp}ms (result=${resultText.length} chars)`);
@@ -1270,6 +1297,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
             }
           }
         }
+        refusedOnlyRounds = refusedThisRound > 0 && refusedThisRound === moreFunctionCalls.length ? refusedOnlyRounds + 1 : 0;
         currentMessage = moreResponses;
         lastModelContent = (roundResponse as any)?.candidates?.[0]?.content ?? null;
         continue; // loop back for another round
@@ -1300,13 +1328,29 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       // result rather than letting the turn go out card-less. The outer parser
       // accepts the bare-id form, so this hands off to the normal hydration
       // (name, photo, owner) instead of hand-building a card here.
-      if (preSearch && fullText && !/\[\[MATCH_CARD/i.test(fullText)) {
-        const pre = searchToolResults.find((r) => r.toolName === preSearch.name);
-        const preBody = pre?.resultText || "";
+      // Extended Sep 16 2026 to ready turns where the MODEL ran the search:
+      // SW-05's "ready" after a sperm-donor intake searched, fetched a
+      // profile, and answered in 22 characters with no card. The parent
+      // typed "ready" to see a match; the search found rows; a card is owed.
+      const owedSearch = preSearch
+        ? searchToolResults.find((r) => r.toolName === preSearch.name)
+        : (owedCardTurn ? searchToolResults[searchToolResults.length - 1] : undefined);
+      if (owedSearch && fullText && !/\[\[MATCH_CARD/i.test(fullText)) {
+        const preBody = owedSearch.resultText || "";
         const { id: topId, rows } = topResultId(preBody);
         if (topId) {
-          console.warn(`[TIER2] Pre-searched turn produced no MATCH_CARD - appending top result ${topId}`);
-          fullText = `${fullText.trimEnd()}\n\n[[MATCH_CARD:${topId}]]`;
+          console.warn(`[TIER2] ${preSearch ? "Pre-searched" : "Ready"} turn produced no MATCH_CARD - appending top result ${topId}`);
+          // A reply too short to introduce anyone gets the same minimal
+          // lead-in the anti-echo guard uses, so the card is not orphaned
+          // under a fragment.
+          const replaced = fullText.trim().length < 40;
+          const lead = replaced ? "Here's a match based on exactly what you shared - take a look:" : fullText.trimEnd();
+          fullText = `${lead}\n\n[[MATCH_CARD:${topId}]]`;
+          if (replaced) {
+            // The fragment already streamed - swap it cleanly, as anti-echo does.
+            sse.sendReset();
+            sse.sendToken(fullText);
+          }
         } else {
           console.warn(
             `[TIER2] Pre-searched turn produced no MATCH_CARD - ` +
@@ -6794,11 +6838,13 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // the search here (null, no force) instead of falling through to the
       // profile fallback, which used to arm an egg-donor search on "find me
       // the right international agency" one turn after the program card.
-      // An international program bundles IVF and the egg donor with the
-      // agency, so once the program is on screen nothing else is forced.
+      // (The profile fallback deliberately still runs after an international
+      // program card: the Colombia path continues with egg-donor and
+      // sperm-donor cycles, and SW-08's final "ready" relies on the forced
+      // sperm search. Only the parent's OWN naming of a satisfied service
+      // stops the chain.)
       const profileFallbackService: string | null =
         (profile?.needsSurrogate && !surrogateSatisfied) ? "surrogate" :
-        (internationalOnly && surrogateSatisfied) ? null :
         (profile?.needsEggDonor && !presentedCardTypes.has("egg")) ? "egg" :
         // There is no needsSpermDonor column, so the sperm lane falls back to
         // the parent's stated interest. Without this the LAST cycle of a
@@ -6965,6 +7011,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         // Biometric-consent corroboration: the parent's own current message
         // must read as an affirmative, on a sound-provenance turn.
         !weakProvenance && /\b(yes|yeah|yep|sure|ok(ay)?|i (agree|consent)|go ahead|please do|sounds good|that'?s fine)\b/i.test(userMessage || ""),
+        userSaidReady && curationAlreadySent,
       );
       // DIAGNOSTIC: the decisive split for "expected match card, got none" -
       // did the ready turn SEARCH at all? A turn that searched can be repaired
@@ -8909,6 +8956,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           } else if (integerProfileFields.includes(resolvedKey)) {
             const num = parseInt(String(value), 10);
             if (!isNaN(num) && num >= 0) profileData[resolvedKey] = num;
+          } else if (resolvedKey === "clinicPriority" || resolvedKey === "clinicPriorityTags") {
+            // A5 is a MULTI_SELECT; the model re-joins picks without the
+            // space ("Success rates,Cost"). Store exactly what the parent
+            // tapped, comma-space separated, so admin and re-ranking read
+            // one canonical form.
+            profileData[resolvedKey] = String(value).split(",").map((x) => x.trim()).filter(Boolean).join(", ").slice(0, 300);
           } else if (resolvedKey === "carrier") {
             const normalized = normalizeCarrier(String(value));
             // Guard: never downgrade an explicit "Self" / "Self carrying" carrier to "Gestational surrogate"

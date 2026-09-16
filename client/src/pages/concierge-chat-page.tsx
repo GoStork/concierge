@@ -3223,7 +3223,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // the keyboard over the first message) and again after each reply lands.
   const prevSendingRef = useRef(false);
   useEffect(() => {
-    if (prevSendingRef.current && !sending) {
+    // Desktop only: on a phone this would raise the keyboard over the
+    // quick-reply chips that answer most scripted questions.
+    if (prevSendingRef.current && !sending && window.innerWidth >= 768) {
       requestAnimationFrame(() => chatInputRef.current?.focus());
     }
     prevSendingRef.current = sending;

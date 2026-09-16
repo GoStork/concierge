@@ -58,6 +58,59 @@ export function parseFirstJsonArray(body: string): any[] | null {
 }
 
 /**
+ * Cap a tool-result body WITHOUT cutting the JSON array mid-object.
+ *
+ * The old hard slice at MAX_TOOL_RESULT left `Found 10 surrogates:\n[{...},{..`
+ * with the array never closing. Two things broke at once: the model read a
+ * malformed list and reached for whatever id it could see (an agency's
+ * ownerProviderId, once, which the card guard then had to drop), and the
+ * prose-based card repair could not parse the array at all, so the turn went
+ * out card-less. Measured Sep 16 2026: 49 of 74 surrogate searches in one
+ * suite run hit the cap. Keep the prefix and suffix prose, drop whole trailing
+ * items until the body fits, and say how many were trimmed. Falls back to the
+ * hard slice only when no array can be found or parsed.
+ */
+export function truncateToolResultAtItemBoundary(body: string, cap: number, note: string): string {
+  if (!body || body.length <= cap) return body;
+  const clean = body.replace(/[\u0000-\u001f]/g, " ");
+  const start = clean.indexOf("[");
+  let end = -1;
+  if (start !== -1) {
+    let depth = 0, inStr = false, esc = false;
+    for (let i = start; i < clean.length; i++) {
+      const ch = clean[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "[") depth++;
+      else if (ch === "]") { depth--; if (depth === 0) { end = i; break; } }
+    }
+  }
+  let items: any[] | null = null;
+  if (start !== -1 && end !== -1) {
+    try { const parsed = JSON.parse(clean.substring(start, end + 1)); items = Array.isArray(parsed) ? parsed : null; } catch { items = null; }
+  }
+  if (!items || items.length === 0) {
+    return body.slice(0, cap) + "\n\n" + note;
+  }
+  const prefix = clean.substring(0, start);
+  const suffix = clean.substring(end + 1);
+  const total = items.length;
+  let kept = items.slice();
+  const build = () => `${prefix}${JSON.stringify(kept)}${suffix}\n\n[Showing the first ${kept.length} of ${total} results - the rest were trimmed for length. ${note}]`;
+  let out = build();
+  while (out.length > cap && kept.length > 1) {
+    kept = kept.slice(0, -1);
+    out = build();
+  }
+  return out;
+}
+
+/**
  * The top result's id from a tool-result body, and how many rows were found.
  *
  * `rows` is -1 when no complete array could be parsed. Pre-search bodies are
