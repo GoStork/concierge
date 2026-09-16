@@ -1585,10 +1585,21 @@ taken over against SMS 2FA, so a SIM swap must not be enough here either.
 - The secret is AES-256-GCM encrypted at rest, so **`FIELD_ENCRYPTION_KEY` must
   be set on every host** or enrollment throws.
 
-**ENFORCEMENT IS OFF until you set it.** `TWO_FACTOR_ENFORCE_AT` (an ISO date)
-is the hard cutoff. Until that date passes, a covered account that has not
-enrolled is prompted but still gets in. Set it on the production host once the
-team has enrolled; check coverage first at `/admin/security`.
+**ENFORCEMENT IS ON as of 2026-09-16.** `TWO_FACTOR_ENFORCE_AT` (an ISO date)
+is the hard cutoff: until that date passes, a covered account that has not
+enrolled is prompted but still gets in. It is now set to `2026-09-16T00:00:00Z`
+- a past instant, so enforcement is active immediately - on all three hosts:
+the production VM (`/srv/gostork/app/.env`, `systemctl restart gostork`) and
+both dev Macs (`~/Documents/GitHub/concierge/.env` on the MacBook,
+`~/GitHub-iMac/concierge/.env` on the iMac).
+
+Coverage at the time of the flip was 1 of 1 in BOTH databases - `eran.amir@`
+(`GOSTORK_ADMIN`) was the only account carrying any of the three required roles
+and was already enrolled - so nobody was locked out. **Before onboarding any new
+`GOSTORK_ADMIN` / `GOSTORK_CONCIERGE` / `GOSTORK_DEVELOPER` account, note that
+enforcement is now live: that person must enroll or they cannot sign in.** Check
+coverage at `/admin/security`; the card reports state only, there is no UI
+toggle for the cutoff.
 
 **Audit log (OWASP A09).** `AuthAuditLog` records login success and failure,
 second-factor success/failure/enable/disable, recovery-code use, password reset
