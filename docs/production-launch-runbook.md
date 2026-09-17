@@ -1545,6 +1545,28 @@ Also required on the production host before this ships:
 - `DAILY_WEBHOOK_SECRET` (now fails closed instead of accepting anything).
 - `TEST_RUNNER_TOKEN` if the admin test-runner dashboard is used there.
 
+**Verified on the prod host 2026-09-17 (lengths only, values never printed):**
+`SESSION_SECRET` 64 chars, `JWT_SECRET` 64 chars, distinct from each other;
+`PANDADOC_WEBHOOK_SECRET` set; `TURNSTILE_SECRET_KEY` set; `CSP_MODE=report`.
+`DAILY_WEBHOOK_SECRET` is EMPTY and `TEST_RUNNER_TOKEN` is unset (the latter is
+correct - the test runner is not used on prod).
+
+- [ ] **Daily.co webhooks never reach production - found 2026-09-17.** Prod and
+  both Macs share ONE Daily domain, Daily allows ONE webhook per domain, and
+  that one webhook points at `gostork-imac.ngrok.app` (the iMac, DEV database).
+  So a video call booked in prod gets no `meeting.started`, no
+  `recording.ready-to-download`: no recording reaches GCS and no transcript is
+  produced. The empty `DAILY_WEBHOOK_SECRET` is a symptom, not the fault -
+  setting it alone changes nothing because no event is ever delivered.
+  `autoRegisterWebhook()` is also a no-op off Replit (it keys on
+  `REPLIT_DOMAINS`). Fix at beta start, pick one:
+  (a) **separate Daily domain + API key for production** (recommended - dev
+  calls and real families' recordings should not share an account anyway, and
+  dev keeps its webhook); or (b) repoint the single webhook at
+  `https://test-app.gostork.com/api/video/webhook` and accept that dev
+  recordings stop processing. Either way: register with all three
+  `eventTypes`, and put the webhook's `hmac` into prod `DAILY_WEBHOOK_SECRET`.
+
 ### 10g. Dependency remediation, 2026-09-16: 21 advisories -> 0
 
 The whole phase came down to one habit: **check whether an advisory is on the
