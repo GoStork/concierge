@@ -563,7 +563,10 @@ Useful context for the executing session:
 - [ ] Decommission plan for the 1.0 GCP resources once 2.0 is stable
   (VMs/IPs behind 34.28.191.216 and the two siblings) - stop billing, keep a
   snapshot.
-- [ ] Turnstile: the site key is domain-scoped. Add app.gostork.com to the
+- [x] Turnstile hostnames - DONE, verified in the dashboard 2026-09-17: widget
+  "GoStork signup" already lists app.gostork.com, gostork.com (covers every
+  subdomain incl. the dev-* hosts), gostork.ngrok.app, test-app.gostork.com.
+  Original note: the site key is domain-scoped. Add app.gostork.com to the
   Turnstile widget's allowed hostnames (or mint a production site key) and set
   the production secret in the prod env. Signup OTP send breaks without this.
 - `OTP_TEST_NUMBERS` (dev-only allowlist that skips OTP rate limits for listed
@@ -738,6 +741,15 @@ in this order:
 - [ ] Reactivate webhook subscription "GoStork - Production Agreements"
   (uuid 2d18c09a-e107-4ad4-9b0b-799e8dd3dd5c -> app.gostork.com), currently
   DEACTIVATED.
+- [ ] **Flip day, same sitting as the reactivation above: swap the prod
+  `PANDADOC_WEBHOOK_SECRET` to the app.gostork.com subscription's shared key.**
+  Each subscription has its OWN key and the server verifies against exactly
+  one, so from the flip the test-app key rejects every event (fails closed =
+  agreements silently stop completing). Order: reactivate the app.gostork.com
+  subscription -> copy its shared key into the host `.env` -> restart ->
+  deactivate the test-app subscription -> sign one real document and confirm
+  the agreement completes. PandaDoc does not need to "know" a domain - a
+  subscription is just a URL it POSTs to - so nothing else is registered.
 - [ ] Decide fate of dev subscriptions at launch: MacBook (gostork.ngrok.app),
   iMac (uuid 5161bc69-39b8-4ab9-afc9-7d1e74150c66), Replit (deactivated
   2026-08-18). If dev Macs go PASSIVE_MODE they ignore events anyway.
@@ -1572,6 +1584,13 @@ correct - the test runner is not used on prod).
   `https://test-app.gostork.com/api/video/webhook` and accept that dev
   recordings stop processing. Either way: register with all three
   `eventTypes`, and put the webhook's `hmac` into prod `DAILY_WEBHOOK_SECRET`.
+  **Decided 2026-09-17: option (a).** Blocked on Eran: a Daily domain IS an
+  account, so a second domain means a new Daily signup (Claude cannot create
+  accounts) - e.g. domain `gostork-prod`. Then hand Claude the new API key via
+  the host `.env` (`DAILY_API_KEY`); Claude registers the webhook and sets the
+  secret. Check the new account's plan covers cloud recording before relying
+  on it. Also re-check that provider `dailyRoomUrl` values in PROD were not
+  created under the dev domain - rooms do not move between domains.
 
 ### 10g. Dependency remediation, 2026-09-16: 21 advisories -> 0
 
