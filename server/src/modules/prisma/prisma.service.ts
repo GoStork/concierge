@@ -286,6 +286,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.authAuditLog;
   }
 
+  get conciergeTurnBudget() {
+    return prisma.conciergeTurnBudget;
+  }
+
   get securityEmailAllow() {
     return prisma.securityEmailAllow;
   }

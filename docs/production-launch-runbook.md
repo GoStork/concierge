@@ -1667,17 +1667,26 @@ shown once at enrolment were actually saved.
 9. **The auto-deploy pipeline verifies nothing cryptographically** - anything on
    `origin/main` is `git reset --hard`'d onto prod and migrated within 60s. No
    signed commits, no author allowlist, no approval gate.
-10. **No per-user quota on `/api/ai-concierge/chat`.** `gemini-usage.ts` meters
-    spend after the fact; it does not gate. One authenticated account can loop
-    the endpoint.
-11. **Public booking (`POST /api/calendar/book/:slug`) has no rate limit or
-    CAPTCHA**, and `booking/:token/confirm|decline` are state-changing GETs that
-    an email scanner can trigger.
-12. **Path traversal in `face-recognition.service.ts`** (`photoUrl` joined into
-    a path without stripping `../`) - limited to a sharp decode oracle, but it
-    should use `path.basename` like `uploads.controller.ts` does.
-13. **No `engines` / `.nvmrc`** - prod, both Macs and CI can run different Node
-    majors.
+10. ~~No per-user quota on the concierge~~ **DONE 2026-09-16.** 200 turns per
+    family account per day (`CONCIERGE_DAILY_TURN_LIMIT`), counted in
+    `ConciergeTurnBudget` with an atomic increment so concurrent turns cannot
+    both slip through. Per family account, not per user, because both parents
+    share one conversation. Staff, provider admins and the test runner are
+    exempt. Fails OPEN on a counter error - a counter outage must not take the
+    product down, and the spend meter still records what was used.
+11. ~~Public booking has no rate limit; confirm/decline are state-changing
+    GETs~~ **DONE 2026-09-16.** Booking is capped at 8 per hour per address.
+    Confirm and decline are POST now: they were GET *and* the client page fired
+    them automatically on mount, so anything that merely touched the URL
+    confirmed a booking - an `<img src>`, a prefetcher, a chat unfurler, or a
+    mail scanner following links in the email carrying the token. Still no
+    CAPTCHA on booking; the rate limit is the only brake.
+12. ~~Path traversal in face matching~~ **DONE 2026-09-16.** The local path is
+    resolved and then checked to still be inside `public/`. The same function
+    also fetched remote `photoUrl`s with no SSRF guard at all - provider-
+    writable and scraper-written - so that now goes through `safeFetch`.
+13. ~~No engines / .nvmrc~~ **DONE 2026-09-16.** `.nvmrc` pins 24.19.0 and
+    `engines` requires >=22 <25.
 
 ### 10c. Staff two-factor + authentication audit log (shipped 2026-09-16)
 

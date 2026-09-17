@@ -3893,3 +3893,20 @@ model AuthAuditLog {
   @@index([email, createdAt])
   @@index([createdAt])
 }
+
+/// Daily AI concierge turn counter, one row per family account per day.
+/// gemini-usage.ts meters spend after the fact; this is the gate in front of
+/// it. Counted per parentAccountId (both parents share one conversation), or
+/// per user id when an account has none yet.
+model ConciergeTurnBudget {
+  id         String   @id @default(uuid())
+  /// parentAccountId, or the user id as a fallback.
+  subjectKey String
+  day        DateTime @db.Date
+  turns      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([subjectKey, day])
+  @@index([day])
+}
