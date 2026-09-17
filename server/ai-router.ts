@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { geocodePlace, haversineMiles } from "./src/lib/geo";
-import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, repairCardTagTerminators, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
+import { isUsableCardId, parseFirstJsonArray, asksForComparison, asksForNearest, comparisonCountAsked, parseMatchCardTag, repairCardTagTerminators, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession, isLegacyCurationReadyRow } from "./parent-visibility";
 import {
   listOpenConsultations,
@@ -516,6 +516,13 @@ async function callTier2Claude(
     // so enforcement never depends on the model remembering to pass args.
     if (authUserId && fc.name === "search_clinics") {
       fc.args = { ...(fc.args || {}), userId: authUserId };
+      // "The closest to me" is enforced here, not requested of the model: the
+      // directive asks it to pass these, but distance ordering must not depend
+      // on the model remembering two parameters. The MCP side fills the origin
+      // in from the parent's profile when nearCity/nearState/nearZip are absent.
+      if (asksForNearest(userMessage)) {
+        fc.args = { ...fc.args, radiusMiles: Number(fc.args?.radiusMiles) > 0 ? fc.args.radiusMiles : 75, sortByDistance: true };
+      }
       // Widen the candidate pool: priority re-ranking (cost / location / volume
       // of cycles) needs more than the success-rate top 5 to choose from - a
       // cheap or nearby clinic ranked #6 by success rate must be able to
@@ -696,9 +703,7 @@ async function callTier2Claude(
   // Does the CURRENT message ask for a comparison? Guards resolve_comparison
   // below against stale-thread fixation.
   const turnWantsComparison =
-    /\b(compare|comparison|side[- ]by[- ]side|versus|vs\.?|head[- ]to[- ]head|stack (?:them )?up|which (?:one |of (?:them|these) )?is (?:the )?(?:better|best))\b/i.test(
-      userMessage || "",
-    );
+    asksForComparison(userMessage);
   const overSearchLimit = (fc: { name: string }): string | null => {
     // resolve_comparison derailment cap (observed live wczwl7:1): asked about
     // the surrogacy process, the model fixated on the PREVIOUS session's
@@ -1388,7 +1393,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       // pipeline re-resolves it with full personalization (cost subtypes,
       // eggSource, ageGroup), so every rendered value stays DB-truth.
       const wantsComparison =
-        /\b(compare|comparison|side[- ]by[- ]side|versus|vs\.?|head[- ]to[- ]head|stack (?:them )?up|which (?:one |of (?:them|these) )?is (?:the )?(?:better|best))\b/i.test(userMessage || "");
+        asksForComparison(userMessage);
       if (fullText && wantsComparison && !/\[\[COMPARE_CARD/i.test(fullText) && cmpToolCalls.length > 0) {
         const usable = cmpToolCalls.find((c) => {
           try {
@@ -7132,6 +7137,14 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       const rejectsForDistance =
         rejectsLastCard &&
         /(\btoo far\b|\bfarther than\b|\b(somewhere|something) closer\b|\bcloser to (me|us|home)\b|\btoo much (of a )?(drive|travel)\b|\bnot local\b)/i.test(userMessage || "");
+      if (asksForNearest(userMessage) && /\bclinic|\bivf\b/i.test(userMessage || "")) {
+        // "the closest to me" is a distance question, and only the search can
+        // answer it - the model has no idea how far anything is.
+        messages.push({
+          role: "system" as const,
+          content: `THE PARENT ASKED FOR THE CLOSEST / NEAREST CLINICS. Distance decides this turn, not success rate. Call search_clinics with radiusMiles: 75 and sortByDistance: true (nearCity/nearState${(userRecord as any)?.zip ? "/nearZip" : ""}: ${[userRecord?.city, userRecord?.state].filter(Boolean).join(", ") || "unknown - ask where they are based"}), and use the FIRST results in the order returned - they are nearest-first with distanceMiles on each. If they asked to compare, put exactly those ids in the [[COMPARE_CARD]] and include "location" in dimensions. Mention the distances.`,
+        });
+      }
       if (rejectsLastCard) {
         // Forcing a fresh excluded search gets her a DIFFERENT profile; this
         // makes the model use her stated reason as a constraint rather than
@@ -12376,14 +12389,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // build the tag server-side from real rows rather than letting the turn
     // answer something else. Entities come from a real search, never invented.
     const askedForComparisonThisTurn =
-      /\b(compare|comparison|side[- ]by[- ]side|versus|vs\.?|head[- ]to[- ]head|stack (?:them )?up|which (?:one |of (?:them|these) )?is (?:the )?(?:better|best))\b/i.test(userMessage || "");
+      asksForComparison(userMessage);
     if (compareCardTags.length === 0 && askedForComparisonThisTurn && mcpClient && !serverBypassServed) {
       try {
         // How many? "compare 3 top clinics" -> 3. The card takes 2-4.
-        const askedFor = Number(String(userMessage || "").match(/\b([2-4])\b/)?.[1] || 3);
         // "in NYC" / "in Boston" / "in California" - the place the parent named.
-        const cmpAskLocation = String(userMessage || "").match(/\bin\s+([A-Za-z][A-Za-z .'-]{1,40}?)\s*[?.!,]?\s*$/i)?.[1]?.trim() || null;
-        const wantCount = Math.max(2, Math.min(4, askedFor));
+        const cmpAskLocation = String(userMessage || "").match(/\bin\s+((?:[A-Za-z.'-]+\s?){1,4}?)(?=\s+(?:that|which|who|with|near|close|for|and|please)\b|\s*[?.!,]|\s*$)/i)?.[1]?.trim() || null;
+        const wantCount = comparisonCountAsked(userMessage);
         const lc = await latestCardPromise.catch(() => null);
         const lastType = String((lc as any)?.type || "").toLowerCase();
         const msgL = String(userMessage || "").toLowerCase();
@@ -12409,7 +12421,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const toolName = entityType ? searchToolFor[entityType] : null;
         // Prefer rows already fetched this turn; only search when there are none.
         let ids: string[] = [];
-        for (const sr of lastSearchToolResults) {
+        for (const sr of (asksForNearest(userMessage) ? [] : lastSearchToolResults)) {
           if (toolName && sr.toolName !== toolName) continue;
           const arr = parseFirstJsonArray(sr.resultText || "");
           if (Array.isArray(arr)) ids.push(...arr.map((r: any) => String(r?.id || "")).filter(Boolean));
@@ -12424,6 +12436,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                   // so "top clinics in NYC" is not answered from her home state.
                   ...(cmpAskLocation ? { location: cmpAskLocation } : (userRecord?.state ? { state: userRecord.state } : {})),
                   ...(profile?.clinicAgeGroup ? { ageGroup: profile.clinicAgeGroup } : {}),
+                  // "the closest to me": distance decides, so bound the search
+                  // to a routine drive from her home and rank nearest-first.
+                  ...(asksForNearest(userMessage)
+                    ? {
+                        radiusMiles: 75,
+                        sortByDistance: true,
+                        ...(userRecord?.city ? { nearCity: userRecord.city } : {}),
+                        ...(userRecord?.state ? { nearState: userRecord.state } : {}),
+                        ...((userRecord as any)?.zip ? { nearZip: (userRecord as any).zip } : {}),
+                      }
+                    : {}),
                 }
               : { limit: Math.max(wantCount, 4), userId };
           const res: any = await mcpClient.callTool({ name: toolName, arguments: searchArgs as any });

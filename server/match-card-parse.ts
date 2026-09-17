@@ -251,3 +251,31 @@ export function repairCardTagTerminators(content: string): string {
   }
   return out;
 }
+
+
+/**
+ * Does this message ask for a comparison?
+ *
+ * One definition, because there were three copies of the same regex and all
+ * three shared the same hole: they ended in \b, and a phone keyboard produces
+ * "Compare3 ivf clinics" - no space, so no word boundary after "compare", so
+ * the ask was invisible to the repair path, the derailment guard AND the
+ * server-side guarantee at once. "compar" as a stem also covers comparing /
+ * comparison without listing them.
+ */
+export function asksForComparison(text: string | null | undefined): boolean {
+  return /(\bcompar(?:e|ing|ison)|\bside[- ]by[- ]side\b|\bversus\b|\bvs\.?(?=\s|$)|\bhead[- ]to[- ]head\b|\bstack (?:them )?up\b|\bwhich (?:one |of (?:them|these) )?is (?:the )?(?:better|best)\b)/i.test(String(text || ""));
+}
+
+/** How many entities the parent asked to compare ("Compare3", "compare 3", "top three"); 2-4, default 3. */
+export function comparisonCountAsked(text: string | null | undefined): number {
+  const t = String(text || "").toLowerCase();
+  const digit = t.match(/([2-4])(?!\d)/)?.[1];
+  const word = ({ two: 2, three: 3, four: 4 } as Record<string, number>)[t.match(/\b(two|three|four)\b/)?.[1] || ""];
+  return Math.max(2, Math.min(4, Number(digit) || word || 3));
+}
+
+/** "closest to me", "nearest", "near me" - the parent wants distance to decide. */
+export function asksForNearest(text: string | null | undefined): boolean {
+  return /\b(closest|nearest|near(?:by| me| us| my)|close to (?:me|us|home|my))\b/i.test(String(text || ""));
+}

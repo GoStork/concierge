@@ -230,7 +230,21 @@ function buildLocationWhere(location: string): any {
   return { OR: terms.map(t => ({ location: { contains: t, mode: "insensitive" } })) };
 }
 // Build Prisma OR clause for ProviderLocation table (clinics - separate city + state columns)
+// Metro shorthand parents actually type. "NYC" used to fall through as the
+// literal term "NYC", which matches no clinic's city or state column. These are
+// matched against the CITY column only: as state terms, "new york" would pull
+// in Buffalo, and a bare "la" substring-matches Atlanta and Dallas.
+const METRO_CITY_ALIASES: Record<string, string[]> = {
+  "nyc": ["New York", "Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"],
+  "new york city": ["New York", "Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"],
+  "la": ["Los Angeles"],
+  "l.a.": ["Los Angeles"],
+  "sf": ["San Francisco"],
+};
+
 function buildClinicLocationWhere(location: string): any {
+  const metro = METRO_CITY_ALIASES[String(location || "").trim().toLowerCase()];
+  if (metro) return { some: { OR: metro.map(c => ({ city: { contains: c, mode: "insensitive" } })) } };
   const terms = resolveLocationTerms(location);
   if (!terms.length) return {};
   return { some: { OR: terms.flatMap(t => [
@@ -1034,6 +1048,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             radiusMiles: {
               type: "number",
               description: "HARD distance limit in miles from the parent's home (nearCity/nearState/nearZip, which the server fills in from their profile). Use this the moment a parent says a clinic is too far, or asks for something closer/nearby/within driving distance - state and city filters do NOT bound distance (a 'New York' clinic can be 200+ miles from a parent in Manhattan). Clinics further than this, and clinics whose location cannot be placed on a map (most non-US clinics), are excluded. Results come back nearest-first with distanceMiles on each.",
+            },
+            sortByDistance: {
+              type: "boolean",
+              description: "With radiusMiles: rank results NEAREST-first instead of by success rate. Set it when the parent asks for the closest / nearest clinics.",
             },
             nearCity: {
               type: "string",
@@ -2103,7 +2121,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsGenderSelection, wantsEmbryoTransfer, parentAge1, parentAge2, patientType, userId: reqUserId, radiusMiles, nearCity, nearState, nearZip } = args as any;
+      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsGenderSelection, wantsEmbryoTransfer, parentAge1, parentAge2, patientType, userId: reqUserId, radiusMiles, nearCity, nearState, nearZip, sortByDistance } = args as any;
 
       // Matching-requirements context: derived from the parent's profile
       // (server-injected userId), with model-supplied args as overrides.
@@ -2249,10 +2267,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // (an international parent, or a profile with no usable city/state) skips
       // the filter rather than silently returning nothing.
       const radius = Number(radiusMiles) > 0 ? Number(radiusMiles) : null;
-      const origin = radius ? geocodePlace({ zip: nearZip, city: nearCity, state: nearState }) : null;
+      // Origin: what the caller passed, else the parent's own profile - so a
+      // radius never silently does nothing because the model left the origin off.
+      let originPlace: { zip?: string | null; city?: string | null; state?: string | null; country?: string | null } =
+        { zip: nearZip, city: nearCity, state: nearState };
+      if (radius && !nearZip && !nearCity && !nearState && reqUserId) {
+        const home = await prisma.user.findUnique({ where: { id: reqUserId }, select: { zip: true, city: true, state: true, country: true } }).catch(() => null);
+        if (home) originPlace = home;
+      }
+      const origin = radius ? geocodePlace(originPlace) : null;
       const distanceByClinicId = new Map<string, number>();
       let droppedTooFar = 0;
       let droppedUnplaceable = 0;
+      if (radius) console.error(`[search_clinics] radius=${radius}mi sortByDistance=${sortByDistance === true} origin=${origin ? [originPlace.zip, originPlace.city, originPlace.state].filter(Boolean).join(", ") : "UNRESOLVED"}`);
       if (radius && origin) {
         clinics = clinics.filter((c: any) => {
           // A clinic is as close as its NEAREST location - a national group with
@@ -2332,6 +2359,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return bRate - aRate;
       });
 
+      // "The closest to me": distance, not success rate, decides the order.
+      if (sortByDistance === true && distanceByClinicId.size > 0) {
+        results.sort((a: any, b: any) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity));
+      }
+
       // Filter by minimum success rate if requested, with fallback to top results
       let minRateNote = "";
       if (minSuccessRate && typeof minSuccessRate === "number") {
@@ -2354,7 +2386,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // international clinics an international parent would actually want.
       let radiusNote = "";
       if (radius && origin) {
-        const where = [nearZip, nearCity, nearState].filter(Boolean).join(", ") || "the parent's home";
+        const where = [originPlace.zip, originPlace.city, originPlace.state].filter(Boolean).join(", ") || "the parent's home";
         radiusNote = `\n\nDISTANCE FILTER APPLIED: only clinics within ${radius} miles of ${where} are listed, nearest distance shown as "distanceMiles" on each result. Excluded: ${droppedTooFar} clinic(s) further than ${radius} miles`
           + (droppedUnplaceable > 0 ? `, and ${droppedUnplaceable} whose location could not be placed on a map (mostly non-US clinics - say so if the parent may want an international option)` : "")
           + `. Do NOT claim these are all the clinics available; they are all the clinics within ${radius} miles.`;

@@ -93,6 +93,8 @@ interface Msg {
     hasMatchCard?: boolean;
     /** A consultation booking calendar card was rendered this turn. */
     hasConsultation?: boolean;
+    /** A comparison card with at least this many entities rendered this turn. */
+    minComparisonEntities?: number;
     /** A consultation card rendered this turn FOR A PROVIDER not booked earlier
      *  in this test (e.g. the partner IVF clinic after the surrogacy agency). */
     consultationIsNew?: boolean;
@@ -126,6 +128,8 @@ interface TurnResult {
   sessionId: string | null;
   /** providerId of the consultation booking card rendered this turn, if any. */
   consultationProviderId: string | null;
+  /** Entities in the comparison card rendered this turn (0 = none). */
+  comparisonEntityCount?: number;
 }
 
 interface TestResult {
@@ -1405,6 +1409,22 @@ const TEST_CASES: TestCase[] = [
   },
 
   {
+    id: "MW-02D", persona: "man-woman",
+    name: "MW-02D: clinic card, then a phone-typed comparison ask",
+    desc: "Live regression (Sep 17 2026): 'Compare3 ivf clinics in NYC that are the closest to me' - no space after Compare - was invisible to every comparison regex (they ended in \\b) and came back as ONE clinic card. Must render a comparison card.",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
+      "My partner's eggs", "My own", CARRIER_PARTNER,
+      "35", "33", "No", "First time",
+      "Success rates",
+      { send: "ready", assert: { hasMatchCard: true } },
+      { send: "Compare3 ivf clinics in LA that are the closest to me", assert: { minComparisonEntities: 2 } },
+    ),
+    db: [],
+  },
+
+  {
     id: "MW-02C", persona: "man-woman",
     name: "MW-02C: Same as MW-02 but A5 = multi-priority (Success rates, Cost)",
     desc: "Multi-priority A5 answer - exercises the A5 SAVE FALLBACK persistence and the priority-aware clinic re-ranking (cost fetch via CostsService + composite sort) in ai-router",
@@ -1894,7 +1914,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
         // the TCP connection closes and text() returns a truncated body (no "done").
         const text = await res.text();
         clearTimeout(abortTimer);
-        let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false, gotDone = false, consultPid: string | null = null;
+        let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false, gotDone = false, consultPid: string | null = null, cmpCount = 0;
         for (const line of text.split("\n")) {
           if (!line.startsWith("data: ")) continue;
           try {
@@ -1906,6 +1926,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
               qr = d.quickReplies || [];
               hasCard = !!(d.matchCards?.length);
               consultPid = d.consultationCard?.providerId || null;
+              cmpCount = Array.isArray(d.comparisonCards?.[0]?.entities) ? d.comparisonCards[0].entities.length : 0;
               if (d.message !== undefined && d.message !== null) content = d.message.content || "";
             } else if (d.type === "retry_needed") {
               // Server signalled a retry - treat same as incomplete
@@ -1936,7 +1957,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
           throw new Error(`Incomplete SSE response: ${why} (3 attempts exhausted)`);
         }
         if (/\[\[MATCH_CARD:/i.test(content)) hasCard = true;
-        return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid, consultationProviderId: consultPid };
+        return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid, consultationProviderId: consultPid, comparisonEntityCount: cmpCount };
       }
 
       const d = await res.json();
@@ -1947,6 +1968,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
         hasMatchCard: !!(d.matchCards?.length),
         sessionId: d.sessionId || null,
         consultationProviderId: d.consultationCard?.providerId || null,
+        comparisonEntityCount: Array.isArray(d.comparisonCards?.[0]?.entities) ? d.comparisonCards[0].entities.length : 0,
       };
     } catch (err: any) {
       clearTimeout(abortTimer);
@@ -2095,6 +2117,13 @@ async function runTest(tc: TestCase, baseUrl: string = BASE_URL): Promise<TestRe
           notes.push("FAIL: no match card");
         } else if (a.hasMatchCard === true && turn.hasMatchCard) {
           notes.push("PASS: match card rendered");
+        }
+        if (a.minComparisonEntities != null) {
+          const got = (turn as any).comparisonEntityCount || 0;
+          if (got < a.minComparisonEntities) {
+            errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": expected a comparison card with >=${a.minComparisonEntities} entities, got ${got}`);
+            notes.push("FAIL: no comparison card");
+          } else notes.push(`PASS: comparison card (${got} entities)`);
         }
         if (a.hasConsultation === true && !turn.consultationProviderId) {
           errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": expected a consultation booking card, got none`);
