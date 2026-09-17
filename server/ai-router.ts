@@ -2927,6 +2927,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true, subjectProfileId: true, subjectType: true, handoffCompletedAt: true },
     });
     mark("pw:session_flags_loaded");
+    let humanRequestCancelled = false;
 
     // Kick off the Tier2-only expensive lookups (expert guidance rules,
     // answered whispers, knowledge-base RAG incl. its OpenAI embedding call)
@@ -6276,7 +6277,7 @@ Now continue with any surrogate matching questions not yet answered: D1 (countri
     if (humanRequestRegex.test(userMessage)) {
       messages.push({
         role: "system" as const,
-        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask what they'd like to do in the meantime and end with EXACTLY these quick replies: [[QUICK_REPLY:Keep making progress|I'll wait for the team|Schedule a video call]]\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. What would you like to do in the meantime?"\nDo NOT offer provider consultations here - this is about GoStork's own team.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
+        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask what they'd like to do in the meantime and end with EXACTLY these quick replies: [[QUICK_REPLY:Keep making progress|I'll wait for the team|Schedule a video call|I no longer need the team]]\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. What would you like to do in the meantime?"\nDo NOT offer provider consultations here - this is about GoStork's own team.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
       });
     }
 
@@ -6289,6 +6290,53 @@ Now continue with any surrogate matching questions not yet answered: D1 (countri
       messages.push({
         role: "system" as const,
         content: `The parent wants to SCHEDULE a video call with the GoStork concierge team. You MUST reply with ONE short sentence like "Here's the concierge calendar - pick a time that works for you:" and include [[CONCIERGE_CALENDAR]]. The system embeds the GoStork concierge's booking calendar right below your message automatically. Do NOT mention a "Contact Us" page, a "Schedule a Call" button, or any other way to book - the calendar card IS the way. Also include [[HUMAN_NEEDED]] only if the team has not already been notified in this conversation.`,
+      });
+    }
+
+    // Parent CANCELS a pending human request ("I no longer need the team").
+    // The AI cannot perform account actions, so the system does it: clear the
+    // flag and tell the admins who were paged (in-app + email + SMS) that the
+    // request is withdrawn - otherwise the team joins a chat nobody wants.
+    // Only while the request is still pending: once a human has joined, the
+    // conversation is theirs to conclude.
+    const humanCancelRegex = /^i no longer need the team$|(?:no longer|don'?t|do not|dont|won'?t) need (?:to (?:talk|speak|chat) (?:to|with) )?(?:the |a |gostork'?s? |your )*(?:team|human|real person|person|concierge team)|never ?mind.{0,30}(?:team|human|real person)|cancel (?:my |the |that )?(?:request|team|human|escalation)/i;
+    if (
+      currentSessionId && currentSession?.humanRequested && !currentSession.humanJoinedAt &&
+      !currentSession.humanConcludedAt && !humanRequestRegex.test(userMessage) && humanCancelRegex.test(userMessage.trim())
+    ) {
+      await prisma.aiChatSession.update({ where: { id: currentSessionId }, data: { humanRequested: false } });
+      currentSession.humanRequested = false;
+      humanRequestCancelled = true;
+      console.log(`[HUMAN_REQUEST CANCELLED] Session ${currentSessionId}: parent withdrew the request - notifying admins`);
+      try {
+        const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
+        // Live toast for admins who are online (the original request toasted too).
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp) {
+          const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+          let appEvents: any = null;
+          try { appEvents = nestApp.get(AppEventsService); } catch {}
+          appEvents?.emit({
+            type: "human_escalation_cancelled",
+            payload: { parentName: userRecord?.name || firstName, sessionId: currentSessionId },
+            targetUserIds: admins.map((a: any) => a.id),
+          }).catch((e: any) => console.error("[HUMAN_REQUEST CANCELLED] SSE emit failed:", e));
+        }
+        const { notifyAdminsHumanEscalation } = await import("./notify-admin-escalation");
+        notifyAdminsHumanEscalation({
+          kind: "cancelled",
+          parentName: userRecord?.name || firstName,
+          parentEmail: userRecord?.email || "",
+          parentPhone: userRecord?.mobileNumber,
+          sessionId: currentSessionId,
+        }).catch((e: any) => console.error("[HUMAN_REQUEST CANCELLED] Email/SMS dispatch failed:", e));
+      } catch (e) {
+        console.error("[HUMAN_REQUEST CANCELLED] Admin notification failed:", e);
+      }
+      messages.push({
+        role: "system" as const,
+        content: `The parent just withdrew their request to talk to the GoStork team. The SYSTEM has already cancelled the request and told the team - this is done. Confirm it in ONE short warm sentence (e.g. "No problem - I've cancelled that request and let the team know."), then pick the conversation back up exactly where you left off. Do NOT include [[HUMAN_NEEDED]]. Do NOT treat this message as a question for any provider and do NOT offer to ask a clinic or agency anything about it.`,
       });
     }
 
@@ -9920,7 +9968,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // the model keeps appending it to every later reply in a conversation
     // that once escalated. If this reply isn't itself an escalation, drop it.
     if (!finalContent.includes("[[HUMAN_NEEDED]]")) {
-      finalContent = finalContent.replace(/\s*\[\[QUICK_REPLY:Keep making progress\|I'll wait for the team\|Schedule a video call\]\]/gi, "").trim();
+      finalContent = finalContent.replace(/\s*\[\[QUICK_REPLY:Keep making progress\|I'll wait for the team\|Schedule a video call(?:\|I no longer need the team)?\]\]/gi, "").trim();
     }
 
     let humanNeeded = false;
@@ -10051,6 +10099,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       let recentEntityId: string | null = null;
       let recentEntityType: string | null = null;
       let inferredProviderId: string | null = null;
+      let whisperAvoided = false;
       try {
         const foundMc = await findLatestMatchCard(currentSessionId);
         if (foundMc) {
@@ -10121,6 +10170,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 sse.sendReset();
                 sse.sendToken(finalContent);
                 whisperMatch = null;
+                whisperAvoided = true;
               } else {
                 console.log(`[WHISPER INTERCEPT] AI still wants to whisper even with profile data - allowing whisper`);
                 messages.pop();
@@ -10133,7 +10183,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
       }
 
-      if (!whisperMatch && phraseMatched && inferredProviderId) {
+      // phraseMatched was computed from the ORIGINAL draft. Once the intercept
+      // replaced that draft with a real answer, the deferral phrase is gone -
+      // falling back here turned every rescued answer into a provider question.
+      if (!whisperMatch && phraseMatched && inferredProviderId && !whisperAvoided && !humanRequestCancelled) {
         console.log(`[WHISPER FALLBACK] AI mentioned reaching out but no [[WHISPER:...]] tag - auto-creating for provider ${inferredProviderId}`);
         whisperMatch = [`[[WHISPER:${inferredProviderId}]]`, inferredProviderId] as any;
       }
@@ -12788,6 +12841,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       partnerInvite: uiExtras.partnerInvite || undefined,
       whisper: (uiExtras as any).whisper || undefined,
       humanNeeded: humanNeeded || undefined,
+      humanRequestCancelled: humanRequestCancelled || undefined,
       consultationCard: consultationCard || undefined,
       meetingCards: meetingCards.length > 0 ? meetingCards : undefined,
       openedSubjectSessionId: openedSubjectSessionId || undefined,

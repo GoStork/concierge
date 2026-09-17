@@ -612,6 +612,12 @@ Useful context for the executing session:
   datasets, GoStork house provider (GOSTORK_PROVIDER_ID env must match the new
   row id). Explicitly EXCLUDE: test users, test parents, 555-01xx phones,
   chat sessions, notifications, bookings.
+- [ ] **Re-sync `ConciergePromptSection` DEV -> PROD before launch.** PROD was
+  seeded 2026-08-18; every prompt edit since then was pushed to DEV only
+  (by design). Diff each section's `content` between the two projects and
+  copy DEV over PROD. Known drift: `protocols` (2026-09-17 - human-escalation
+  quick replies gained "I no longer need the team" + the cancel rule; the
+  server code already expects the 4-reply set).
 - [x] pgvector extension enabled on the new project (2026-08-18; `vector`
   and `pg_trgm` in schema `public` to match dev, HNSW indexes pre-created).
 - [ ] Decide provider/staff account migration: real provider logins (e.g.

@@ -2226,6 +2226,7 @@ const sendMessageMutation = useMutation({
             talkToTeamRef={talkToTeamRef}
             onSidePanelChange={setParentSidePanelData}
             onBookingConfirmed={handleBookingConfirmed}
+            onHumanRequestCancelled={() => setTalkToTeamEscalated(false)}
           />
         </div>
         </div>{/* end centering wrapper */}

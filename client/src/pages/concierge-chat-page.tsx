@@ -595,9 +595,10 @@ interface ConciergeChatProps {
   talkToTeamRef?: React.MutableRefObject<{ trigger: () => void; escalated: boolean } | null>;
   onSidePanelChange?: (data: ParentSidePanelData | null) => void;
   onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
+  onHumanRequestCancelled?: () => void;
 }
 
-export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef, onSidePanelChange, onBookingConfirmed }: ConciergeChatProps = {}) {
+export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef, onSidePanelChange, onBookingConfirmed, onHumanRequestCancelled }: ConciergeChatProps = {}) {
   // Deep-link (?msg=) capture MUST run before the ?session= URL locking
   // below rewrites the address bar and drops the query string.
   captureMessageTarget();
@@ -2284,6 +2285,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             }
 
             if (data.humanNeeded) setHumanEscalated(true);
+            if (data.humanRequestCancelled) handleHumanRequestCancelled();
 
             // The preliminary-ack card posted server-side DURING this turn
             // (holding the consultation calendar). It's a separate DB message
@@ -2704,6 +2706,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     sendMessage(expandQuickReply(text, aiMessage));
   };
 
+  // The server cancelled a pending human request this turn - put the header
+  // button back to "available" here and in the conversations list.
+  const handleHumanRequestCancelled = () => {
+    setHumanEscalated(false);
+    queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+      old?.map((s) => s.id === sessionId ? { ...s, humanRequested: false } : s)
+    );
+    onHumanRequestCancelled?.();
+  };
+
   const handleTalkToTeam = () => {
     sendMessage("I'd like to talk to a real person on the GoStork team");
   };
@@ -2792,6 +2804,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 return;
               }
               if (data.humanNeeded) setHumanEscalated(true);
+              if (data.humanRequestCancelled) handleHumanRequestCancelled();
               if (data.message?.id) {
                 knownMessageIds.current.add(data.message.id);
                 markSessionRead(data.sessionId || sessionId);

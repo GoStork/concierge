@@ -493,6 +493,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleHumanEscalationEvent = useCallback((data: any) => {
+    if (data.type === "human_escalation_cancelled") {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] });
+      toast({
+        title: `${data.parentName || "A parent"} no longer needs human assistance`,
+        description: "They cancelled the request - no action needed.",
+      });
+      return;
+    }
     if (data.type !== "human_escalation") return;
 
     const parentName = data.parentName || "A parent";

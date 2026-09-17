@@ -13,6 +13,8 @@ export async function notifyAdminsHumanEscalation(params: {
   parentEmail: string;
   parentPhone?: string | null;
   sessionId: string;
+  /** "cancelled" = the parent withdrew a pending request; tells the same admins to stand down. */
+  kind?: "requested" | "cancelled";
 }): Promise<void> {
   const [brand, admins] = await Promise.all([
     fetchEmailBrandData(prisma),
@@ -23,15 +25,28 @@ export async function notifyAdminsHumanEscalation(params: {
   ]);
 
   const chatUrl = `${getBaseUrl()}/admin/concierge-monitor?sessionId=${params.sessionId}`;
-  const subject = `Human Assistance Requested - ${params.parentName}`;
-  const html = buildBrandedEmail(brand, {
-    title: "Parent Requesting Human Assistance",
-    greeting: `<strong>${esc(params.parentName)}</strong> has requested to speak with a human concierge.`,
-    body: "",
-    alertBox: { text: "Please join the chat as soon as possible to assist this parent.", type: "warning" },
-    buttons: [{ label: "Join Chat Now", url: chatUrl }],
-  });
-  const smsBody = `${brand.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance. Join chat: ${chatUrl}`;
+  const cancelled = params.kind === "cancelled";
+  const subject = cancelled
+    ? `Human Assistance Request Cancelled - ${params.parentName}`
+    : `Human Assistance Requested - ${params.parentName}`;
+  const html = cancelled
+    ? buildBrandedEmail(brand, {
+        title: "Human Assistance Request Cancelled",
+        greeting: `<strong>${esc(params.parentName)}</strong> no longer needs to speak with a human concierge.`,
+        body: "",
+        alertBox: { text: "No action needed - the parent withdrew the request and is continuing with the AI concierge.", type: "info" },
+        buttons: [{ label: "View Chat", url: chatUrl }],
+      })
+    : buildBrandedEmail(brand, {
+        title: "Parent Requesting Human Assistance",
+        greeting: `<strong>${esc(params.parentName)}</strong> has requested to speak with a human concierge.`,
+        body: "",
+        alertBox: { text: "Please join the chat as soon as possible to assist this parent.", type: "warning" },
+        buttons: [{ label: "Join Chat Now", url: chatUrl }],
+      });
+  const smsBody = cancelled
+    ? `${brand.companyName}: ${params.parentName} (${params.parentEmail}) cancelled their request for human assistance. No action needed.`
+    : `${brand.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance. Join chat: ${chatUrl}`;
 
   const sendgridKey = process.env.SENDGRID_API_KEY;
   const twilioSid = process.env.TWILIO_ACCOUNT_SID;
