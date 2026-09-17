@@ -1592,6 +1592,51 @@ with `@prisma/client` 7.4.0 and the pg adapter this app is built on, and the
 **If a future audit suggests downgrading a major dependency, check whether the
 advisory is on the package itself or on something underneath it first.**
 
+### 10h. The origin is now Cloudflare-only (firewall, 2026-09-16)
+
+**What was wrong.** The project-wide `allow-http` and `allow-https` rules open
+tcp:80 and tcp:443 to `0.0.0.0/0` for any VM tagged `http-server` /
+`https-server`, and gostork-2-prod carried both. Measured before the fix:
+`http://34.85.132.142/__health` returned 200 and a login POST straight at the
+IP returned 401 - the app answered on its raw address, bypassing Cloudflare's
+WAF and bot rules entirely, and letting anyone forge `CF-Connecting-IP` to
+defeat every per-IP control (auth rate limits, the OTP cap, signup velocity).
+
+HTTPS on the IP was already refused, because Caddy requires authenticated
+origin pull - a Cloudflare client certificate. **Plain HTTP on port 80 was the
+hole.** And it was being looked at: 66 Caddy log lines in 24 hours addressed
+the raw IP from two distinct sources, one probing an ACME challenge path with
+curl.
+
+**What changed.** Two rules, `gostork-cf-origin-v4` and `gostork-cf-origin-v6`
+(priority 900), allow tcp:80,443 from Cloudflare's published ranges only,
+targeting a new `cf-origin` tag. gostork-2-prod now carries ONLY that tag;
+`http-server` and `https-server` were removed from this instance alone, so
+every other VM in the project is untouched.
+
+Verified: the site serves 200 through test-app.gostork.com (/, brand settings,
+providers); direct access to the IP on both 80 and 443 returns nothing; SSH over
+IAP still works, which is the way back in if a rule is ever wrong.
+
+**No certificate risk.** Caddy uses a static Cloudflare Origin Certificate
+(`/etc/caddy/tls/origin.pem`, valid to 2041), not ACME, so nothing about
+renewal depends on inbound port 80.
+
+**Maintenance.** Cloudflare publishes its ranges at
+`https://www.cloudflare.com/ips-v4` and `/ips-v6`, and does change them
+occasionally. If the edge ever 5xxes while the VM is healthy, check these rules
+against that list first:
+
+```
+gcloud compute firewall-rules describe gostork-cf-origin-v4 --project gostork --format="value(sourceRanges.list())"
+```
+
+**Emergency reopen**, if a rule is ever wrong:
+
+```
+gcloud compute instances add-tags gostork-2-prod --project gostork --zone us-east4-b --tags http-server,https-server
+```
+
 ### 10e. Two-factor enforcement is ON - first-login enrolment (was a lockout)
 
 `TWO_FACTOR_ENFORCE_AT=2026-09-16T00:00:00Z` is set on the production VM and on
@@ -1749,12 +1794,15 @@ now go through `clientIpFrom()` (`server/src/lib/auth-audit.ts`), which prefers
 `CF-Connecting-IP`, then `X-Real-IP`, then the first forwarded hop.
 
 That header is only trustworthy while the origin is reachable **solely**
-through Cloudflare. **Open item:** lock the GCE origin's firewall to
-Cloudflare's published IP ranges, otherwise anyone who finds 34.85.132.142
-directly can set `CF-Connecting-IP` themselves and forge their way past every
-per-IP control above.
+through Cloudflare. ~~Open item: lock the GCE origin's firewall~~ **DONE
+2026-09-16, see 10h.**
 
-Still missing on top of this: no account lockout after N failures, no alerting
+**Decided AGAINST: account lockout after N failed logins** (Eran, 2026-09-16).
+The IP rate limit stays as the only brake on password guessing. Lockout trades
+one denial of service for another, since anyone can lock a known address out on
+purpose. Do not re-raise it as an open finding.
+
+Still missing on top of this: no alerting
 when the failure rate spikes (the rows exist, nothing watches them), and the
 log has no retention policy or off-box copy.
 
