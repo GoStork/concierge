@@ -146,8 +146,8 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
               data-testid="btn-talk-to-team"
             >
               <MessageCircle className="w-3.5 h-3.5" />
-              <span className="sm:hidden">Human joined</span>
-              <span className="hidden sm:inline">A GoStork person is in this chat</span>
+              <span className="sm:hidden">GoStork Team</span>
+              <span className="hidden sm:inline">Chatting with GoStork Team</span>
             </div>
           ) : (
             <Button
@@ -157,13 +157,13 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
               style={{ borderColor: "hsl(var(--primary) / 0.3)", color: "hsl(var(--primary))", borderRadius: "999px" }}
               onClick={team.onClick}
               disabled={team.disabled || team.state === "notified"}
-              aria-label={team.state === "notified" ? "GoStork team notified" : "Chat with a real person at GoStork"}
+              aria-label={team.state === "notified" ? "GoStork team notified" : "Chat with GoStork Team"}
               title={team.state === "notified" ? "We let the GoStork team know - a real person will join this chat" : "A real person from GoStork will join this chat"}
               data-testid="btn-talk-to-team"
             >
               <MessageCircle className="w-3.5 h-3.5" />
-              <span className="sm:hidden">{team.state === "notified" ? "Team notified" : "Ask a person"}</span>
-              <span className="hidden sm:inline">{team.state === "notified" ? "GoStork team notified" : "Chat with a real person"}</span>
+              <span className="sm:hidden">{team.state === "notified" ? "Team notified" : "GoStork Team"}</span>
+              <span className="hidden sm:inline">{team.state === "notified" ? "GoStork team notified" : "Chat with GoStork Team"}</span>
             </Button>
           )}
         </div>
