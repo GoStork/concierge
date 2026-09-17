@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { hasProviderRole } from "@shared/roles";
+import { useProviderOnboarding, onboardingRemaining } from "@/components/provider-own-onboarding";
 import { MeetingReminderPopup } from "@/components/meeting-reminder-popup";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
@@ -749,6 +750,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const isProvider = hasProviderRole(roles);
   const isParent = roles.includes('PARENT');
   const isParentOnly = isParent && !isAdmin && !isProvider;
+  // Required setup steps still open: a count on the provider's Home pill, so
+  // setup is discoverable from anywhere (Chats is the default landing and
+  // said nothing about it).
+  const providerSetupQ = useProviderOnboarding({ enabled: isProvider && !isAdmin });
+  const providerSetupLeft = providerSetupQ.data && providerSetupQ.data.percent < 100 ? onboardingRemaining(providerSetupQ.data).stepsLeft : 0;
 
   const { data: providerData } = useQuery<any>({
     queryKey: ["/api/providers", (user as any)?.providerId],
@@ -1048,7 +1054,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     // left the top bar - their pages stay routable via Home's View-all links.
     // Chat remains the parent's default landing; Home is the overview.
     { show: isParentOnly, to: '/home', icon: Home, label: 'Home', mobileLabel: 'Home', fillOnActive: false },
-    { show: isProvider && !isAdmin, to: '/provider/home', icon: Home, label: 'Home', mobileLabel: 'Home', fillOnActive: false },
+    { show: isProvider && !isAdmin, to: '/provider/home', icon: Home, label: 'Home', mobileLabel: 'Home', badge: providerSetupLeft, fillOnActive: false },
     { show: isAdmin, to: '/admin/home', icon: Home, label: 'Home', mobileLabel: 'Home', fillOnActive: false },
     // same centered stork Explore button as parents (added below).
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS, desktopOnly: true },

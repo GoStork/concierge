@@ -137,7 +137,9 @@ export function TwoFactorCard() {
             {status?.required
               ? "Your account can read every family's record and move money, so it needs a second factor. GoStork 1.0 lost its payment account to an attacker who defeated SMS codes, which is why this uses an authenticator app instead."
               : "Add an authenticator app as a second step when you sign in."}
-            {status?.enforceAt && !status?.enforced
+            {/* A date that has already passed is not a deadline: "Required
+                from 9/15" was still on screen on 9/17. */}
+            {status?.enforceAt && !status?.enforced && new Date(status.enforceAt).getTime() > Date.now()
               ? ` Required from ${new Date(status.enforceAt).toLocaleDateString()}.`
               : ""}
           </p>

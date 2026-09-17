@@ -1823,6 +1823,12 @@ function ParentMembersTab() {
 }
 
 export default function AccountPage() {
+  // Every Settings tab announced itself as the bare URL.
+  useEffect(() => {
+    const prev = document.title;
+    document.title = "Settings - GoStork";
+    return () => { document.title = prev; };
+  }, []);
   const { user, logoutMutation } = useAuth();
   const location = useLocation();
 
@@ -1978,7 +1984,8 @@ export default function AccountPage() {
                 to={tab.to}
                 data-active={active ? "true" : undefined}
                 data-testid={`tab-${tab.label.toLowerCase().replace(/\s+/g, '-')}`}
-                className="flex items-center justify-center gap-2 shrink-0 sm:shrink sm:flex-1 whitespace-nowrap py-3 px-3 text-sm font-ui border-b-2 transition-colors duration-200"
+                aria-current={active ? "page" : undefined}
+                className="flex items-center justify-center gap-2 shrink-0 sm:shrink sm:flex-1 whitespace-nowrap py-3 px-3 text-sm font-ui border-b-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md"
                 style={active
                   ? {
                       color: 'var(--tab-active-color, hsl(var(--primary)))',
@@ -2107,7 +2114,13 @@ export default function AccountPage() {
             </div>
           } />
         )}
-        <Route path="*" element={<Navigate to="/account" replace />} />
+        {/* Provider-only tabs (costs, donors, ...) mount once the provider's
+            services have loaded. Until then an unknown path is "not known
+            YET", not "not found": a cold load of /account/costs (a bookmark,
+            a reminder email) used to bounce to My Account mid-load. */}
+        <Route path="*" element={isProvider && providerQuery.isLoading
+          ? <div className="py-16 flex justify-center" aria-busy="true" aria-label="Loading"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+          : <Navigate to="/account" replace />} />
       </Routes>
     </div>
   );

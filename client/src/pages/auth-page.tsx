@@ -222,13 +222,15 @@ export default function AuthPage() {
           <CardContent>
               <div className="space-y-4">
                 {passwordSet && (
-                  <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-set">
+                  <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success-text))] text-sm" data-testid="text-password-set">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    Your password is set. Sign in to join your family's account.
+                    {(location.state as any)?.passwordSetAudience === "provider"
+                      ? `Password set. Sign in to finish setting up${(location.state as any)?.orgName ? ` ${(location.state as any).orgName}` : " your account"}.`
+                      : "Your password is set. Sign in to join your family's account."}
                   </div>
                 )}
                 {passwordReset && (
-                  <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-reset-success">
+                  <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success-text))] text-sm" data-testid="text-password-reset-success">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     Your password has been reset successfully. Please sign in with your new password.
                   </div>

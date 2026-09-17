@@ -328,8 +328,16 @@ export class AuthController {
     // The email lets the set-password page pre-fill sign-in afterwards; the
     // invite flag lets it choose first-password wording. Neither is secret to
     // the holder of a valid token.
-    const owner = await this.prisma.user.findUnique({ where: { id: valid.userId }, select: { email: true, password: true } });
-    return { valid: true, email: owner?.email ?? null, invite: !!owner && !owner.password };
+    const owner = await this.prisma.user.findUnique({
+      where: { id: valid.userId },
+      select: { email: true, password: true, providerId: true, provider: { select: { name: true } } },
+    });
+    const invite = !!owner && !owner.password;
+    // WHO is setting a first password decides the words on the page: a
+    // provider's welcome link used to read "Reset your password" (they never
+    // had one), and the only other variant said "your family's account".
+    const audience = !invite ? null : owner?.providerId ? "provider" : "family";
+    return { valid: true, email: owner?.email ?? null, invite, audience, orgName: audience === "provider" ? owner?.provider?.name ?? null : null };
   }
 
   @Post("reset-password")

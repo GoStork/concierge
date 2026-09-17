@@ -307,7 +307,11 @@ export function OnboardingCoachBar() {
         <>
           <style>{`
             @keyframes onbFlagNudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
-            .onb-section-flag-inner { animation: onbFlagNudge 1.2s ease-in-out infinite; }
+            /* Two nudges say "this card"; an endless bob over a form the
+               provider is trying to read is a distraction, and motion they
+               asked the OS to reduce never plays at all. */
+            .onb-section-flag-inner { animation: onbFlagNudge 1.2s ease-in-out 2; }
+            @media (prefers-reduced-motion: reduce) { .onb-section-flag-inner { animation: none; } }
           `}</style>
           <div
             className="fixed z-40"
@@ -319,7 +323,7 @@ export function OnboardingCoachBar() {
           >
             <button
               type="button"
-              className="onb-section-flag-inner flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[hsl(var(--primary))] text-primary-foreground text-sm font-medium shadow-lg hover:brightness-110 transition-all"
+              className="onb-section-flag-inner flex items-center gap-1.5 min-h-10 px-3.5 py-2 rounded-full bg-[hsl(var(--primary))] text-primary-foreground text-sm font-medium shadow-lg hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               disabled={markDone.isPending}
               onClick={() => {
                 if (!isLastSection) {
@@ -382,11 +386,11 @@ export function OnboardingCoachBar() {
         {complete && celebrated.isOptional && (
           <CelebrationBurst messageId="onboarding-all-complete" createdAt={new Date().toISOString()} kind="match_confirmed" />
         )}
-        <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success))] shrink-0" />
+        <CheckCircle2 className="w-5 h-5 text-[hsl(var(--brand-success-text))] shrink-0" aria-hidden="true" />
         {/* Phones: the text takes the full row and the Next button drops
             to its own full-width row - side by side the button squeezed the
             text to one word per line. */}
-        <div className="flex-1 min-w-0 basis-[calc(100%-2rem)] md:basis-auto text-sm">
+        <div className="flex-1 min-w-0 basis-[calc(100%-2rem)] md:basis-auto text-sm" role="status" aria-live="polite">
           <span className="font-medium">{celebrated.label} - done!</span>
           {complete ? (
             <span className="text-muted-foreground"> Every page reviewed - your setup is complete and parents can find you.</span>
@@ -418,34 +422,36 @@ export function OnboardingCoachBar() {
         ref={barRef}
         className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3 py-2 md:px-3.5 md:py-2.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-[color-mix(in_srgb,hsl(var(--primary))_5%,hsl(var(--background)))] shadow-sm flex items-center gap-2 md:gap-3"
         data-testid="onboarding-coach-bar"
+        role="region"
+        aria-label="Setup guide"
       >
         {/* Phones: no icon, one line per fact (title + meta / description /
             section), a short Done button - the bar must stay a slim strip,
             not a third of the screen. */}
         <span className="hidden md:flex w-8 h-8 rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] items-center justify-center shrink-0">
-          <ListChecks className="w-4 h-4" />
+          <ListChecks className="w-4 h-4" aria-hidden="true" />
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium flex items-center gap-2 min-w-0">
-            <span className="truncate">{current.label}</span>
-            <span className="text-[11px] font-normal text-muted-foreground flex items-center gap-1 shrink-0 whitespace-nowrap">
-              <Clock className="w-3 h-3" /> ~{current.minutes} min · {data.doneCount}/{data.requiredCount} done
+            <span className="line-clamp-2 md:line-clamp-1">{current.label}</span>
+            <span className="text-xs font-normal text-muted-foreground flex items-center gap-1 shrink-0 whitespace-nowrap">
+              <Clock className="w-3 h-3" aria-hidden="true" /> about {current.minutes} min · {data.doneCount}/{data.requiredCount} done
             </span>
           </div>
-          <div className="text-xs md:text-sm text-muted-foreground truncate md:whitespace-normal md:line-clamp-2">{current.description}</div>
+          <div className="text-xs md:text-sm text-muted-foreground line-clamp-2">{current.description}</div>
           {section && sections.length > 1 && (
             <div className="mt-0.5 md:mt-1 flex items-center gap-2 text-xs font-medium text-[hsl(var(--primary))] min-w-0">
               <span className="truncate">
                 Section {sectionIdx + 1}/{sections.length}: {section.label}
               </span>
               {section.state === "open" && (
-                <span className="shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]">
+                <span className="shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning-text))]">
                   <span className="md:hidden">still needed</span>
                   <span className="hidden md:inline">still needed - upload, or mark not applicable</span>
                 </span>
               )}
               {section.state === "done" && (
-                <span className="shrink-0 flex items-center gap-1 text-[hsl(var(--brand-success))]">
+                <span className="shrink-0 flex items-center gap-1 text-[hsl(var(--brand-success-text))]">
                   <Check className="w-3 h-3" /> settled
                 </span>
               )}
@@ -465,7 +471,9 @@ export function OnboardingCoachBar() {
         {current.selfMarkable && current.status !== "done" && (
           <Button
             size="sm"
-            className="shrink-0 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-primary-foreground shadow-md font-medium md:h-10 md:px-4"
+            // Teal, not status green: white on the live success hue measured
+            // 2.59:1, and DESIGN.md keeps one action color.
+            className="shrink-0 shadow-md font-medium min-h-11 md:min-h-0 md:h-10 md:px-4"
             disabled={markDone.isPending}
             onClick={() => markDone.mutate(current.key)}
             data-testid="onboarding-coach-mark-done"
@@ -486,12 +494,14 @@ export function OnboardingCoachBar() {
     <div
       className="sticky top-0 md:top-16 z-20 -mx-1 mb-4 px-3 py-2 md:px-3.5 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[color-mix(in_srgb,hsl(var(--primary))_3%,hsl(var(--background)))] shadow-sm flex flex-wrap items-center gap-x-3 gap-y-2"
       data-testid="onboarding-coach-mirror"
+      role="region"
+      aria-label="Setup progress"
     >
       <div className="flex-1 min-w-0 basis-full md:basis-auto flex items-center gap-3">
         <span className="text-sm font-medium shrink-0">
           {requiredComplete ? "Setup complete" : `Getting started - ${data.doneCount}/${data.requiredCount}`}
         </span>
-        <span className="flex-1 min-w-[60px] max-w-[180px] h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden">
+        <span className="flex-1 min-w-[60px] max-w-[180px] h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={data.requiredCount} aria-valuenow={data.doneCount}>
           <span className="block h-full rounded-full bg-[hsl(var(--primary))] transition-all" style={{ width: `${data.percent}%` }} />
         </span>
       </div>

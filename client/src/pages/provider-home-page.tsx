@@ -9,7 +9,7 @@
  * is their front door; the full pages stay routable via View-all links.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { greetingNameOf } from "@/lib/display-name";
 import { useConciergeName } from "@/hooks/use-concierge-name";
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import {
   MessageCircle,
   CalendarClock,
   Loader2,
+  AlertCircle,
   BarChart3,
   Landmark,
   Route,
@@ -117,6 +118,21 @@ export default function ProviderHomePage() {
     staleTime: 60_000,
   });
   const firstName = greetingNameOf(user as any);
+  // "Welcome back" on a first visit is wrong, and the tab used to announce
+  // itself as its URL.
+  const [firstVisit] = useState(() => {
+    try {
+      const k = `gs-provider-home-seen:${(user as any)?.id || ""}`;
+      const seen = localStorage.getItem(k) === "1";
+      if (!seen) localStorage.setItem(k, "1");
+      return !seen;
+    } catch { return false; }
+  });
+  useEffect(() => {
+    const prev = document.title;
+    document.title = "Home - GoStork";
+    return () => { document.title = prev; };
+  }, []);
 
   // Always refetch on mount/focus - global defaults cache forever, which
   // would leave resolved queue items on screen until a hard refresh.
@@ -285,7 +301,7 @@ export default function ProviderHomePage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
       <div>
-        <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
+        <h1 className="t-page-title font-heading">{firstVisit ? `Welcome, ${firstName}` : `Welcome back, ${firstName}`}</h1>
         <p className="t-helper mt-1">Everything that needs your attention, in one place.</p>
       </div>
 
@@ -313,13 +329,13 @@ export default function ProviderHomePage() {
               Loading your queue...
             </div>
           ) : tasksFailed && !taskData ? (
-            <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-warning))" }}>
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-warning-text))" }} role="alert">
+              <AlertCircle className="w-4 h-4" aria-hidden="true" />
               Couldn't load your work queue just now - refresh to try again.
             </div>
           ) : (
-          <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
-            <CheckCircle2 className="w-4 h-4" />
+          <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success-text))" }}>
+            <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
             All clear - nothing waiting on you right now.
           </div>
           )
@@ -641,7 +657,7 @@ export default function ProviderHomePage() {
                       a bold amber zero would read as a problem. */}
                   <p
                     className="text-lg font-heading font-bold"
-                    style={awaiting > 0 ? { color: "hsl(var(--brand-warning))" } : undefined}
+                    style={awaiting > 0 ? { color: "hsl(var(--brand-warning-text))" } : undefined}
                   >
                     {awaiting.toLocaleString()}
                   </p>
@@ -665,7 +681,7 @@ export default function ProviderHomePage() {
                   </div>
                   {latest.text && <p className="t-helper mt-1 line-clamp-2">{latest.text}</p>}
                   {!latest.providerReply && (
-                    <span className="t-helper mt-1 inline-block" style={{ color: "hsl(var(--brand-warning))" }}>
+                    <span className="t-helper mt-1 inline-block" style={{ color: "hsl(var(--brand-warning-text))" }}>
                       Not answered yet
                     </span>
                   )}

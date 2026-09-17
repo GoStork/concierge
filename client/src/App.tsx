@@ -125,7 +125,11 @@ function DashboardRoute() {
   // Account so they start from their own settings, not an empty chat.
   if (isParentOnly) return <Navigate to="/chat" replace />;
   if (isAdmin) return <Navigate to="/admin/home" replace />;
-  if (isProvider && !(user as any)?.lastLoginAt) return <Navigate to="/account" replace />;
+  // First-ever provider login: Home, where the setup hub says what is left,
+  // how long it takes and what comes next. It used to be /account, where the
+  // coach opened on an OPTIONAL two-minute step instead of the next required
+  // one.
+  if (isProvider && !(user as any)?.lastLoginAt) return <Navigate to="/provider/home" replace />;
   if (isProvider) return <Navigate to="/chat" replace />;
   return <Navigate to="/marketplace" replace />;
 }

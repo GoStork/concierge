@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Search, Loader2, MessageSquare } from "lucide-react";
+import { ProviderSetupStrip } from "@/components/provider-own-onboarding";
 
 type FilterTab = "all" | "unread";
 
@@ -100,6 +101,8 @@ export function ConversationsShell({
             <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
             {headerAction}
           </div>
+          {/* Providers only, and only while required setup is open. */}
+          <ProviderSetupStrip />
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5 flex-shrink-0">
               {(["all", "unread"] as FilterTab[]).map(tab => (

@@ -12,7 +12,14 @@ export default function ResetPasswordPage() {
   // Family-account invitations reuse this page with ?invite=1: same token
   // mechanics, different words - the reader has never had a password here.
   const [searchParams] = useSearchParams();
-  const isInvite = searchParams.get("invite") === "1";
+  // First password vs reset, and for WHOM: the server says (validate-reset-
+  // token returns invite + audience + orgName). The URL flag stays as the
+  // first-paint hint for family invitations.
+  const [serverInvite, setServerInvite] = useState<boolean | null>(null);
+  const [audience, setAudience] = useState<"provider" | "family" | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
+  const isInvite = serverInvite ?? (searchParams.get("invite") === "1");
+  const isProviderInvite = isInvite && audience === "provider";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -38,7 +45,13 @@ export default function ResetPasswordPage() {
       .then(async (res) => {
         setTokenValid(res.ok);
         if (res.ok) {
-          try { const d = await res.json(); if (d?.email) setAccountEmail(String(d.email)); } catch { /* optional */ }
+          try {
+            const d = await res.json();
+            if (d?.email) setAccountEmail(String(d.email));
+            if (typeof d?.invite === "boolean") setServerInvite(d.invite);
+            if (d?.audience === "provider" || d?.audience === "family") setAudience(d.audience);
+            if (d?.orgName) setOrgName(String(d.orgName));
+          } catch { /* optional */ }
         }
         setIsValidating(false);
       })
@@ -81,7 +94,7 @@ export default function ResetPasswordPage() {
         throw new Error(data.message || "Failed to reset password");
       }
 
-      navigate("/auth", { state: isInvite ? { passwordSet: true, prefillEmail: accountEmail } : { passwordReset: true, prefillEmail: accountEmail } });
+      navigate("/auth", { state: isInvite ? { passwordSet: true, passwordSetAudience: audience, orgName, prefillEmail: accountEmail } : { passwordReset: true, prefillEmail: accountEmail } });
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -130,10 +143,12 @@ export default function ResetPasswordPage() {
       <Card className="w-full max-w-md border border-border shadow-none">
         <CardHeader className="space-y-2 text-center pb-4">
           <CardTitle className="font-display t-page-title text-primary" data-testid="text-page-title">
-            {isInvite ? "Welcome - set your password" : "Reset your password"}
+            {isProviderInvite ? "Welcome to GoStork - set your password" : isInvite ? "Welcome - set your password" : "Reset your password"}
           </CardTitle>
           <p className="t-helper">
-            {isInvite
+            {isProviderInvite
+              ? `Your account${orgName ? ` for ${orgName}` : ""} is ready. Choose a password, then sign in - setup takes about 45 minutes and you can do it in pieces.`
+              : isInvite
               ? "You've been added to your family's account. Choose a password, then sign in to finish setting up."
               : "Please enter your new password."}
           </p>
