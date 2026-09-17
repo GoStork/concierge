@@ -1689,11 +1689,15 @@ the application meant being able to rewrite its history. Now:
   `npx tsx --env-file=.env scripts/test-audit-retention.ts`.
 - **A dead copy is loud.** A failed ship logs
   `[auth-audit] OFF-BOX COPY FAILED` (at most once a minute). Grep for it.
-- [ ] ERAN/ops (needs the human gcloud login, the VM account rightly cannot):
-  dedicated log bucket with 400-day retention + a sink for
-  `logName:"gostork-auth-audit"`, then LOCK the bucket so retention cannot be
-  shortened. Until then the entries sit in `_Default` at 30 days.
-- To read: Logs Explorer, query `logName="projects/gostork/logs/gostork-auth-audit"`.
+- [x] DONE 2026-09-17: log bucket `gostork-auth-audit` (global, **400 days,
+  LOCKED** - retention can never be shortened and the bucket cannot be deleted
+  while it holds entries) + sink `gostork-auth-audit-sink` filtering
+  `logName="projects/gostork/logs/gostork-auth-audit"`. Verified end to end: a
+  failed login on test-app appeared in the locked bucket. A new sink takes a
+  few minutes to start routing - the first two probes only reached `_Default`.
+  Entries also still land in `_Default` (30 days); harmless, left as is.
+- To read: Logs Explorer, scope = bucket `gostork-auth-audit`, or
+  `gcloud logging read 'logName="projects/gostork/logs/gostork-auth-audit"' --bucket=gostork-auth-audit --location=global --view=_AllLogs`.
 
 ### 10f. Why Prisma was NOT downgraded
 
