@@ -247,7 +247,7 @@ function MeetingBookingCard({ booking, brandColor }: { booking: any; brandColor:
 function PrepDocCard({ brandColor }: { brandColor: string }) {
   return (
     <Card
-      className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards]"
+      className="overflow-hidden max-w-sm motion-safe:animate-[slideUp_0.4s_ease-out_forwards]"
       style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
       data-testid="prep-doc-card"
     >
@@ -315,7 +315,7 @@ function AgreementSignCard({ card, brandColor, createdAt }: { card: { agreementI
   const navigate = useNavigate();
   return (
     <Card
-      className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards]"
+      className="overflow-hidden max-w-sm motion-safe:animate-[slideUp_0.4s_ease-out_forwards]"
       style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
     >
       <div className="p-1.5" style={{ backgroundColor: brandColor }}>
@@ -1392,7 +1392,7 @@ function ConsultationBookingCard({
   if (card.memberBookingSlug) {
     return (
       <div
-        className="w-full animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden border border-border bg-card"
+        className="w-full motion-safe:animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden border border-border bg-card"
         style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 540px)" }}
         data-testid="consultation-booking-card"
       >
@@ -1434,7 +1434,7 @@ function ConsultationBookingCard({
 
   return (
     <Card
-      className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards]"
+      className="overflow-hidden max-w-sm motion-safe:animate-[slideUp_0.4s_ease-out_forwards]"
       style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
       data-testid="consultation-booking-card"
     >
@@ -1814,7 +1814,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   // IVF Clinics deck uses); the matcher just adds chat actions + footer buttons.
   return (
     <div className="w-full" data-testid={`match-card-${card.providerId}`}>
-      <div className="w-full aspect-[5/8] sm:aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[5/8] sm:aspect-[3/4] overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]">
         <ClinicSwipeCard
           providerId={card.providerId}
           eggSource={card.eggSource}
@@ -1880,7 +1880,7 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
 
   return (
     <div className="w-full" data-testid={`doctor-card-${card.slug}`}>
-      <div className="w-full aspect-[5/7] sm:aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[5/7] sm:aspect-[3/4] overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]">
         <SwipeDeckCard
           id={card.slug}
           photos={photos}
@@ -1952,7 +1952,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
 
   return (
     <div
-      className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-[hsl(var(--brand-success))]/40 bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+      className="min-w-[320px] max-w-[420px] w-full motion-safe:animate-[slideUp_0.4s_ease-out_forwards] border border-[hsl(var(--brand-success))]/40 bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
       style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
       data-testid={`country-program-card-${card.providerId}`}
       onClick={() => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
@@ -2052,7 +2052,7 @@ function AgencyMatchCard({ card, brandColor, onAction }: { card: MatchCard; bran
 
   return (
     <div className="w-full" data-testid={`match-card-${card.providerId}`}>
-      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[3/4] overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]">
         <AgencySwipeCard
           providerId={card.providerId}
           reasons={card.reasons || []}
@@ -2086,7 +2086,7 @@ function LawGroupMatchCard({ card, brandColor, onAction }: { card: MatchCard; br
 
   return (
     <div className="w-full" data-testid={`match-card-${card.providerId}`}>
-      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[3/4] overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]">
         <LawGroupSwipeCard
           providerId={card.providerId}
           reasons={card.reasons || []}
@@ -2223,7 +2223,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
 
     return (
       <div
-        className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]`}
+        className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]`}
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
@@ -3770,7 +3770,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   useEffect(() => () => { if (cardLandingIvRef.current) clearInterval(cardLandingIvRef.current); }, []);
   useEffect(() => {
     const last = messages[messages.length - 1];
-    if (!last || last.role !== "assistant" || !last.matchCards?.length) return;
+    if (!last || last.role !== "assistant") return;
+    // A new card, or a long reply-chip question (the ten pass reasons): both
+    // land with their top at the top of the log, so the question is read
+    // before the choices and the face before the prose.
+    const chipCount = (last.quickReplies?.length || (last as any).uiCardData?.quickReplies?.length || 0);
+    if (!last.matchCards?.length && chipCount < 6) return;
     const key = last.id || last.createdAt || String(messages.length);
     if (lastCardMsgKeyRef.current === key) return;
     lastCardMsgKeyRef.current = key;
@@ -3787,10 +3792,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     let quietTicks = 0;
     const position = () => {
       const container = document.querySelector('[data-testid="concierge-messages"]') as HTMLElement | null;
-      const cards = container?.querySelectorAll('[data-testid^="match-card-"]');
-      const card = cards && cards.length ? (cards[cards.length - 1] as HTMLElement) : null;
-      if (!container || !card) return;
-      const delta = card.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
+      if (!container) return;
+      // Anchor on the LAST message: its card if it has one, else its chip
+      // row. Anchoring on the last card in the whole thread positioned an
+      // older card when the new message was a chip question.
+      const wraps = container.querySelectorAll('[id^="msg-"]');
+      const lastWrap = wraps.length ? (wraps[wraps.length - 1] as HTMLElement) : null;
+      const anchor = (lastWrap?.querySelector('[data-testid^="match-card-"]') || lastWrap?.querySelector('[data-testid="quick-replies"]')) as HTMLElement | null;
+      if (!lastWrap || !anchor) return;
+      // The message wrapper, not the card itself: the sender label sits
+      // above the card and was clipped under the sticky strip.
+      const target = lastWrap;
+      const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
       if (Math.abs(delta) > 2) container.scrollTop += delta;
       // The parent is reading the card; do not yank them back down while
       // images load or the blurb drains (the drain's 18ms tick scrolls to the
@@ -5269,6 +5282,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 : rawDisplay;
               const hasQuickReplies = !!(msg.quickReplies?.length || (msg as any).uiCardData?.quickReplies?.length);
               const showBubble = !isAttachmentMsg || displayContent.length > 0 || hasQuickReplies;
+              // A person card's turn: the reply chips render right under the
+              // card, before the prose, and the prose bubble may run as wide
+              // as the card. Measured before: a 258px bubble of 21px type put
+              // the four chips 123-279px below a phone's fold.
+              const hasPersonCardMsg = !alignRight && !!(msg.matchCards || []).some((c: any) => /(surrogate|egg donor|sperm donor|donor)/i.test(String(c?.type || "")) && !/agency|program|bank|clinic/i.test(String(c?.type || "")));
               // The other parent's words must never sit under the concierge's
               // face: a monogram from their name, on the secondary tint.
               const msgAvatarUrl = !alignRight
@@ -5296,6 +5314,127 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               // most visibly the cost-sheet card's Acknowledge / I have
               // questions buttons could appear stuck or inert until a hard
               // refresh. Index is only the fallback for unsaved local stubs.
+              // Reply chips: inside the bubble normally; on a person-card turn,
+              // directly under the card (see hasPersonCardMsg).
+              const renderQuickReplies = () => {
+                if (i !== messages.length - 1) return null;
+                        // msg.quickReplies is a transient copy set by the SSE done
+                        // handler - a typing-animation race can drop it. The persisted
+                        // uiCardData.quickReplies (refreshed by the 3s poll) is the
+                        // durable source of truth, so fall back to it.
+                        const qrOptions: string[] = (msg.quickReplies && msg.quickReplies.length > 0)
+                          ? msg.quickReplies
+                          : (((msg as any).uiCardData?.quickReplies as string[] | undefined) || []);
+                        // A person card's two card actions live here now, as
+                        // replies, next to "I have questions" and "Schedule":
+                        // the red X and green heart were marketplace verbs on
+                        // a card the concierge had just recommended.
+                        const isPersonCard = (c: any) => /(surrogate|egg donor|sperm donor|donor)/i.test(String(c?.type || "")) && !/agency|program|bank|clinic/i.test(String(c?.type || ""));
+                        const latestPersonCard = [...messages].reverse().flatMap((m) => m.matchCards || []).find(isPersonCard) || null;
+                        // The card's own turn, or a follow-up turn whose chips are about it.
+                        const cardForChips = (msg.matchCards || []).find(isPersonCard)
+                          || (latestPersonCard && qrOptions.some((q) => /save as favorite|not the right fit|schedule a free consultation|questions about (her|him)/i.test(q)) ? latestPersonCard : null);
+                        // No "Save as favorite" right after the parent saved.
+                        const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+                        const justSaved = !!lastUserMsg && /as a favorite|save as favorite/i.test(String(lastUserMsg.content || ""));
+                        const saveChip = cardForChips && !justSaved ? "Save as favorite" : null;
+                        const allOptions = saveChip && !qrOptions.some((q) => /save as favorite/i.test(q)) ? [...qrOptions, saveChip] : qrOptions;
+                        if (allOptions.length === 0) return null;
+                        const isMulti = msg.multiSelect ?? !!(msg as any).uiCardData?.multiSelect;
+                        const isBinary = qrOptions.length === 2 && !isMulti;
+                        // Filled-vs-muted only means something for a real yes/no
+                        // pair. "First time" vs "I've done IVF before" was drawn
+                        // as a right answer and a wrong one purely by position.
+                        const isYesNo = isBinary && isAffirmativeReply(qrOptions[0]) && /^(no\b|not\b|never\b|skip\b|later\b|maybe later|i(?:'| a)m not|don'?t|do not|no,)/i.test(qrOptions[1].trim());
+                        return (
+                          <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
+                            {allOptions.map((qr, qi) => {
+                              const isSelected = isMulti && multiSelectChoices.has(qr);
+                              const multiUnselectedStyle: React.CSSProperties = multiIsOutline
+                                ? { backgroundColor: "transparent", color: multiColor, border: `1px solid ${multiColor}` }
+                                : multiIsSecondary
+                                ? { backgroundColor: multiColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
+                                : { backgroundColor: multiColor, color: "#ffffff", border: "none" };
+                              const multiSelectedStyle: React.CSSProperties = {
+                                backgroundColor: qrColor,
+                                color: qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff",
+                                border: "none",
+                              };
+                              // The one chip that moves the family forward is
+                              // the only filled one in a post-card row.
+                              const isScheduleChip = !!cardForChips && !isMulti && /schedule/i.test(qr);
+                              const chipStyle = isYesNo
+                                ? qi === 0
+                                  ? chipPositiveStyle
+                                  : chipDeclineStyle
+                                : isScheduleChip
+                                ? chipPositiveStyle
+                                : isSelected
+                                ? multiSelectedStyle
+                                : multiUnselectedStyle;
+                              return (
+                                <Button
+                                  key={qi}
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  // 44px touch target on phones (the chips are the
+                                  // primary intake control); desktop keeps the
+                                  // brand's compact height.
+                                  className="transition-all hover-elevate font-medium min-h-11 md:min-h-8 qr-chip"
+                                  style={{
+                                    borderRadius: "var(--quick-reply-radius, 999px)",
+                                    paddingLeft: "var(--quick-reply-px, 14px)",
+                                    paddingRight: "var(--quick-reply-px, 14px)",
+                                    paddingTop: "var(--quick-reply-py, 6px)",
+                                    paddingBottom: "var(--quick-reply-py, 6px)",
+                                    touchAction: "manipulation",
+                                    height: "auto",
+                                    ...chipStyle,
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (isMulti) {
+                                      setMultiSelectChoices((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(qr)) next.delete(qr); else next.add(qr);
+                                        return next;
+                                      });
+                                    } else if (cardForChips && /save as favorite/i.test(qr)) {
+                                      persistChatFavorite("donor", cardForChips.providerId);
+                                      handleQuickReply(`Save ${cardForChips.name || "this profile"} as a favorite.`, msg.content ?? "");
+                                    } else {
+                                      handleQuickReply(qr, msg.content ?? "");
+                                    }
+                                  }}
+                                  disabled={sending}
+                                  data-testid={`quick-reply-${qi}`}
+
+                                >
+                                  {isYesNo && qi === 0 && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
+                                  {isSelected && <Check className="shrink-0" style={{ width: "11px", height: "11px", marginRight: "4px" }} />}
+                                  {qr}
+                                </Button>
+                              );
+                            })}
+                            {isMulti && multiSelectChoices.size > 0 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="font-semibold hover:opacity-90"
+                                style={{ borderRadius: "var(--quick-reply-radius, 999px)", backgroundColor: brandColor, color: "white", border: "none", height: "auto", paddingLeft: "var(--quick-reply-px, 14px)", paddingRight: "var(--quick-reply-px, 14px)", paddingTop: "var(--quick-reply-py, 6px)", paddingBottom: "var(--quick-reply-py, 6px)", fontSize: "var(--quick-reply-font-size, 13px)" }}
+                                onClick={() => { const selected = Array.from(multiSelectChoices).join(", "); setMultiSelectChoices(new Set()); handleQuickReply(selected); }}
+                                disabled={sending}
+                                data-testid="multi-select-done"
+                              >
+                                Done ({multiSelectChoices.size})
+                              </Button>
+                            )}
+                          </div>
+                        );
+              };
               return (
             <div key={msg.id || `local-${i}`} id={msg.id ? `msg-${msg.id}` : undefined} data-quote-id={(msg as any).uiCardData?.quoteId || undefined}>
               {/* Date separator - full width, outside the avatar row */}
@@ -5358,6 +5497,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       ))}
                     </div>
                   )}
+                  {/* The decision sits with the face: chips first, prose after. */}
+                  {hasPersonCardMsg && (
+                    <div className="mb-2 w-full max-w-[340px] sm:max-w-[380px] -mt-1" data-testid="card-chips">
+                      {renderQuickReplies()}
+                    </div>
+                  )}
 
                   {/* Doctor cards - same SwipeDeckCard shell as the clinic card's
                       doctor-face tabs, just doctor-specific content. */}
@@ -5397,7 +5542,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         paddingRight: "var(--chat-bubble-px, 16px)",
                         paddingTop: "var(--chat-bubble-py, 11px)",
                         paddingBottom: "var(--chat-bubble-py, 11px)",
-                        maxWidth: "var(--chat-bubble-max-width, 85%)",
+                        maxWidth: hasPersonCardMsg ? "min(100%, 380px)" : "var(--chat-bubble-max-width, 85%)",
                         ...(isOwnMessage
                           ? {
                               backgroundColor: "var(--chat-bubble-own-bg)",
@@ -5444,122 +5589,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           </Fragment>
                         ))}
                       </span>
-                      {/* Quick replies - inside bubble */}
-                      {i === messages.length - 1 && (() => {
-                        // msg.quickReplies is a transient copy set by the SSE done
-                        // handler - a typing-animation race can drop it. The persisted
-                        // uiCardData.quickReplies (refreshed by the 3s poll) is the
-                        // durable source of truth, so fall back to it.
-                        const qrOptions: string[] = (msg.quickReplies && msg.quickReplies.length > 0)
-                          ? msg.quickReplies
-                          : (((msg as any).uiCardData?.quickReplies as string[] | undefined) || []);
-                        // A person card's two card actions live here now, as
-                        // replies, next to "I have questions" and "Schedule":
-                        // the red X and green heart were marketplace verbs on
-                        // a card the concierge had just recommended.
-                        const isPersonCard = (c: any) => /(surrogate|egg donor|sperm donor|donor)/i.test(String(c?.type || "")) && !/agency|program|bank|clinic/i.test(String(c?.type || ""));
-                        const latestPersonCard = [...messages].reverse().flatMap((m) => m.matchCards || []).find(isPersonCard) || null;
-                        // The card's own turn, or a follow-up turn whose chips are about it.
-                        const cardForChips = (msg.matchCards || []).find(isPersonCard)
-                          || (latestPersonCard && qrOptions.some((q) => /save as favorite|not the right fit|schedule a free consultation|questions about (her|him)/i.test(q)) ? latestPersonCard : null);
-                        const saveChip = cardForChips ? "Save as favorite" : null;
-                        const allOptions = saveChip && !qrOptions.some((q) => /save as favorite/i.test(q)) ? [...qrOptions, saveChip] : qrOptions;
-                        if (allOptions.length === 0) return null;
-                        const isMulti = msg.multiSelect ?? !!(msg as any).uiCardData?.multiSelect;
-                        const isBinary = qrOptions.length === 2 && !isMulti;
-                        // Filled-vs-muted only means something for a real yes/no
-                        // pair. "First time" vs "I've done IVF before" was drawn
-                        // as a right answer and a wrong one purely by position.
-                        const isYesNo = isBinary && isAffirmativeReply(qrOptions[0]) && /^(no\b|not\b|never\b|skip\b|later\b|maybe later|i(?:'| a)m not|don'?t|do not|no,)/i.test(qrOptions[1].trim());
-                        return (
-                          <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
-                            {allOptions.map((qr, qi) => {
-                              const isSelected = isMulti && multiSelectChoices.has(qr);
-                              const multiUnselectedStyle: React.CSSProperties = multiIsOutline
-                                ? { backgroundColor: "transparent", color: multiColor, border: `1px solid ${multiColor}` }
-                                : multiIsSecondary
-                                ? { backgroundColor: multiColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
-                                : { backgroundColor: multiColor, color: "#ffffff", border: "none" };
-                              const multiSelectedStyle: React.CSSProperties = {
-                                backgroundColor: qrColor,
-                                color: qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff",
-                                border: "none",
-                              };
-                              // The one chip that moves the family forward is
-                              // the only filled one in a post-card row.
-                              const isScheduleChip = !!cardForChips && !isMulti && /schedule/i.test(qr);
-                              const chipStyle = isYesNo
-                                ? qi === 0
-                                  ? chipPositiveStyle
-                                  : chipDeclineStyle
-                                : isScheduleChip
-                                ? chipPositiveStyle
-                                : isSelected
-                                ? multiSelectedStyle
-                                : multiUnselectedStyle;
-                              return (
-                                <Button
-                                  key={qi}
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  // 44px touch target on phones (the chips are the
-                                  // primary intake control); desktop keeps the
-                                  // brand's compact height.
-                                  className="transition-all hover-elevate font-medium min-h-11 md:min-h-0 qr-chip"
-                                  style={{
-                                    borderRadius: "var(--quick-reply-radius, 999px)",
-                                    paddingLeft: "var(--quick-reply-px, 14px)",
-                                    paddingRight: "var(--quick-reply-px, 14px)",
-                                    paddingTop: "var(--quick-reply-py, 6px)",
-                                    paddingBottom: "var(--quick-reply-py, 6px)",
-                                    touchAction: "manipulation",
-                                    height: "auto",
-                                    ...chipStyle,
-                                  }}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    if (isMulti) {
-                                      setMultiSelectChoices((prev) => {
-                                        const next = new Set(prev);
-                                        if (next.has(qr)) next.delete(qr); else next.add(qr);
-                                        return next;
-                                      });
-                                    } else if (cardForChips && /save as favorite/i.test(qr)) {
-                                      persistChatFavorite("donor", cardForChips.providerId);
-                                      handleQuickReply(`Save ${cardForChips.name || "this profile"} as a favorite.`, msg.content ?? "");
-                                    } else {
-                                      handleQuickReply(qr, msg.content ?? "");
-                                    }
-                                  }}
-                                  disabled={sending}
-                                  data-testid={`quick-reply-${qi}`}
-
-                                >
-                                  {isYesNo && qi === 0 && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
-                                  {isSelected && <Check className="shrink-0" style={{ width: "11px", height: "11px", marginRight: "4px" }} />}
-                                  {qr}
-                                </Button>
-                              );
-                            })}
-                            {isMulti && multiSelectChoices.size > 0 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="font-semibold hover:opacity-90"
-                                style={{ borderRadius: "var(--quick-reply-radius, 999px)", backgroundColor: brandColor, color: "white", border: "none", height: "auto", paddingLeft: "var(--quick-reply-px, 14px)", paddingRight: "var(--quick-reply-px, 14px)", paddingTop: "var(--quick-reply-py, 6px)", paddingBottom: "var(--quick-reply-py, 6px)", fontSize: "var(--quick-reply-font-size, 13px)" }}
-                                onClick={() => { const selected = Array.from(multiSelectChoices).join(", "); setMultiSelectChoices(new Set()); handleQuickReply(selected); }}
-                                disabled={sending}
-                                data-testid="multi-select-done"
-                              >
-                                Done ({multiSelectChoices.size})
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      {!hasPersonCardMsg && renderQuickReplies()}
                     </div>
                   )}
 

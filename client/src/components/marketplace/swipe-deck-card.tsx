@@ -283,7 +283,7 @@ export function SwipeDeckCard({
           {currentPhoto ? (
             <img
               src={currentPhoto}
-              alt={title}
+              alt=""
               className="w-full h-full object-cover"
               loading="eager"
               fetchPriority="high"
@@ -315,7 +315,7 @@ export function SwipeDeckCard({
           <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} />
 
           {isCover && pinnedHeader && (
-            <div className={`absolute inset-0 z-[38] bg-secondary flex flex-col px-5 pt-9 ${readOnly ? "pb-5" : "pb-24"} pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`cover-${id}`}>
+            <div className={`absolute inset-0 z-[38] bg-secondary flex flex-col px-5 pt-9 ${readOnly || hideActions ? "pb-5" : "pb-24"} pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`cover-${id}`}>
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
                 className="absolute top-6 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
@@ -728,7 +728,7 @@ export function SwipeDeckCard({
             </>
           )}
 
-          <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
+          <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly || hideActions ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
             {!pinnedHeader && (
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
               {sponsored && (

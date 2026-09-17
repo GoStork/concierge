@@ -41,6 +41,7 @@ import { trackGemini } from "./src/lib/gemini-usage";
 import { GEMINI_CHAT_MODEL, thinkingOff } from "./src/lib/gemini-models";
 import { jwtSecret } from "./src/lib/app-secrets";
 import { attachBearerUser } from "./src/lib/api-token";
+import { consumeConciergeTurn } from "./src/lib/concierge-budget";
 
 // Tier2 model id, resolved once so the cost meter and the SDK call can never
 // disagree about which model was billed. TIER2_MODEL overrides for A/B.
@@ -456,7 +457,7 @@ function injectMissingQuickReplies(content: string): string {
     [/does she feel like (?:a |she could be a )?good (?:match|fit)/i, "[[QUICK_REPLY:I have questions about her|Schedule a free consultation|Not the right fit for us]]"],
     [/ready to take the next step.*schedule/i, "[[QUICK_REPLY:Yes, schedule a call|Not the right fit for us]]"],
     // Surrogate decline education follow-up
-    [/what didn't feel right|didn't feel right to you|what.*not.*right/i, "[[QUICK_REPLY:Her location|Her age|Her BMI|Too many pregnancies|Too many C-sections|Her medical history|Her appearance|Her vibe or personality|The cost|Something else]]"],
+    [/what didn't feel right|didn't feel right to you|what.*not.*right/i, "[[QUICK_REPLY:Her location|The cost|Her age|Too many pregnancies|Too many C-sections|Her medical history|Her vibe or personality|Her appearance|Her BMI|Something else|I'd rather not say]]"],
     [/find.*someone.*better|schedule.*call.*anyway/i, "[[QUICK_REPLY:Find me a better match|Schedule a call with her anyway]]"],
   ];
 
@@ -1058,6 +1059,11 @@ async function callTier2Claude(
     let text = "";
     let forwarded = 0;
     let sawFunctionCall = false;
+    // A round that opens like a scratchpad ("The parent is asking about
+    // Surrogate #23078, who is currently...") is held back entirely: live,
+    // 311 words of that streamed to the parent before the rewrite reset it.
+    // The final "done" carries whatever post-processing keeps.
+    let held = false;
     const PEEK_CHARS = 80;
     for await (const chunk of result.stream) {
       // NOTE: .functionCalls() and .text() are read separately so a throw in one
@@ -1069,7 +1075,11 @@ async function callTier2Claude(
       try { t = chunk.text(); } catch { /* blocked/partless chunk */ }
       if (!t) continue;
       text += t;
-      if (!freshPhotoUpload && !sawFunctionCall && text.length >= PEEK_CHARS) {
+      if (!held && forwarded === 0 && text.length >= PEEK_CHARS && REASONING_OPENER.test(text)) {
+        held = true;
+        console.warn(`[TIER2] held stream: reasoning-shaped opening "${text.slice(0, 70).replace(/\n/g, " ")}..."`);
+      }
+      if (!freshPhotoUpload && !sawFunctionCall && !held && text.length >= PEEK_CHARS) {
         sse.sendToken(text.slice(forwarded));
         forwarded = text.length;
       }
@@ -1078,7 +1088,7 @@ async function callTier2Claude(
     trackGemini("concierge-tier2", TIER2_MODEL_NAME, response);
     const functionCalls = response.functionCalls() || [];
     // Flush the tail (or a short-but-final reply that never crossed the peek window)
-    if (!freshPhotoUpload && functionCalls.length === 0 && text.length > forwarded) {
+    if (!freshPhotoUpload && !held && functionCalls.length === 0 && text.length > forwarded) {
       sse.sendToken(text.slice(forwarded));
     }
     return { text, functionCalls, response };
@@ -1400,6 +1410,19 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       return { content: fullText, toolCallsExecuted: true, searchToolResults, allToolResults };
     }
   }
+}
+
+// A reply that opens like the model's scratchpad, not like speech to the
+// parent. Used to hold the live stream and to strip the preamble from the
+// final text; the parent must never read "The parent is asking about...".
+const REASONING_OPENER = /^\s*(?:\*\*)?(?:the (?:parent|user|family|client)s? (?:is|are|has|have|wants?|asked|said)\b|i need to\b|let me (?:first|check|look|see|think|start)\b|first,? i(?:'ll| will| need)\b|okay,? (?:so|the)\b|my (?:task|goal|job) (?:is|here)\b|thinking:)/i;
+function stripReasoningPreamble(text: string): { text: string; dropped: number } {
+  if (!REASONING_OPENER.test(text)) return { text, dropped: 0 };
+  const parts = text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
+  let k = 0;
+  while (k < parts.length && REASONING_OPENER.test(parts[k])) k++;
+  if (k === 0 || k >= parts.length) return { text, dropped: 0 };
+  return { text: parts.slice(k).join(" ").trim(), dropped: k };
 }
 
 // Clean session titles: strip alphabetic prefixes from IDs (e.g. "Surrogate #pdf-23068" → "Surrogate #23068")
@@ -2699,6 +2722,20 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true, name: true, firstName: true, lastName: true, email: true, mobileNumber: true } });
     mark("pw:auth_user_loaded");
+
+    // Daily ceiling before any model work. Every turn here fans out to Gemini
+    // and its tools, so an unbounded loop is an unbounded bill - this project
+    // has already lost $845 to one crash-loop. The meter in gemini-usage.ts
+    // records spend; this is the gate in front of it.
+    const budget = await consumeConciergeTurn(prisma, {
+      userId,
+      parentAccountId: currentUser?.parentAccountId,
+      roles: (req.user as any)?.roles,
+      req,
+    });
+    if (!budget.ok) {
+      return res.status(429).json({ error: budget.message });
+    }
     if (currentSessionId) {
       const session = await prisma.aiChatSession.findUnique({ where: { id: currentSessionId } });
       if (!session) {
@@ -6888,6 +6925,76 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       }
     }
 
+    // === CANONICAL CHIP BYPASS ===
+    // The four replies under a person card are known intents, not prose to
+    // interpret. Live, Sep 16 2026: "I have questions about her" reached the
+    // model, the profile lookup came back empty, the model searched again and
+    // the parent got a different woman with no acknowledgment. None of the
+    // four ever reaches the model now; it enters only on the parent's own
+    // free-text question. Agencies, clinics and programs keep the model path.
+    if (!serverBypassServed && currentSessionId) {
+      const msgT = userMessage.trim();
+      const isQuestionsChip = /^(?:i have (?:some |a few |more )?questions?(?: about (?:her|him|them|it))?|more questions)[.!?]?$/i.test(msgT);
+      const isPassChip = /^not the right fit for us\b/i.test(msgT) || /^not [^\n]{0,60}- show me someone else\.?$/i.test(msgT);
+      const saveM = msgT.match(/^save (.+?) as a favorite\.?$/i) || msgT.match(/^i like (.+?)!\s*save as favorite\.?(?:\s*❤️)?$/i);
+      const isScheduleChip = /^(?:schedule a free consultation|yes,? schedule a call|schedule a call with (?:her|him|them|the agency))\.?$/i.test(msgT);
+      if (isQuestionsChip || isPassChip || saveM || isScheduleChip) {
+        try {
+          const mc = await findLatestMatchCard(currentSessionId);
+          const t = String(mc?.type || "").toLowerCase();
+          const isPerson = /(surrogate|egg donor|sperm donor|donor)/.test(t) && !/agency|program|bank|clinic/.test(t);
+          const pron = t.includes("sperm") ? "him" : (t.includes("clinic") || t.includes("agency") || t.includes("program") || t.includes("doctor")) ? "them" : "her";
+          const Poss = pron === "him" ? "His" : "Her";
+          const subj = pron === "him" ? "He" : "She";
+          let reply: string | null = null;
+          let kind = "";
+          if (isQuestionsChip && mc) {
+            reply = `Of course. What would you like to know about ${pron}?`;
+            kind = "questions";
+          } else if (isPassChip && mc && isPerson) {
+            reply = `That's completely fine - passing is part of finding the right person. ${subj} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:Her location|The cost|Her age|Too many pregnancies|Too many C-sections|Her medical history|Her vibe or personality|Her appearance|Her BMI|Something else|I'd rather not say]]`.replace(/Her /g, `${Poss} `);
+            kind = "pass";
+          } else if (saveM && mc && isPerson && !hasUpcomingProviderConsult) {
+            const acctIds = userRecord?.parentAccountId
+              ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+              : [userId];
+            const handedOff = !!(await prisma.aiChatSession.findFirst({
+              where: { userId: { in: acctIds }, providerId: mc.providerId, handoffCompletedAt: { not: null } },
+              select: { id: true },
+            }));
+            const laneNoun = t.includes("donor") ? "donor" : t.includes("surrogate") ? "surrogate" : "match";
+            const agencyPhrase = t.includes("egg donor") ? "with the egg donor's agency" : t.includes("sperm donor") ? "with the sperm donor's agency" : "with the surrogate's agency";
+            reply = handedOff
+              // 7B-4: a handed-off lane asks why before offering anything.
+              ? `I've saved ${pron} to your favorites! Since your journey in this lane is already officially underway and handed off, help me understand what's prompting the new search - just so I can point you in the right direction. [[QUICK_REPLY:My match fell through|I want a second ${laneNoun} in parallel|I'm not happy with the agency|Just exploring]]`
+              : `Saved - ${pron === "him" ? "he's" : "she's"} in your favorites. The natural next step is a free consultation call ${agencyPhrase}: no commitment, and you can ask them anything directly. [[QUICK_REPLY:Schedule a free consultation|I have questions about ${pron}|Keep looking]]`;
+            kind = handedOff ? "save-handed-off" : "save";
+          } else if (isScheduleChip && mc && isPerson && !hasUpcomingProviderConsult) {
+            let agencyId: string | null = mc.ownerProviderId || null;
+            if (!agencyId && mc.providerId) {
+              const sel = { where: { id: String(mc.providerId) }, select: { providerId: true } } as const;
+              const row = t.includes("surrogate") ? await prisma.surrogate.findUnique(sel).catch(() => null)
+                : t.includes("sperm") ? await prisma.spermDonor.findUnique(sel).catch(() => null)
+                : await prisma.eggDonor.findUnique(sel).catch(() => null);
+              agencyId = (row as any)?.providerId || null;
+            }
+            if (agencyId) {
+              reply = `Good call. Let's get you on the calendar with ${pron === "him" ? "his" : "her"} agency - the call is free and there's no commitment. [[CONSULTATION_BOOKING:${agencyId}]] [[HOT_LEAD:${agencyId}]] [[SAVE:{"journeyStage":"Consultation Requested"}]]`;
+              kind = "schedule";
+            }
+          }
+          if (reply) {
+            finalContent = reply;
+            serverBypassServed = true;
+            sse.sendToken(reply.replace(/\s*\[\[[^\]]*\]\]/g, "").trim());
+            console.log(`[CANONICAL CHIP] ${kind} served deterministically (card=${mc?.providerId || "none"})`);
+          }
+        } catch (e: any) {
+          console.error("[CANONICAL CHIP] failed - falling through to the model:", e?.message);
+        }
+      }
+    }
+
     if (serverBypassServed && finalContent) {
       mark("pw2:bypasses_evaluated");
       // Canned bypass reply already streamed - skip both model tiers.
@@ -6978,10 +7085,15 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         : (mentionedUnsatisfied[0]?.svc ?? profileFallbackService);
       // The parent asked to SEE another person (after a pass, a refinement, or
       // plain curiosity). Any search the model runs on such a turn owes a card.
-      const asksForAnotherProfile = /\b(show me (another|someone else|more|the next|one more)|(another|a different|the next|one more) (surrogate|donor|option|match|profile|candidate|person)|someone else|more options|next (option|match|profile|one))\b/i.test(userMessage || "");
-      const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools &&
+      const asksForAnotherProfile = /^i'?d rather not say\b/i.test(userMessage || "") || /\b(show me (another|someone else|more|the next|one more)|(another|a different|the next|one more) (surrogate|donor|option|match|profile|candidate|person)|someone else|more options|next (option|match|profile|one))\b/i.test(userMessage || "");
+      const forceToolUseForSearch = (userSaidReady && curationAlreadySent && needsTools &&
         (presentedProviderIds.size === 0 ||
-          (pendingReadyService != null && !typeSatisfied(pendingReadyService)));
+          (pendingReadyService != null && !typeSatisfied(pendingReadyService))))
+        // "Show me another" / "I'd rather not say" after a card: the parent
+        // asked to SEE someone. Live, the model answered "I am searching our
+        // network now" and ran nothing; forcing the tool round makes the
+        // owed-card guarantee reachable.
+        || (asksForAnotherProfile && needsTools && presentedProviderIds.size > 0);
 
       // DETERMINISTIC SEARCH GATE (surrogate D-cycle). The prompt's SEARCH GATE rule
       // ("no search until D-intake complete + [[CURATION]] + ready") keeps getting jumped
@@ -7054,7 +7166,20 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // reads "here's someone I found for you" with no card underneath.
       // Running the search here removes the model's discretion: it only has
       // to write the presentation.
-      if (!preSearchForReady && forceToolUseForSearch && pendingReadyService) {
+      // "Show me another" / "I'd rather not say": the service is the one the
+      // parent just passed on, whatever the intake ladder says is pending.
+      // Live: a surrogate pass came back as an egg donor because the model
+      // picked the other open lane.
+      let anotherService: string | null = null;
+      if (asksForAnotherProfile && presentedProviderIds.size > 0) {
+        try {
+          const lc = await latestCardPromise;
+          const lt = String(lc?.type || "").toLowerCase();
+          anotherService = lt.includes("surrogate") && !lt.includes("agency") ? "surrogate" : lt.includes("egg") ? "egg" : lt.includes("sperm") ? "sperm" : null;
+        } catch { /* fall back to the ladder */ }
+      }
+      const preSearchService: string | null = anotherService || pendingReadyService;
+      if (!preSearchForReady && forceToolUseForSearch && preSearchService) {
         const args: Record<string, unknown> = { limit: 10 };
         if (presentedProviderIds.size > 0) args.excludeIds = Array.from(presentedProviderIds);
         // Only HARD preferences the parent actually stated are passed. An
@@ -7070,15 +7195,15 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         // California clinic, and the model then narrated it as "the Colombia
         // program" and booked it instead of the agency + partner clinic.
         const clinicSearchAllowed = !alreadyHasClinic && profile?.needsClinic !== false && !internationalOnly;
-        if (pendingReadyService === "clinic" && !clinicSearchAllowed) {
+        if (preSearchService === "clinic" && !clinicSearchAllowed) {
           console.log(`[READY_TURN] clinic pre-search suppressed (alreadyHasClinic=${alreadyHasClinic} needsClinic=${profile?.needsClinic} internationalOnly=${internationalOnly})`);
-        } else if (pendingReadyService === "clinic") {
+        } else if (preSearchService === "clinic") {
           // The block above only arms on a specific curation phrase ("your
           // perfect clinic matches"); when the wording differs, a forced
           // clinic ready turn was left with no search at all.
           toolName = "search_clinics";
           Object.assign(args, buildClinicSearchArgs());
-        } else if (pendingReadyService === "surrogate" && internationalOnly) {
+        } else if (preSearchService === "surrogate" && internationalOnly) {
           // PATH A: an international-only parent's "ready" means the AGENCY
           // search (the CountryProgram card), never a US surrogate profile.
           // The old branch always armed search_surrogates, so TD-13 got a
@@ -7089,7 +7214,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           if (intlCountry) args.agencyLocation = intlCountry;
           if (userRecord?.country) args.servesParentFromCountry = userRecord.country;
           if (yes(profile?.surrogateTwins)) args.twinsAllowed = true;
-        } else if (pendingReadyService === "surrogate") {
+        } else if (preSearchService === "surrogate") {
           toolName = "search_surrogates";
           if (yes(profile?.surrogateTwins)) args.agreesToTwins = true;
           else if (no(profile?.surrogateTwins)) args.agreesToTwins = false;
@@ -7100,13 +7225,13 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           if (typeof profile?.surrogateMaxCSections === "number") args.maxCsections = profile.surrogateMaxCSections;
           if (typeof profile?.surrogateMaxMiscarriages === "number") args.maxMiscarriages = profile.surrogateMaxMiscarriages;
           if (userRecord?.country) args.parentCountry = userRecord.country;
-        } else if (pendingReadyService === "egg") {
+        } else if (preSearchService === "egg") {
           toolName = "search_egg_donors";
           if (profile?.donorEthnicity) args.ethnicity = profile.donorEthnicity;
           if (profile?.donorEyeColor) args.eyeColor = profile.donorEyeColor;
           if (profile?.donorHairColor) args.hairColor = profile.donorHairColor;
           if (profile?.donorEducation) args.education = profile.donorEducation;
-        } else if (pendingReadyService === "sperm") {
+        } else if (preSearchService === "sperm") {
           toolName = "search_sperm_donors";
           if (profile?.donorEthnicity) args.ethnicity = profile.donorEthnicity;
           if (profile?.donorEyeColor) args.eyeColor = profile.donorEyeColor;
@@ -7114,6 +7239,8 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           if (profile?.donorEducation) args.education = profile.donorEducation;
         }
         if (toolName) {
+          // Never re-present someone the parent has already seen.
+          if (presentedProviderIds.size > 0 && !("excludeIds" in args)) args.excludeIds = Array.from(presentedProviderIds);
           preSearchForReady = { name: toolName, args };
           console.log(`[READY_TURN] pre-search armed: ${toolName} ${JSON.stringify(args)}`);
         }
@@ -8270,6 +8397,17 @@ ${phase0Section}`;
       }).catch((e: any) => console.error("[TIER ROUTER] Failed to activate tier2:", e));
     }
 
+    // The scratchpad never reaches the parent, whatever the stream did.
+    {
+      const stripped = stripReasoningPreamble(finalContent);
+      if (stripped.dropped > 0) {
+        console.warn(`[REASONING STRIP] dropped ${stripped.dropped} leading sentence(s): "${finalContent.slice(0, 90).replace(/\n/g, " ")}..."`);
+        finalContent = stripped.text;
+        sse.sendReset();
+        sse.sendToken(finalContent.replace(/\s*\[\[[^\]]*\]\]/g, "").trim());
+      }
+    }
+
     // QUESTION INTERCEPTOR: Detect when parent asked a question about a presented profile
     // but the AI ignored it and showed a new match card instead.
     const isSkipAction = /not interested|show me another|skip|pass on/i.test(userMessage);
@@ -8287,7 +8425,7 @@ ${phase0Section}`;
       let pronoun = "her";
       try { const mc = currentSessionId ? await findLatestMatchCard(currentSessionId) : null; if (/sperm/i.test(String(mc?.type || ""))) pronoun = "him"; } catch { /* default */ }
       const poss = pronoun === "him" ? "His" : "Her";
-      finalContent = `That's completely fine - passing is part of finding the right person. ${poss === "Her" ? "She" : "He"} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:${poss} location|${poss} age|${poss} BMI|Too many pregnancies|Too many C-sections|${poss} medical history|${poss} appearance|${poss} vibe or personality|The cost|Something else]]`;
+      finalContent = `That's completely fine - passing is part of finding the right person. ${poss === "Her" ? "She" : "He"} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:${poss} location|The cost|${poss} age|Too many pregnancies|Too many C-sections|${poss} medical history|${poss} vibe or personality|${poss} appearance|${poss} BMI|Something else|I'd rather not say]]`;
       sse.sendReset();
       sse.sendToken(finalContent);
     }
@@ -8296,7 +8434,11 @@ ${phase0Section}`;
     // subject-aux inversion) - the old substring heuristic fired the
     // expensive regeneration on declarative fragments. See question-shape.ts.
     const looksLikeQuestion = isInterrogativeShaped(userMessage);
-    const aiShowedNewMatch = /\[\[MATCH_CARD:/i.test(finalContent);
+    // A tag, or prose that introduces a numbered person: on a question turn
+    // the prose fallback no longer manufactures the card, so the prose is
+    // the signal.
+    const aiShowedNewMatch = /\[\[MATCH_CARD:/i.test(finalContent)
+      || /\b(?:here is|here's|meet|another (?:surrogate|donor|option|profile))\b[^\n]{0,80}#\s*[A-Za-z]*-?\d{2,}/i.test(finalContent);
 
     // "I have questions about her" is declarative, so the question detector
     // below never fired and the model read the chip as "next": the parent's
@@ -8359,9 +8501,19 @@ ${phase0Section}`;
             });
             profileText = (profileResult.content as any)?.[0]?.text || "";
 
-            if (profileText && profileText.length > 50) {
+            const pronounLabel = etype === "clinic" ? "them" : etype === "sperm donor" ? "him" : "her";
+            const possLabel = pronounLabel === "them" ? "their" : pronounLabel === "him" ? "his" : "her";
+            // The lookup failed: say so, in second person. It used to fall
+            // through to the model's reply, which had already moved on to a
+            // different person.
+            const lookupFailedReply = `I couldn't pull up ${possLabel} full profile just now, so I won't guess. Try me again in a moment, or I can bring you someone else. [[QUICK_REPLY:Try again|Show me someone else]]`;
+            if (!profileText || profileText.length <= 50) {
+              console.warn(`[QUESTION INTERCEPT] Profile lookup returned ${profileText.length} chars - telling the parent instead of showing a new match`);
+              finalContent = lookupFailedReply;
+              sse.sendReset();
+              sse.sendToken(finalContent.replace(/\s*\[\[[^\]]*\]\]/g, "").trim());
+            } else if (profileText && profileText.length > 50) {
               console.log(`[QUESTION INTERCEPT] Got profile data (${profileText.length} chars), re-asking AI to answer question instead of showing new match`);
-              const pronounLabel = etype === "clinic" ? "them" : etype === "sperm donor" ? "him" : "her";
               messages.push({
                 role: "user",
                 content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about ${pronounLabel}?" [[QUICK_REPLY:More questions|I like ${pronounLabel}!|Show me someone else]]`,
@@ -8378,10 +8530,11 @@ ${phase0Section}`;
                 console.log(`[QUESTION INTERCEPT SUCCESS] AI answered from profile data instead of showing new match (streamed)`);
                 finalContent = retryContent;
               } else {
-                console.log(`[QUESTION INTERCEPT] Retry ${retryContent ? "still showed match card" : "failed"} - restoring original response`);
+                console.log(`[QUESTION INTERCEPT] Retry ${retryContent ? "still showed match card" : "failed"} - telling the parent instead of restoring the new-match reply`);
                 messages.pop();
+                finalContent = lookupFailedReply;
                 sse.sendReset();
-                sse.sendToken(finalContent);
+                sse.sendToken(finalContent.replace(/\s*\[\[[^\]]*\]\]/g, "").trim());
               }
             }
           }
@@ -8702,6 +8855,7 @@ ${phase0Section}`;
       /i'll have (?:those|that|some|a few) (?:for you|ready)/i,
       /stand by while/i,
       /bear with me/i,
+      /i(?:'m| am) (?:now )?(?:searching|looking through|scanning|checking) (?:our|the) (?:network|database|roster)/i,
     ];
     // DELIVERED-IN-THE-SAME-BREATH EXCLUSION: "let me pull up some matches -
     // here she is: [[MATCH_CARD]]" kept its promise; the patterns match the
@@ -10559,7 +10713,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
       // Trigger the fallback if the AI (a) tried to emit a tag but malformed it,
       // (b) introduced a match in prose, or (c) named a searched provider.
-      const shouldRepair = aiAttemptedTags > 0 || matchIntroPattern.test(finalContent) || resultNameInProse;
+      // A question about the current person never earns a manufactured
+      // card: the question interceptor owns that turn (answer or apologize).
+      const questionTurnNoRepair = looksLikeProfileQuestion && isNotAction && !/another|someone else|more options|next one|rather not say/i.test(userMessage);
+      const shouldRepair = (aiAttemptedTags > 0 || matchIntroPattern.test(finalContent) || resultNameInProse) && !questionTurnNoRepair;
+      if (questionTurnNoRepair && (aiAttemptedTags > 0 || matchIntroPattern.test(finalContent) || resultNameInProse)) {
+        console.warn(`[MATCH_CARD FALLBACK] skipped on a question turn - the interceptor answers or apologizes instead of switching people`);
+      }
       if (shouldRepair) {
         console.log(`[MATCH_CARD FALLBACK] AI introduced a match but forgot/malformed [[MATCH_CARD:...]] tag (attemptedTags=${aiAttemptedTags}) - attempting auto-creation from tool results`);
         const mentionedNameMatch = finalContent.match(/(?:Surrogate|Donor|Clinic)\s*#?(\d+)/i);
@@ -10701,7 +10861,24 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (matchCards.length > 0) {
       const tagRe = /\[\[[^\]]*\]\]/g;
       const tags = finalContent.match(tagRe) || [];
-      const prose = finalContent.replace(tagRe, "").replace(/\n{2,}/g, "\n").trim();
+      let prose = finalContent.replace(tagRe, "").replace(/\n{2,}/g, "\n").trim();
+      // Text and card must agree: a sentence that names a different profile
+      // number than the card is dropped before anything else happens (the
+      // FLOOR then regenerates if nothing citing the card is left).
+      {
+        const capCardNum = (String(matchCards[0]?.name || "").match(/#\s*[A-Za-z]*-?(\d+)/) || [])[1] || "";
+        if (capCardNum) {
+          const sents = prose.split(/(?<=[.!?])\s+/).filter(Boolean);
+          const kept = sents.filter((sn) => !(sn.match(/#\s*[A-Za-z]*-?\d{2,}/g) || []).some((ref) => ref.replace(/[^0-9]/g, "") !== capCardNum));
+          if (kept.length !== sents.length) {
+            console.warn(`[MATCH BLURB CAP] dropped ${sents.length - kept.length} sentence(s) naming a different profile than #${capCardNum}`);
+            prose = kept.join(" ").trim();
+            finalContent = [prose, ...tags].join(" ").trim();
+            sse.sendReset();
+            sse.sendToken(prose);
+          }
+        }
+      }
       const words = prose.split(/\s+/).filter(Boolean).length;
       if (words > 80) {
         const sentences = prose.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -10737,7 +10914,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           if (row?.liveBirths != null) facts.push("mom of", "mother of", "children");
           const citesFact = facts.some((f) => f && prose2.toLowerCase().includes(f.toLowerCase()));
           const style = styleOf(typeof matchmaker !== "undefined" ? (matchmaker as any) : null);
-          const bannedForDirect = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(prose2);
+          const bannedForDirect = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible|perfectly|aligning|aligned)\b/i.test(prose2);
           if ((row && !citesFact) || bannedForDirect) {
             // The card's own name travels with the facts: the retry has the
             // whole search result in context and, unpinned, once introduced
@@ -10746,12 +10923,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             const summary = row ? JSON.stringify({ displayName: cardName || undefined, age: row.age, location: row.location, liveBirths: row.liveBirths, cSections: row.cSections, isExperienced: row.isExperienced, openToSameSexCouple: row.openToSameSexCouple, agreesToTwins: row.agreesToTwins, agreesToInternationalParents: row.agreesToInternationalParents }) : "{}";
             const retry = await claudeRetry([
               ...messages,
-              { role: "user", content: `SYSTEM OVERRIDE: Rewrite ONLY your introduction of this match as plain prose, 2-3 sentences, under 60 words, in your persona's register${style === "direct" ? " (direct: no \"wonderful\", \"beautifully\", \"phenomenal\", \"amazing\")" : ""}. This is the ONLY profile you may describe or name${cardName ? ` (${cardName})` : ""}; do not mention any other profile. Cite at least two facts from this profile summary and one preference the parent stated: ${summary}. Do NOT output any [[...]] tags, no bullet points, no headings.` },
+              { role: "user", content: `SYSTEM OVERRIDE: Rewrite ONLY your introduction of this match as plain prose, 2-3 sentences, under 60 words, in your persona's register${style === "direct" ? " (direct: no \"wonderful\", \"beautifully\", \"phenomenal\", \"amazing\", \"perfectly\", \"aligning\")" : ""}. This is the ONLY profile you may describe or name${cardName ? ` (${cardName})` : ""}; do not mention any other profile. Cite at least two facts from this profile summary and one preference the parent stated: ${summary}. Do NOT output any [[...]] tags, no bullet points, no headings.` },
             ]).catch(() => "");
             const newProse = (retry || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{2,}/g, "\n").trim();
             const newWords = newProse.split(/\s+/).filter(Boolean).length;
             const newCites = facts.some((f) => f && newProse.toLowerCase().includes(f.toLowerCase()));
-            const newBanned = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible)\b/i.test(newProse);
+            const newBanned = style === "direct" && /\b(wonderful|beautifully|phenomenal|amazing|incredible|perfectly|aligning|aligned)\b/i.test(newProse);
             // A rewrite that names a profile number other than the card's is
             // a different person - text and card must agree.
             const cardNum = (cardName.match(/#\s*([A-Za-z]*-?\d+)/) || [])[1]?.replace(/[^0-9]/g, "") || "";
