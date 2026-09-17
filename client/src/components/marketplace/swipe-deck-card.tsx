@@ -672,9 +672,16 @@ export function SwipeDeckCard({
                   if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); setSlideIndex((i + 1) % totalSlides); (e.currentTarget.parentElement?.children[(i + 1) % totalSlides] as HTMLElement | undefined)?.focus(); }
                   else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); setSlideIndex((i - 1 + totalSlides) % totalSlides); (e.currentTarget.parentElement?.children[(i - 1 + totalSlides) % totalSlides] as HTMLElement | undefined)?.focus(); }
                 }}
-                className={`h-[3px] flex-1 rounded-full pointer-events-auto border-0 p-0 focus-visible:outline-none focus-visible:h-[5px] focus-visible:ring-2 focus-visible:ring-ring transition-all duration-200 ${i === slideIndex ? (isCover ? "bg-foreground/70" : "bg-white") : (isCover ? "bg-foreground/20" : "bg-white/40")}`}
+                // The visible bar stays 3px; the BUTTON is 24px tall so a
+                // thumb (or a screen-reader touch explore) can land on it.
+                className="group h-6 flex-1 flex items-start pointer-events-auto border-0 p-0 bg-transparent focus-visible:outline-none rounded-full"
                 data-testid={`progress-segment-${i}`}
-              />
+              >
+                <span
+                  aria-hidden="true"
+                  className={`block w-full h-[3px] rounded-full transition-all duration-200 group-focus-visible:h-[5px] group-focus-visible:ring-2 group-focus-visible:ring-ring ${i === slideIndex ? (isCover ? "bg-foreground/70" : "bg-white") : (isCover ? "bg-foreground/20" : "bg-white/40")}`}
+                />
+              </button>
             ))}
           </div>
 
@@ -731,6 +738,18 @@ export function SwipeDeckCard({
           <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly || hideActions ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
             {!pinnedHeader && (
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+              {/* In chat the heart button is hidden, so a save has to show
+                  somewhere: the card wears it. */}
+              {isSaved && hideActions && (
+                <Badge
+                  className="bg-white/90 text-foreground font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
+                  data-testid={`badge-saved-${id}`}
+                >
+                  <Heart className="w-3 h-3" style={{ color: "var(--swipe-save)" }} fill="currentColor" aria-hidden="true" />
+                  Saved
+                </Badge>
+              )}
               {sponsored && (
                 <Badge
                   className="bg-accent/90 text-accent-foreground font-ui px-2 py-0.5 gap-1"

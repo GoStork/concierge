@@ -170,7 +170,7 @@ export function WhatIKnowStrip({ conciergeName, lastExchange }: { conciergeName?
 
   return (
     <div
-      className="mx-3 mt-1 mb-2 border border-border bg-secondary px-3.5 py-2.5"
+      className="mx-3 mt-1 mb-1.5 md:mb-2 border border-border bg-secondary px-3.5 py-1.5 md:py-2.5"
       style={{ borderRadius: "var(--chat-bubble-radius, 20px)" }}
       data-testid="what-i-know-strip"
     >

@@ -1,6 +1,6 @@
 import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { greetingNameOf } from "@/lib/display-name";
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
+import { useSyncExternalStore, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { ivfContextSearch } from "@/components/ivf-success-rates-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
@@ -1787,8 +1787,19 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[] = []):
 // empty. This writes to the same endpoints the marketplace uses, so chat saves
 // show up in Saved (and count toward sponsorship "Saves"). Donors/surrogates/
 // sperm share /donor-preferences; clinics/doctors/agencies use /profile-preferences.
+// Ids saved from chat in this session, so the card can wear its "Saved"
+// badge the moment the chip is tapped (the hidden heart button used to be
+// the only saved-state UI, and chat hides it).
+const chatSavedIds = new Set<string>();
+const chatSavedListeners = new Set<() => void>();
+function subscribeChatSaved(cb: () => void) { chatSavedListeners.add(cb); return () => { chatSavedListeners.delete(cb); }; }
+function useChatSaved(id?: string | null): boolean {
+  return useSyncExternalStore(subscribeChatSaved, () => !!id && chatSavedIds.has(id), () => false);
+}
 function persistChatFavorite(kind: "donor" | "clinic" | "doctor" | "agency", id?: string | null) {
   if (!id) return;
+  chatSavedIds.add(id);
+  chatSavedListeners.forEach((cb) => cb());
   const url = kind === "donor"
     ? `/api/donor-preferences/favorite/${id}`
     : `/api/profile-preferences/${kind}/favorite/${id}`;
@@ -2144,6 +2155,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
   // early return, the second render would call more hooks than the first
   // ("Rendered more hooks than during the previous render").
   const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
+  const savedHere = useChatSaved(card.providerId);
   const profileId = profile?.id;
   const profileTypeForView: "egg-donor" | "surrogate" | "sperm-donor" =
     cardType.toLowerCase() === "surrogate" ? "surrogate"
@@ -2223,11 +2235,15 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
 
     return (
       <div
-        className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]`}
+        // 4/5 on phones: with the chips under the card, 3/4 put the fourth
+        // chip 44px below a 609px log; 4/5 brings the whole decision above
+        // the fold.
+        className={`w-full ${fill ? "h-full" : "aspect-[4/5] sm:aspect-[3/4]"} overflow-hidden motion-safe:animate-[slideUp_0.4s_ease-out_forwards]`}
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
           id={card.providerId}
+          isSaved={savedHere || !!profile?.isFavorite || !!profile?.isFavorited}
           photos={photos}
           title={title}
           statusLabel={statusLabel}
@@ -2242,7 +2258,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
           chatMode
           hideActions
           onPass={() => onAction(`Not the right fit for us - show me someone else.`)}
-          onSave={() => { persistChatFavorite("donor", card.providerId); onAction(`Save ${card.name || title} as a favorite.`); }}
+          onSave={() => { persistChatFavorite("donor", card.providerId); onAction("Save as favorite"); }}
           onViewFullProfile={() => onViewProfile({ ...card, ownerProviderId: card.ownerProviderId || profile?.providerId })}
         />
       </div>
@@ -5402,8 +5418,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                         return next;
                                       });
                                     } else if (cardForChips && /save as favorite/i.test(qr)) {
+                                      // The parent's bubble reads what they tapped; the
+                                      // server resolves the person from the latest card.
                                       persistChatFavorite("donor", cardForChips.providerId);
-                                      handleQuickReply(`Save ${cardForChips.name || "this profile"} as a favorite.`, msg.content ?? "");
+                                      handleQuickReply("Save as favorite", msg.content ?? "");
                                     } else {
                                       handleQuickReply(qr, msg.content ?? "");
                                     }
@@ -5499,7 +5517,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   )}
                   {/* The decision sits with the face: chips first, prose after. */}
                   {hasPersonCardMsg && (
-                    <div className="mb-2 w-full max-w-[340px] sm:max-w-[380px] -mt-1" data-testid="card-chips">
+                    <div className="mb-1.5 w-full max-w-[340px] sm:max-w-[380px] -mt-2" data-testid="card-chips">
                       {renderQuickReplies()}
                     </div>
                   )}

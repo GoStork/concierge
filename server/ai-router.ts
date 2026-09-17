@@ -6936,7 +6936,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       const msgT = userMessage.trim();
       const isQuestionsChip = /^(?:i have (?:some |a few |more )?questions?(?: about (?:her|him|them|it))?|more questions)[.!?]?$/i.test(msgT);
       const isPassChip = /^not the right fit for us\b/i.test(msgT) || /^not [^\n]{0,60}- show me someone else\.?$/i.test(msgT);
-      const saveM = msgT.match(/^save (.+?) as a favorite\.?$/i) || msgT.match(/^i like (.+?)!\s*save as favorite\.?(?:\s*❤️)?$/i);
+      const saveM = msgT.match(/^save (.+?) as a favorite\.?$/i) || msgT.match(/^i like (.+?)!\s*save as favorite\.?(?:\s*❤️)?$/i) || msgT.match(/^(save as favorite)\.?$/i);
       const isScheduleChip = /^(?:schedule a free consultation|yes,? schedule a call|schedule a call with (?:her|him|them|the agency))\.?$/i.test(msgT);
       if (isQuestionsChip || isPassChip || saveM || isScheduleChip) {
         try {
@@ -6952,7 +6952,9 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
             reply = `Of course. What would you like to know about ${pron}?`;
             kind = "questions";
           } else if (isPassChip && mc && isPerson) {
-            reply = `That's completely fine - passing is part of finding the right person. ${subj} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:Her location|The cost|Her age|Too many pregnancies|Too many C-sections|Her medical history|Her vibe or personality|Her appearance|Her BMI|Something else|I'd rather not say]]`.replace(/Her /g, `${Poss} `);
+            // Reasons typed to the person: a donor was being asked about C-sections and BMI (live, run 5).
+            const reasons = t.includes("sperm") ? "His location|The cost|His age|His education|Medical or genetic history|His appearance|His personality|Donation history|Something else|I'd rather not say" : t.includes("donor") ? "Her location|The cost|Her age|Her education|Medical or genetic history|Her appearance|Her personality|Donation history|Something else|I'd rather not say" : "Her location|The cost|Her age|Too many pregnancies|Too many C-sections|Her medical history|Her vibe or personality|Her appearance|Her BMI|Something else|I'd rather not say";
+            reply = `That's completely fine - passing is part of finding the right person. ${subj} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:${reasons}]]`;
             kind = "pass";
           } else if (saveM && mc && isPerson && !hasUpcomingProviderConsult) {
             const acctIds = userRecord?.parentAccountId
@@ -8423,9 +8425,11 @@ ${phase0Section}`;
       // from the parent's answer.
       console.log(`[PASS GUARD] Parent passed; replacing the model's reply (booking=${/\[\[CONSULTATION_BOOKING:/i.test(finalContent)} card=${/\[\[MATCH_CARD:/i.test(finalContent)}) with the refinement question`);
       let pronoun = "her";
-      try { const mc = currentSessionId ? await findLatestMatchCard(currentSessionId) : null; if (/sperm/i.test(String(mc?.type || ""))) pronoun = "him"; } catch { /* default */ }
+      let mcType = "";
+      try { const mc = currentSessionId ? await findLatestMatchCard(currentSessionId) : null; mcType = String(mc?.type || "").toLowerCase(); if (/sperm/.test(mcType)) pronoun = "him"; } catch { /* default */ }
       const poss = pronoun === "him" ? "His" : "Her";
-      finalContent = `That's completely fine - passing is part of finding the right person. ${poss === "Her" ? "She" : "He"} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:${poss} location|The cost|${poss} age|Too many pregnancies|Too many C-sections|${poss} medical history|${poss} vibe or personality|${poss} appearance|${poss} BMI|Something else|I'd rather not say]]`;
+      const reasons = mcType.includes("sperm") ? "His location|The cost|His age|His education|Medical or genetic history|His appearance|His personality|Donation history|Something else|I'd rather not say" : mcType.includes("donor") ? "Her location|The cost|Her age|Her education|Medical or genetic history|Her appearance|Her personality|Donation history|Something else|I'd rather not say" : "Her location|The cost|Her age|Too many pregnancies|Too many C-sections|Her medical history|Her vibe or personality|Her appearance|Her BMI|Something else|I'd rather not say";
+      finalContent = `That's completely fine - passing is part of finding the right person. ${poss === "Her" ? "She" : "He"} checked the boxes you mentioned, so it helps me to know what didn't feel right to you. [[QUICK_REPLY:${reasons}]]`;
       sse.sendReset();
       sse.sendToken(finalContent);
     }
@@ -10877,6 +10881,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             sse.sendReset();
             sse.sendToken(prose);
           }
+        }
+      }
+      // The four chips ARE the question. A trailing "Would you like to ask
+      // anything, or see other options?" repeats them 224px lower.
+      {
+        const sents = prose.split(/(?<=[.!?])\s+/).filter(Boolean);
+        if (sents.length >= 2 && /\?\s*$/.test(sents[sents.length - 1]) && /\b(would you|do you|shall (?:i|we)|want (?:me )?to|ready to|what do you think|how does (?:she|he|that) (?:sound|feel)|feel like)\b/i.test(sents[sents.length - 1])) {
+          prose = sents.slice(0, -1).join(" ").trim();
+          finalContent = [prose, ...tags].join(" ").trim();
+          console.log(`[MATCH BLURB CAP] dropped trailing question (the chips ask it)`);
         }
       }
       const words = prose.split(/\s+/).filter(Boolean).length;

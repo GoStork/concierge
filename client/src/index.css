@@ -837,6 +837,14 @@ input[type="time"]::-webkit-date-and-time-value {
   letter-spacing: var(--form-label-tracking);
 }
 
+/* Reply chips directly under a match card: the decision must fit above a
+   609px phone log together with the card, so the row sits closer and
+   tighter than a chip row inside a bubble. */
+[data-testid="card-chips"] [data-testid="quick-replies"] {
+  margin-top: 6px;
+  gap: 6px;
+}
+
 /* Desktop top-nav links had no focus indication at all (outline none from
    the reset, no ring class). */
 .desktop-nav-link:focus-visible {
