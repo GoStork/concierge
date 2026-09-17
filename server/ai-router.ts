@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
+import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, repairCardTagTerminators, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession, isLegacyCurationReadyRow } from "./parent-visibility";
 import {
   listOpenConsultations,
@@ -7114,6 +7114,29 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // The parent asked to SEE another person (after a pass, a refinement, or
       // plain curiosity). Any search the model runs on such a turn owes a card.
       const asksForAnotherProfile = /^i'?d rather not say\b/i.test(userMessage || "") || /\b(show me (another|someone else|more|the next|one more)|(another|a different|the next|one more) (surrogate|donor|option|match|profile|candidate|person)|someone else|more options|next (option|match|profile|one))\b/i.test(userMessage || "");
+      // A parent rarely passes by asking for "another". She says why: "that's
+      // too far", "too expensive", "not for me". Live, "That's too far" matched
+      // nothing here, no search was forced, and the model simply re-sent the
+      // SAME clinic card - answering a rejection by repeating itself. A pass is
+      // a pass however it is worded. Only meaningful once a card is on screen,
+      // which is the condition on every branch that reads this.
+      const rejectsLastCard =
+        presentedProviderIds.size > 0 &&
+        /(\btoo (far|expensive|pricey|costly|small|old|young|low)\b|\bnot (for|what) (me|i|us|we)\b|\bdoesn'?t work for (me|us)\b|\bnot interested\b|\bi'?ll pass\b|^\s*pass\b|\bdon'?t (like|want) (this|that|them|this one|that one)\b|\b(somewhere|something) (closer|cheaper|else)\b|\bfarther than\b|\btoo much money\b)/i.test(userMessage || "");
+      const passesOnLastCard = asksForAnotherProfile || rejectsLastCard;
+      if (rejectsLastCard) {
+        // Forcing a fresh excluded search gets her a DIFFERENT profile; this
+        // makes the model use her stated reason as a constraint rather than
+        // dealing the next card off the same pile.
+        messages.push({
+          role: "system" as const,
+          content: `THE PARENT JUST TURNED DOWN THE PROFILE YOU LAST SHOWED, and said why: "${String(userMessage || "").slice(0, 300)}". Rules for this turn, no exceptions:
+- Do NOT show that profile again, and do not re-describe it.
+- Treat her reason as a REAL constraint on every future match in this service, not a one-off. If she said it is too far, the next one has to be meaningfully closer to her; too expensive, meaningfully cheaper; and so on.
+- Acknowledge the pass in ONE short sentence that names her reason, then show ONE new [[MATCH_CARD]] that actually answers it.
+- If nothing in the network can satisfy the constraint, say that plainly and ask what she would trade off. Do NOT present a profile that fails her reason as though it passes.`,
+        });
+      }
       const forceToolUseForSearch = (userSaidReady && curationAlreadySent && needsTools &&
         (presentedProviderIds.size === 0 ||
           (pendingReadyService != null && !typeSatisfied(pendingReadyService))))
@@ -7121,7 +7144,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         // asked to SEE someone. Live, the model answered "I am searching our
         // network now" and ran nothing; forcing the tool round makes the
         // owed-card guarantee reachable.
-        || (asksForAnotherProfile && needsTools && presentedProviderIds.size > 0);
+        || (passesOnLastCard && needsTools && presentedProviderIds.size > 0);
 
       // DETERMINISTIC SEARCH GATE (surrogate D-cycle). The prompt's SEARCH GATE rule
       // ("no search until D-intake complete + [[CURATION]] + ready") keeps getting jumped
@@ -7199,11 +7222,14 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // Live: a surrogate pass came back as an egg donor because the model
       // picked the other open lane.
       let anotherService: string | null = null;
-      if (asksForAnotherProfile && presentedProviderIds.size > 0) {
+      if (passesOnLastCard && presentedProviderIds.size > 0) {
         try {
           const lc = await latestCardPromise;
           const lt = String(lc?.type || "").toLowerCase();
-          anotherService = lt.includes("surrogate") && !lt.includes("agency") ? "surrogate" : lt.includes("egg") ? "egg" : lt.includes("sperm") ? "sperm" : null;
+          // "clinic" was missing here, so a passed-on clinic fell through to
+          // whatever the intake ladder had pending - which is how a rejected
+          // clinic could come back around as the answer.
+          anotherService = lt.includes("surrogate") && !lt.includes("agency") ? "surrogate" : lt.includes("egg") ? "egg" : lt.includes("sperm") ? "sperm" : lt.includes("clinic") ? "clinic" : null;
         } catch { /* fall back to the ladder */ }
       }
       const preSearchService: string | null = anotherService || pendingReadyService;
@@ -10445,6 +10471,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
 
     let matchCards: any[] = [];
+    // Repair single-bracket tag closes BEFORE anything reads or strips tags:
+    // every consumer below keys off "]]", so `[[MATCH_CARD:{...}]` would both
+    // fail to become a card and survive the strip, leaking the raw tag into
+    // the parent's chat as prose.
+    finalContent = repairCardTagTerminators(finalContent);
     // Track AI-emitted cards that were rejected for missing required fields - the fallback
     // below can use the AI's intent (mentioned type/id) to repair them from tool results.
     let aiAttemptedTags = 0;

@@ -191,3 +191,63 @@ export function parseMatchCardTag(raw: string): ParsedCardTag {
   if (card.type && UUID_RE.test(card.providerId)) return { kind: "salvage", card };
   return { kind: "unusable" };
 }
+
+/**
+ * Repair structured card tags the model closed with a single "]".
+ *
+ * The documented form is `[[MATCH_CARD:{...}]]`. Gemini intermittently emits
+ * `[[MATCH_CARD:{...}]` - one closing bracket - and every consumer downstream
+ * keys off the `]]` terminator, so a single-bracket tag both fails to parse
+ * into a card AND survives the strip pass, which is how the raw
+ * `[[MATCH_CARD:{"entityId":"...","entityType":"Clinic"}]` text ended up
+ * rendered as prose in a parent's chat.
+ *
+ * This is a terminator repair on OUR side of a known model defect, not a
+ * fabricated card: the payload has to be a balanced JSON object for the tag to
+ * be rewritten, and what it resolves to is still decided by the normal parse +
+ * DB lookup path. A tag already closed with "]]" is left untouched.
+ */
+export function repairCardTagTerminators(content: string): string {
+  if (!content || content.indexOf("[[") === -1) return content;
+  const TAG_RE = /\[\[([A-Z_]+):\s*\{/g;
+  let out = content;
+  let guard = 0;
+  // Re-scan from the start after each repair: an insertion shifts every later
+  // offset, and there are at most a handful of tags in a turn.
+  for (;;) {
+    if (guard++ > 50) break;
+    TAG_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let repaired = false;
+    while ((m = TAG_RE.exec(out)) !== null) {
+      const braceStart = m.index + m[0].length - 1;
+      let depth = 0, inStr = false, esc = false, braceEnd = -1;
+      for (let i = braceStart; i < out.length; i++) {
+        const ch = out[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (ch === "\\") esc = true;
+          else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') inStr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") {
+          depth--;
+          if (depth === 0) { braceEnd = i; break; }
+        }
+      }
+      if (braceEnd === -1) continue; // unbalanced - leave it to the unusable path
+      const after = out.slice(braceEnd + 1);
+      const closing = /^\s*\]\]/.test(after);
+      if (closing) continue; // already well formed
+      if (!/^\s*\]/.test(after)) continue; // not a single-bracket close either
+      const insertAt = braceEnd + 1 + after.indexOf("]") + 1;
+      out = `${out.slice(0, insertAt)}]${out.slice(insertAt)}`;
+      repaired = true;
+      break;
+    }
+    if (!repaired) break;
+  }
+  return out;
+}
