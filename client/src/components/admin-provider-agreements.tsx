@@ -28,6 +28,7 @@ import { PandaDocTemplateEditor } from "@/components/pandadoc-template-editor";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { SigningLinkControl } from "@/components/security/signing-link-control";
 
 interface EligibleProvider {
   providerId: string;
@@ -49,6 +50,9 @@ interface AgreementRow {
   completedAt: string | null;
   supersededAt: string | null;
   guestOpenedAt: string | null;
+  hasGuestLink?: boolean;
+  guestLinkRevokedAt?: string | null;
+  guestLinkExpiresAt?: string | null;
   autoRemindCount: number;
   reminderOpen: boolean;
 }
@@ -455,6 +459,20 @@ export function AdminProviderAgreements({ fixedProviderId }: { fixedProviderId?:
                                 <div className="t-helper mt-1 whitespace-nowrap">
                                   {a.guestOpenedAt ? `Opened ${fmtDate(a.guestOpenedAt)}` : "Not opened yet"}
                                   {a.autoRemindCount > 0 ? ` · reminded ${a.autoRemindCount}x` : ""}
+                                </div>
+                              )}
+                              {/* The login-free signing link, and the way to
+                                  switch it off if it reached the wrong inbox. */}
+                              {!superseded && (
+                                <div className="mt-1.5">
+                                  <SigningLinkControl
+                                    hasGuestLink={(a as any).hasGuestLink}
+                                    guestLinkRevokedAt={(a as any).guestLinkRevokedAt}
+                                    guestLinkExpiresAt={(a as any).guestLinkExpiresAt}
+                                    basePath={`/api/admin/provider-agreements/${a.id}`}
+                                    invalidateKeys={["/api/admin/provider-agreements"]}
+                                    testIdSuffix={a.id}
+                                  />
                                 </div>
                               )}
                             </>

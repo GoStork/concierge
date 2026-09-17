@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { SigningLinkControl } from "@/components/security/signing-link-control";
 
 interface W9Row {
   providerId: string;
@@ -245,6 +246,19 @@ export function AdminW9Table() {
                               {r.reminderOpen ? "Remind again" : "Send reminder"}
                             </Button>
                           )}
+                        </div>
+                        {/* Login-free signing link: state plus switch-off. The
+                            signed form carries an EIN or SSN, so a link that
+                            reached the wrong inbox has to be killable. */}
+                        <div className="mt-1.5 flex justify-end">
+                          <SigningLinkControl
+                            hasGuestLink={(r as any).hasGuestLink}
+                            guestLinkRevokedAt={(r as any).guestLinkRevokedAt}
+                            guestLinkExpiresAt={(r as any).guestLinkExpiresAt}
+                            basePath={`/api/admin/providers/${r.providerId}/w9`}
+                            invalidateKeys={["/api/admin/w9/providers"]}
+                            testIdSuffix={r.providerId}
+                          />
                         </div>
                       </TableCell>
                     </TableRow>

@@ -1697,8 +1697,14 @@ shown once at enrolment were actually saved.
    the same response as one that never existed, so probing cannot tell them
    apart. Rows that predate the field carry NULL and stay usable rather than
    stranding providers mid-signature; they pick up a deadline on the next send.
-   **Open follow-up:** revocation has no admin button yet - the column is
-   honoured, but switching a link off today means setting it directly.
+   ~~Open follow-up: revocation has no admin button~~ **DONE 2026-09-16.**
+   Both admin tables (W-9 and provider agreements) now show whether a signing
+   link is Live, Expired or Switched off, with "Switch off link" and
+   "Reactivate" beside it. One shared component
+   (`client/src/components/security/signing-link-control.tsx`) serves both,
+   because these two flows were forked once before and re-discovered the same
+   bugs. Re-sending or reminding also clears a revocation, so switching a link
+   off is never permanent by accident.
 6. ~~npm vulnerabilities~~ **DONE 2026-09-16: 21 -> 0.** Not one major
    framework upgrade was needed, because almost every advisory was inherited
    rather than on the package itself. See 10f for the reasoning and 10g for

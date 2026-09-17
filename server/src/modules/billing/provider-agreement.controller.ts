@@ -31,6 +31,7 @@ import {
   Req,
   Res,
   HttpException,
+  HttpCode,
   HttpStatus,
   Inject,
   Logger,
@@ -128,6 +129,11 @@ export class ProviderAgreementController {
         completedAt: a.completedAt,
         supersededAt: a.supersededAt,
         guestOpenedAt: a.guestOpenedAt,
+        // Signing-link lifetime, so the admin table can show whether the link
+        // is live, expired or switched off, and offer the matching action.
+        hasGuestLink: !!a.guestToken,
+        guestLinkRevokedAt: a.guestTokenRevokedAt,
+        guestLinkExpiresAt: a.guestTokenExpiresAt,
         autoRemindCount: a.autoRemindCount,
         reminderOpen: !a.supersededAt && openReminders.has(`pagr:${a.providerId}`),
       })),
@@ -359,6 +365,53 @@ export class ProviderAgreementController {
       url: `${getBaseUrl()}/sign-agreement/${guestToken}`,
     });
     return { shared: emails.length };
+  }
+
+  /**
+   * Kill the login-free signing link for this agreement.
+   *
+   * The expiry added alongside this is a backstop; revocation is the control
+   * for "that link went to the wrong person" or "we re-sent to someone else".
+   * The link stops working immediately for both the signing page and the
+   * download of the executed document. Re-sending or re-sharing mints a fresh
+   * window and clears this, so revoking is never permanent by accident.
+   */
+  @Post("api/admin/provider-agreements/:id/revoke-link")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async revokeAgreementLink(@Req() req: Request, @Param("id") id: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const row = await (prisma as any).providerAgreement.findUnique({
+      where: { id },
+      select: { id: true, guestToken: true, guestTokenRevokedAt: true },
+    });
+    if (!row) throw new HttpException("Agreement not found", HttpStatus.NOT_FOUND);
+    if (!row.guestToken) {
+      throw new HttpException("This agreement has no signing link to revoke", HttpStatus.BAD_REQUEST);
+    }
+    await (prisma as any).providerAgreement.update({
+      where: { id },
+      data: { guestTokenRevokedAt: new Date() },
+    });
+    this.logger.warn(`[ProviderAgreement] signing link revoked for ${id} by ${(req.user as any)?.email}`);
+    return { revoked: true };
+  }
+
+  /** Put a revoked link back in service without re-sending the whole document. */
+  @Post("api/admin/provider-agreements/:id/restore-link")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async restoreAgreementLink(@Req() req: Request, @Param("id") id: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const row = await (prisma as any).providerAgreement.findUnique({
+      where: { id }, select: { id: true, guestToken: true },
+    });
+    if (!row?.guestToken) throw new HttpException("No signing link to restore", HttpStatus.NOT_FOUND);
+    await (prisma as any).providerAgreement.update({
+      where: { id },
+      data: { guestTokenRevokedAt: null, guestTokenExpiresAt: guestLinkExpiry() },
+    });
+    return { revoked: false };
   }
 
   // ── Public: login-free guest signing (token-gated, NO auth) ──

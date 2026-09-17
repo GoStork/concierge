@@ -23,6 +23,7 @@ import {
   Res,
   Inject,
   HttpException,
+  HttpCode,
   HttpStatus,
   Logger,
   UseGuards,
@@ -102,6 +103,11 @@ async function buildW9Status(providerId: string) {
     status: w9?.status || "NOT_SENT",
     requestedAt: w9?.requestedAt || null,
     completedAt: w9?.completedAt || null,
+    // Signing-link lifetime, so the admin table can show whether the link is
+    // live, expired or switched off, and offer the matching action.
+    hasGuestLink: !!w9?.guestToken,
+    guestLinkRevokedAt: w9?.guestTokenRevokedAt || null,
+    guestLinkExpiresAt: w9?.guestTokenExpiresAt || null,
   };
 }
 
@@ -362,6 +368,48 @@ export class W9Controller {
       }
     }
     return { success: true };
+  }
+
+  /**
+   * Kill the login-free signing link for this provider's tax form.
+   *
+   * Same reasoning as the agreement equivalent, and it matters more here: the
+   * signed form carries an EIN or an SSN, and the download obeys this too.
+   * Re-sending or reminding mints a fresh window and clears the revocation.
+   */
+  @Post("api/admin/providers/:providerId/w9/revoke-link")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async revokeW9Link(@Req() req: Request, @Param("providerId") providerId: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const row = await (prisma as any).providerW9.findUnique({
+      where: { providerId }, select: { id: true, guestToken: true },
+    });
+    if (!row?.guestToken) {
+      throw new HttpException("This provider has no signing link to revoke", HttpStatus.BAD_REQUEST);
+    }
+    await (prisma as any).providerW9.update({
+      where: { id: row.id }, data: { guestTokenRevokedAt: new Date() },
+    });
+    this.logger.warn(`[W9] signing link revoked for provider ${providerId} by ${(req.user as any)?.email}`);
+    return { revoked: true };
+  }
+
+  /** Put a revoked tax-form link back in service. */
+  @Post("api/admin/providers/:providerId/w9/restore-link")
+  @UseGuards(SessionOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async restoreW9Link(@Req() req: Request, @Param("providerId") providerId: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const row = await (prisma as any).providerW9.findUnique({
+      where: { providerId }, select: { id: true, guestToken: true },
+    });
+    if (!row?.guestToken) throw new HttpException("No signing link to restore", HttpStatus.NOT_FOUND);
+    await (prisma as any).providerW9.update({
+      where: { id: row.id },
+      data: { guestTokenRevokedAt: null, guestTokenExpiresAt: guestLinkExpiry() },
+    });
+    return { revoked: false };
   }
 
   // ── Public: login-free guest signing (token-gated, NO auth) ──
