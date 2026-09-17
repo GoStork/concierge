@@ -1,16 +1,16 @@
 import { Lock } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon?: React.ReactNode }> = {
-  AWAITING_PAYMENT: { label: "Awaiting Payment", color: "hsl(var(--brand-warning))", bg: "hsl(var(--brand-warning) / 0.1)"  },
-  AUTHORIZED:       { label: "Funds Held",        color: "hsl(var(--brand-warning))", bg: "hsl(var(--brand-warning) / 0.1)", icon: <Lock className="w-3 h-3" /> },
-  PAID:             { label: "Paid",              color: "hsl(var(--brand-success))", bg: "hsl(var(--brand-success) / 0.1)" },
-  CLEARANCE_FAILED: { label: "Clearance Failed",  color: "hsl(var(--brand-error))",   bg: "hsl(var(--brand-error) / 0.1)"  },
+  AWAITING_PAYMENT: { label: "Awaiting Payment", color: "hsl(var(--brand-warning-text))", bg: "hsl(var(--brand-warning) / 0.1)"  },
+  AUTHORIZED:       { label: "Funds Held",        color: "hsl(var(--brand-warning-text))", bg: "hsl(var(--brand-warning) / 0.1)", icon: <Lock className="w-3 h-3" /> },
+  PAID:             { label: "Paid",              color: "hsl(var(--brand-success-text))", bg: "hsl(var(--brand-success) / 0.1)" },
+  CLEARANCE_FAILED: { label: "Clearance Failed",  color: "hsl(var(--brand-error-text))",   bg: "hsl(var(--brand-error) / 0.1)"  },
   EXPIRED:          { label: "Expired",           color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)"      },
   CANCELLED:        { label: "Cancelled",         color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)"      },
   // Refunds are red, not muted: money moved backward. Muted is reserved for
   // invoices where nothing ended up happening (expired, cancelled).
-  REFUNDED:            { label: "Refunded",           color: "hsl(var(--brand-error))", bg: "hsl(var(--brand-error) / 0.1)" },
-  PARTIALLY_REFUNDED:  { label: "Partially Refunded", color: "hsl(var(--brand-error))", bg: "hsl(var(--brand-error) / 0.1)" },
+  REFUNDED:            { label: "Refunded",           color: "hsl(var(--brand-error-text))", bg: "hsl(var(--brand-error) / 0.1)" },
+  PARTIALLY_REFUNDED:  { label: "Partially Refunded", color: "hsl(var(--brand-error-text))", bg: "hsl(var(--brand-error) / 0.1)" },
 };
 
 interface InvoiceStatusBadgeProps {
@@ -25,12 +25,12 @@ interface InvoiceStatusBadgeProps {
 export function InvoiceStatusBadge({ status, medicalClearanceStatus, className = "" }: InvoiceStatusBadgeProps) {
   const isVault = status === "PAID" && medicalClearanceStatus === "PENDING";
   const config = isVault
-    ? { label: "Held in Vault", color: "hsl(var(--brand-warning))", bg: "hsl(var(--brand-warning) / 0.1)", icon: <Lock className="w-3 h-3" /> }
+    ? { label: "Held in Vault", color: "hsl(var(--brand-warning-text))", bg: "hsl(var(--brand-warning) / 0.1)", icon: <Lock className="w-3 h-3" /> }
     : STATUS_CONFIG[status] || { label: status, color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)" };
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${className}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium leading-5 ${className}`}
       style={{ color: config.color, background: config.bg }}
     >
       {config.icon}

@@ -17,7 +17,7 @@ export function agreementStatusBadge(status: string) {
   switch (status) {
     case "SIGNED":
       return (
-        <Badge className="bg-[hsl(var(--brand-success)/0.15)] text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success)/0.3)] border">
+        <Badge className="bg-[hsl(var(--brand-success)/0.15)] text-[hsl(var(--brand-success-text))] border-[hsl(var(--brand-success)/0.3)] border">
           Signed
         </Badge>
       );
@@ -29,7 +29,7 @@ export function agreementStatusBadge(status: string) {
       );
     case "REJECTED":
       return (
-        <Badge className="bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)] border">
+        <Badge className="bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning-text))] border-[hsl(var(--brand-warning)/0.3)] border">
           Rejected
         </Badge>
       );
@@ -220,7 +220,7 @@ export function AgreementRows({
                   <TableCell className="whitespace-nowrap">
                     {agreementStatusBadge(item.status)}
                     {item.progressLabel && (
-                      <span className="text-xs font-medium ml-2" style={{ color: "hsl(var(--brand-warning))" }}>
+                      <span className="text-xs font-medium ml-2" style={{ color: "hsl(var(--brand-warning-text))" }}>
                         {item.progressLabel}
                       </span>
                     )}
@@ -265,7 +265,7 @@ export function AgreementRows({
             </p>
           </div>
           {item.progressLabel && (
-            <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>
+            <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning-text))" }}>
               {item.progressLabel}
             </span>
           )}

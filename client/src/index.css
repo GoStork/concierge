@@ -89,6 +89,12 @@
   /* Error TEXT on Warm Sand / Paper: the fill red above is 3.4:1 as text, so
      inline messages use this darker step (about 6:1). Fill stays --brand-error. */
   --brand-error-text: 0 72% 40%;
+  /* Same rule for the other two status hues: the live success (#10B981) reads
+     2.6:1 as 14px text on Paper and the warning amber about 2:1 on its own
+     tint. Text uses these darker steps; fills and rings keep the base hue.
+     use-brand-settings derives them from the Brand Settings colors at runtime. */
+  --brand-success-text: 142 72% 24%;
+  --brand-warning-text: 32 95% 30%;
 
   /* Fonts */
   /* Live brand uses the platform's own face (SiteSettings.headingFont /

@@ -1,9 +1,12 @@
 /**
- * Booking detail dialog - the meeting popup used by the Calendar page and
- * the three Home dashboards (parent / provider / admin upcoming meetings).
- * Extracted from calendar-page so Home rows can open the exact same popup
- * (Join / Confirm / Decline / Reschedule / Suggest time / Cancel) without
- * navigating away. Single implementation - never fork.
+ * Booking detail - the meeting card used by the Calendar page and the three
+ * Home dashboards (parent / provider / admin upcoming meetings).
+ *
+ * One body (BookingDetailBody), two frames: BookingDetailDialog is the popup
+ * the Calendar and the provider/admin work surfaces still use;
+ * BookingDetailPanel is the same body expanded INLINE under a row, for parent
+ * surfaces where the no-modals rule applies. Single implementation - never
+ * fork the body.
  */
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -55,23 +58,23 @@ export function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId:
   return (
     <div className="space-y-2 pt-1">
       <div className="grid grid-cols-2 gap-2">
-        <Input type="date" value={suggestDate} onChange={(e) => setSuggestDate(e.target.value)} data-testid="input-suggest-date" className="h-8 text-xs" />
-        <Input type="time" value={suggestTime} onChange={(e) => setSuggestTime(e.target.value)} data-testid="input-suggest-time" className="h-8 text-xs" />
+        <Input type="date" value={suggestDate} onChange={(e) => setSuggestDate(e.target.value)} data-testid="input-suggest-date" className="h-10 text-base md:text-sm" />
+        <Input type="time" value={suggestTime} onChange={(e) => setSuggestTime(e.target.value)} data-testid="input-suggest-time" className="h-10 text-base md:text-sm" />
       </div>
       <textarea
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-[var(--radius)] border border-input bg-card px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-base md:text-sm rounded-[var(--radius)] border border-input bg-card px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-suggest-message"
       />
       <div className="flex gap-2">
-        <Button size="sm" className="flex-1 h-7 text-xs gap-1" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !suggestDate} data-testid="button-send-suggestion">
+        <Button size="sm" className="flex-1 gap-1" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !suggestDate} data-testid="button-send-suggestion">
           {suggestMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
           Send
         </Button>
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
   );
@@ -104,33 +107,36 @@ function RescheduleForm({ bookingId, onCancel, onSuccess }: { bookingId: string;
   return (
     <div className="space-y-2 pt-1">
       <div className="grid grid-cols-2 gap-2">
-        <Input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} data-testid="input-reschedule-date" className="h-8 text-xs" />
-        <Input type="time" value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)} data-testid="input-reschedule-time" className="h-8 text-xs" />
+        <Input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} data-testid="input-reschedule-date" className="h-10 text-base md:text-sm" />
+        <Input type="time" value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)} data-testid="input-reschedule-time" className="h-10 text-base md:text-sm" />
       </div>
       <textarea
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-[var(--radius)] border border-input bg-card px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-base md:text-sm rounded-[var(--radius)] border border-input bg-card px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-reschedule-message"
       />
       <div className="flex gap-2">
-        <Button size="sm" className="flex-1 h-7 text-xs gap-1" onClick={() => rescheduleMutation.mutate()} disabled={rescheduleMutation.isPending || !rescheduleDate} data-testid="button-confirm-reschedule">
+        <Button size="sm" className="flex-1 gap-1" onClick={() => rescheduleMutation.mutate()} disabled={rescheduleMutation.isPending || !rescheduleDate} data-testid="button-confirm-reschedule">
           {rescheduleMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
           Reschedule
         </Button>
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
   );
 }
 
-export function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: boolean; onClose: () => void }) {
+function BookingDetailBody({ booking, onClose, inline }: { booking: any; onClose: () => void; inline?: boolean }) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [showSuggestForm, setShowSuggestForm] = useState(false);
   const [showRescheduleForm, setShowRescheduleForm] = useState(false);
+  // Cancelling fired on a single click. It is the one destructive action on
+  // this card, so it asks once, inline.
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const isProvider = booking?.providerUserId === user?.id;
   const isPending = booking?.status === "PENDING";
   const isConfirmed = booking?.status === "CONFIRMED";
@@ -182,13 +188,20 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
   const isParentCancelled = booking.status === "CANCELLED" && booking.cancelledByRole === "parent";
   const isProviderCancelled = booking.status === "CANCELLED" && booking.cancelledByRole === "provider";
 
+  // Second person for whoever is reading. The old pills said "Parent
+  // Cancelled" and "Parent No Show" to the parent themselves.
+  const who = (parentWord: string, providerWord: string) => (isProvider ? parentWord : providerWord);
+  const stripe = booking.status === "CANCELLED" ? "hsl(var(--destructive))" : wasCompleted || isNoShow ? "hsl(var(--muted-foreground))" : booking.status === "PENDING" ? "hsl(var(--brand-warning))" : "hsl(var(--primary))";
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" style={{ backgroundColor: booking.status === "CANCELLED" ? "hsl(var(--destructive))" : wasCompleted || isNoShow ? "hsl(var(--muted-foreground))" : booking.status === "PENDING" ? "hsl(var(--brand-warning))" : "hsl(var(--primary))" }} />
-        <DialogHeader>
-          <DialogTitle>{booking.subject || "Appointment"}</DialogTitle>
-        </DialogHeader>
+    <>
+        {!inline && <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" style={{ backgroundColor: stripe }} />}
+        {inline ? (
+          <h3 className="t-section-title font-heading">{booking.subject || "Appointment"}</h3>
+        ) : (
+          <DialogHeader>
+            <DialogTitle>{booking.subject || "Appointment"}</DialogTitle>
+          </DialogHeader>
+        )}
         <div className="space-y-3 py-2">
           <div className="flex items-center gap-2 text-sm">
             <Clock className="w-4 h-4 text-muted-foreground" />
@@ -239,22 +252,22 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
               // A no-show is not the same as a completed meeting: one is done,
               // the other needs chasing. Warning tone, matching the booking
               // widget everywhere else in the product.
-              isParentNoShow || isProviderNoShow || isNoShow ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
+              isParentNoShow || isProviderNoShow || isNoShow ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning-text))]" :
               wasCompleted ? "bg-muted text-muted-foreground" :
-              booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]" :
-              booking.status === "PENDING" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
+              booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success-text))]" :
+              booking.status === "PENDING" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning-text))]" :
               "bg-muted text-foreground"
             }`}>
               {booking.status === "RESCHEDULED" ? "Rescheduled"
                 : booking.status === "EXPIRED" ? "Expired"
-                : isParentCancelled ? "Parent Cancelled"
-                : isProviderCancelled ? "Provider Cancelled"
+                : isParentCancelled ? who("Cancelled by the parent", "You cancelled")
+                : isProviderCancelled ? who("You cancelled", "Cancelled by the provider")
                 : booking.status === "CANCELLED" ? "Cancelled"
                 : wasCompleted ? "Completed"
-                : isParentNoShow ? "Parent No Show"
-                : isProviderNoShow ? "Provider No Show"
-                : isNoShow ? "No Show"
-                : booking.status === "PENDING" ? "Awaiting Confirmation"
+                : isParentNoShow ? who("Parent missed it", "You missed this call")
+                : isProviderNoShow ? who("You missed it", "Provider missed this call")
+                : isNoShow ? "No one joined"
+                : booking.status === "PENDING" ? (isProvider ? "Awaiting your confirmation" : "Awaiting confirmation")
                 : booking.status}
             </span>
           </div>
@@ -273,14 +286,14 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
 
           {isPending && !isNoShow && isProvider && (
             <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
-              <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">This meeting request needs your confirmation</p>
-              <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
+              <p className="text-sm text-[hsl(var(--brand-warning-text))] font-ui">This meeting request needs your confirmation</p>
+              <p className="text-xs text-[hsl(var(--brand-warning-text))] mt-1">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
             </div>
           )}
 
           {isPending && !isNoShow && !isProvider && (
             <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
-              <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">Awaiting provider confirmation</p>
+              <p className="text-sm text-[hsl(var(--brand-warning-text))] font-ui">Waiting for the provider to confirm</p>
             </div>
           )}
 
@@ -293,15 +306,15 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
 
           {isParentNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper font-ui">Parent no show</p>
-              <p className="t-helper mt-1">The provider joined the meeting room but the parent did not.</p>
+              <p className="t-helper font-ui">{who("Parent no show", "You missed this call")}</p>
+              <p className="t-helper mt-1">{who("You joined the meeting room but the parent did not.", "The provider joined the meeting room but you did not. Pick a new time below when you are ready.")}</p>
             </div>
           )}
 
           {isProviderNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper font-ui">Provider no show</p>
-              <p className="t-helper mt-1">The parent joined the meeting room but the provider did not.</p>
+              <p className="t-helper font-ui">{who("You missed this call", "The provider missed this call")}</p>
+              <p className="t-helper mt-1">{who("The parent joined the meeting room but you did not.", "You joined the meeting room but the provider did not. You can pick a new time below.")}</p>
             </div>
           )}
 
@@ -367,14 +380,43 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
               <CalendarClock className="w-4 h-4" /> New Time
             </Button>
           )}
-          {!wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && !showSuggestForm && (
-            <Button size="sm" variant="outline" className="text-destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-cancel-booking">
-              {cancelMutation.isPending ? "Cancelling..." : "Cancel Booking"}
+          {!wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && !showSuggestForm && !confirmCancel && (
+            <Button size="sm" variant="outline" className="text-[hsl(var(--brand-error-text))]" onClick={() => setConfirmCancel(true)} data-testid="button-cancel-booking">
+              Cancel meeting
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={onClose} className="ml-auto">Close</Button>
+          {confirmCancel && (
+            <div className="w-full flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[hsl(var(--brand-error)/0.3)] bg-[hsl(var(--brand-error)/0.06)] px-3 py-2" role="group" aria-label="Confirm cancellation">
+              <p className="text-sm flex-1 min-w-[12rem]">Cancel this meeting? {isProvider ? "The parent" : "The provider"} will be notified.</p>
+              <Button size="sm" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-confirm-cancel-booking">
+                {cancelMutation.isPending ? "Cancelling..." : "Yes, cancel it"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setConfirmCancel(false)}>Keep it</Button>
+            </div>
+          )}
+          <Button size="sm" variant="outline" onClick={onClose} className="ml-auto">{inline ? "Hide details" : "Close"}</Button>
         </div>
+    </>
+  );
+}
+
+export function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: boolean; onClose: () => void }) {
+  if (!booking) return null;
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <BookingDetailBody booking={booking} onClose={onClose} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The same meeting card expanded in place under its row - no modal. */
+export function BookingDetailPanel({ booking, onClose }: { booking: any; onClose: () => void }) {
+  if (!booking) return null;
+  return (
+    <div className="rounded-[var(--radius)] border bg-secondary/30 p-4 space-y-1" data-testid={`booking-detail-panel-${booking.id}`}>
+      <BookingDetailBody booking={booking} onClose={onClose} inline />
+    </div>
   );
 }

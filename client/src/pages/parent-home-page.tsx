@@ -1,22 +1,27 @@
 /**
  * Parent Home dashboard (/home).
  *
- * Action queue first ("what needs my attention right now"), then upcoming
- * meetings and compact Billing + Agreements summaries with View-all links to
- * the full pages. Billing left the top nav - this page is its front door;
- * /my/billing stays routable for the full tables. Chat remains the app's
- * default landing - Home is the overview, not the front door.
+ * The concierge's read of where things stand first, then the action queue
+ * ("what needs my attention right now"), upcoming meetings, the journey
+ * (done / now / next), and compact Billing + Agreements summaries with
+ * View-all links to the full pages - but only once those sections can hold
+ * anything. On day one the page is the greeting, the next steps and the
+ * journey; cost sheets, invoices and agreements appear as the journey reaches
+ * them, with one line saying what comes later. Billing left the top nav -
+ * this page is its front door; /my/billing stays routable for the full
+ * tables. Chat remains the app's default landing - Home is the overview, not
+ * the front door.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { greetingNameOf } from "@/lib/display-name";
 import { useConciergeName } from "@/hooks/use-concierge-name";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { Map } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { BookingDetailDialog } from "@/components/booking-detail-dialog";
-import { Link, useNavigate } from "react-router-dom";
+import { BookingDetailPanel } from "@/components/booking-detail-dialog";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,11 +31,12 @@ import {
   CalendarClock,
   FileText,
   CheckCircle2,
-  ChevronRight,
   Video,
-  DollarSign,
   MessageCircle,
   Receipt as ReceiptIcon,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
 import { QueueRow, SectionHeader } from "@/components/home/home-sections";
@@ -44,29 +50,54 @@ interface DashboardQueue {
   callsToReschedule?: Array<{ sessionId: string; missedAt: string | null; callLabel: string; providerName: string | null; subjectLabel: string | null }>;
   ipFormPending?: Array<{ responseId: string; promptedAt: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null }>;
   ipForm?: { responseId: string; status: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null } | null;
-  journeyNextSteps?: Array<{ serviceLine: string; typeLabel: string; providerName: string | null; sessionId: string | null; stepId: string; label: string }>;
+  journeyNextSteps?: Array<{ serviceLine: string | null; typeLabel: string; providerName: string | null; sessionId: string | null; stepId: string; label: string }>;
 }
 
 function fmtWhen(iso: string) {
   return new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/** The marketplace tab that shows this journey's profiles. Legal has no
+ *  deck; it goes to chat. */
+function marketplaceTabFor(serviceLine: string | null | undefined, typeLabel: string): string | null {
+  const key = String(serviceLine || typeLabel || "").toLowerCase();
+  if (key.includes("surrog")) return "surrogates";
+  if (key.includes("egg")) return "egg-donors";
+  if (key.includes("sperm")) return "sperm-donors";
+  if (key.includes("ivf") || key.includes("clinic")) return "ivf-clinics";
+  return null;
+}
+
+function joinNames(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 export default function ParentHomePage() {
   const conciergeName = useConciergeName();
-  const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
+  const [openMeetingId, setOpenMeetingId] = useState<string | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const firstName = greetingNameOf(user as any);
   const isViewer = (user as any)?.parentAccountRole === "VIEWER";
+
+  // The tab announced as its URL before: this page had no title.
+  useEffect(() => {
+    const prev = document.title;
+    document.title = "Home - GoStork";
+    return () => { document.title = prev; };
+  }, []);
 
   // Dashboard queries always refetch on mount/focus - the app's global
   // defaults cache forever, which left completed tasks stuck on screen until
   // a hard refresh.
   const fresh = { refetchOnMount: "always" as const, refetchOnWindowFocus: true, staleTime: 15_000 };
 
-  const { data: queue } = useQuery<DashboardQueue>({ queryKey: ["/api/my/dashboard-queue"], ...fresh });
+  const queueQuery = useQuery<DashboardQueue>({ queryKey: ["/api/my/dashboard-queue"], ...fresh });
+  const queue = queueQuery.data;
 
-  const { data: chatSessions = [] } = useQuery<Array<{ id: string; unreadCount?: number }>>({
+  const chatSessionsQuery = useQuery<Array<{ id: string; unreadCount?: number }>>({
     queryKey: ["/api/my/chat-sessions"],
     queryFn: async () => {
       const res = await fetch("/api/my/chat-sessions", { credentials: "include" });
@@ -75,8 +106,9 @@ export default function ParentHomePage() {
     },
     ...fresh,
   });
+  const chatSessions = chatSessionsQuery.data ?? [];
 
-  const { data: invoices = [] } = useQuery<any[]>({
+  const invoicesQuery = useQuery<any[]>({
     queryKey: ["/api/my/invoices"],
     queryFn: async () => {
       const res = await fetch("/api/my/invoices", { credentials: "include" });
@@ -86,8 +118,9 @@ export default function ParentHomePage() {
     enabled: !isViewer,
     ...fresh,
   });
+  const invoices = invoicesQuery.data ?? [];
 
-  const { data: costSheetData } = useQuery<{ quotes: any[] }>({
+  const costSheetQuery = useQuery<{ quotes: any[] }>({
     queryKey: ["/api/my/cost-sheets"],
     queryFn: async () => {
       const res = await fetch("/api/my/cost-sheets", { credentials: "include" });
@@ -98,7 +131,7 @@ export default function ParentHomePage() {
     ...fresh,
   });
 
-  const { data: myAgreements = [] } = useQuery<any[]>({
+  const agreementsQuery = useQuery<any[]>({
     queryKey: ["/api/my/agreements"],
     queryFn: async () => {
       const res = await fetch("/api/my/agreements", { credentials: "include" });
@@ -107,8 +140,9 @@ export default function ParentHomePage() {
     },
     ...fresh,
   });
+  const myAgreements = agreementsQuery.data ?? [];
 
-  const { data: bookings = [] } = useQuery<any[]>({
+  const bookingsQuery = useQuery<any[]>({
     queryKey: ["/api/calendar/bookings", "home"],
     queryFn: async () => {
       const res = await fetch("/api/calendar/bookings", { credentials: "include" });
@@ -117,6 +151,16 @@ export default function ParentHomePage() {
     },
     ...fresh,
   });
+  const bookings = bookingsQuery.data ?? [];
+
+  // Everything the attention card counts. While any of these is still
+  // loading, the count is unknown - the card must not say "all caught up"
+  // (measured: ten seconds of false reassurance on a phone). A failed query
+  // is an error row, never silence.
+  const queueSources = [queueQuery, invoicesQuery, costSheetQuery, chatSessionsQuery];
+  const queueLoading = queueSources.some((q) => q.isLoading && q.fetchStatus !== "idle");
+  const queueErrors = queueSources.filter((q) => q.isError);
+  const retryQueue = () => queueSources.forEach((q) => { if (q.isError) void q.refetch(); });
 
   // Missed calls that still need rebooking - derived server-side PER SESSION
   // (dashboard-queue), because the org-level journey may already be handed
@@ -124,7 +168,7 @@ export default function ParentHomePage() {
   const callsToReschedule = queue?.callsToReschedule || [];
 
   const unpaidInvoices = invoices.filter((i: any) => i.status === "AWAITING_PAYMENT");
-  const costSheets = costSheetData?.quotes || [];
+  const costSheets = costSheetQuery.data?.quotes || [];
   const unackedCostSheets = costSheets.filter((cs: any) => !cs.supersededAt && !cs.parentAcknowledgedAt);
   const upcomingMeetings = bookings
     .filter((b: any) => new Date(b.scheduledAt).getTime() > Date.now() && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status))
@@ -136,23 +180,40 @@ export default function ParentHomePage() {
 
   // One next-step to-do per journey terminal (server-derived from the same
   // ladder the Your Journeys card renders): Onboarding right after signup,
-  // then Exploring Profiles, and so on - one entry per service line.
+  // then Exploring Profiles, and so on - one entry per service line. Two
+  // "Start exploring profiles for your X journey" rows truncated to the same
+  // words on a phone and both went to the same bare /marketplace, so the
+  // service leads the title and each row lands on its own deck.
   const journeyNextSteps = queue?.journeyNextSteps || [];
   const journeyStepCopy = (s: NonNullable<DashboardQueue["journeyNextSteps"]>[number]) => {
     const svc = `${s.typeLabel}${s.providerName ? ` with ${s.providerName}` : ""}`;
+    const tab = marketplaceTabFor(s.serviceLine, s.typeLabel);
     switch (s.stepId) {
       case "onboarding":
-        return { title: `Finish your onboarding with ${conciergeName}`, detail: `${svc}: answer a few questions so we can find your best matches`, cta: "Continue", to: "/chat" };
+        return { title: `Finish getting to know ${conciergeName}`, detail: `${svc}: a few questions so we can find your best matches`, cta: "Continue", to: "/chat" };
       case "exploring":
-        return { title: `Start exploring profiles for your ${s.typeLabel} journey`, detail: `${conciergeName} has matches ready to show you`, cta: "Explore", to: "/marketplace" };
+        return tab
+          ? { title: `${s.typeLabel}: explore your matches`, detail: `${conciergeName} has profiles ready for you`, cta: "Explore", to: `/marketplace?tab=${tab}` }
+          : { title: `${s.typeLabel}: your next step`, detail: `${conciergeName} will walk you through it in chat`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
       case "invoice_paid":
-        return { title: `Next step: ${s.label}`, detail: `${svc}: your invoice is waiting for payment`, cta: "View billing", to: "/my/billing" };
+        return { title: `${s.typeLabel}: your invoice is waiting`, detail: `${svc}: pay it to move to the agreement`, cta: "View billing", to: "/my/billing" };
       default:
-        return { title: `Next step: ${s.label}`, detail: `${svc} journey`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
+        return { title: `${s.typeLabel}: ${s.label.toLowerCase()}`, detail: `${svc}: ${conciergeName} will take you through it in chat`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
     }
   };
+  const nextStepRows = (() => {
+    const seen = new Set<string>();
+    const rows: Array<{ key: string; title: string; detail: string; cta: string; to: string }> = [];
+    for (const s of journeyNextSteps) {
+      const c = journeyStepCopy(s);
+      if (seen.has(c.to)) continue;
+      seen.add(c.to);
+      rows.push({ key: `journey-step-${s.serviceLine}-${s.providerName || "none"}`, ...c });
+    }
+    return rows;
+  })();
 
-  const actionCount =
+  const blockingCount =
     unpaidInvoices.length +
     (queue?.awaitingMySignature.length || 0) +
     (queue?.pendingProposals.length || 0) +
@@ -160,14 +221,59 @@ export default function ParentHomePage() {
     (queue?.ipFormPending?.length || 0) +
     unackedCostSheets.length +
     callsToReschedule.length +
-    journeyNextSteps.length +
     (unreadMessages > 0 ? 1 : 0);
+  const actionCount = blockingCount + nextStepRows.length;
+  // Suggestions are not debts: when nothing is blocked on the parent, the
+  // card is "Your next steps", not "Needs your attention (2)".
+  const queueTitle = blockingCount > 0 ? `Needs your attention (${blockingCount})` : "Your next steps";
+
+  // The concierge's read of where things stand, in one or two sentences,
+  // derived from the same data the cards show. Deterministic on purpose: it
+  // must never disagree with the rows beneath it.
+  const openingLine = (() => {
+    if (queueLoading) return null;
+    const lines = Array.from(new Set(journeyNextSteps.map((s) => s.typeLabel))).filter(Boolean);
+    const journeyPart = lines.length > 0 ? `You're set up for ${joinNames(lines.map((l) => l.toLowerCase()))}.` : "";
+    if (blockingCount > 0) {
+      const n = blockingCount;
+      return `${journeyPart} ${n === 1 ? "One thing is waiting on you" : `${n} things are waiting on you`} - it's listed right below, and I'm in chat whenever you want to talk it through.`.trim();
+    }
+    if (upcomingMeetings.length > 0) {
+      const b = upcomingMeetings[0];
+      return `${journeyPart} Your next meeting is ${fmtWhen(b.scheduledAt)}. Nothing else needs you before then.`.trim();
+    }
+    const first = journeyNextSteps[0];
+    if (first?.stepId === "onboarding") return `${journeyPart} Next, I have a few questions so I can find your best matches - pick up where we left off in chat.`.trim();
+    if (first?.stepId === "exploring") return `${journeyPart} I have profiles ready for you to look through - your next step is choosing who feels right.`.trim();
+    if (first) return `${journeyPart} Your next step is ${first.label.toLowerCase()}, and I'll walk you through it in chat.`.trim();
+    return journeyPart || `Nothing is waiting on you right now. I'm in chat whenever you want to pick things up.`;
+  })();
+
+  // Sections appear when they can hold something. Before the first
+  // consultation there is nothing to price, invoice or sign - six cards of
+  // absence told the parent nothing the journey card does not.
+  const showCostSheets = !isViewer && costSheets.length > 0;
+  const showInvoices = !isViewer && invoices.length > 0;
+  const showAgreements = myAgreements.length > 0;
+  const laterSections: string[] = [];
+  if (!isViewer && !showCostSheets) laterSections.push("cost sheets after your consultations");
+  if (!isViewer && !showInvoices) laterSections.push("invoices once you're matched");
+  if (!showAgreements) laterSections.push("your agreement after the deposit");
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
       <div>
-        <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
-        <p className="t-helper mt-1">Here's where your journey stands.</p>
+        <h1 className="t-page-title font-heading">Welcome back, {firstName}</h1>
+        {/* The concierge speaks first. Orchid eyebrow = her voice, as in
+            chat's prompt blocks. */}
+        <div className="mt-3 max-w-2xl" data-testid="home-concierge-note" aria-live="polite">
+          <p className="t-prompt-eyebrow">From {conciergeName}</p>
+          {openingLine ? (
+            <p className="text-base leading-relaxed mt-1">{openingLine}</p>
+          ) : (
+            <p className="text-base leading-relaxed mt-1 text-muted-foreground" aria-busy="true">Checking where things stand...</p>
+          )}
+        </div>
       </div>
 
       {/* Top row: the action queue and the upcoming meetings sit side by side
@@ -176,16 +282,37 @@ export default function ParentHomePage() {
           one line, same as the billing row below. */}
       <div className="grid gap-6 lg:grid-cols-2">
       {/* Action queue - always first so pending items are never below the fold */}
-      <Card className="p-5 space-y-3">
+      <Card className="p-6 space-y-3">
         <SectionHeader
           icon={<CheckCircle2 className="w-5 h-5 text-primary" />}
-          title={actionCount > 0 ? `Needs your attention (${actionCount})` : "Needs your attention"}
+          title={queueLoading ? "Needs your attention" : queueTitle}
         />
-        {actionCount === 0 ? (
-          <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
-            <CheckCircle2 className="w-4 h-4" />
-            You're all caught up - nothing waiting on you right now.
+        {queueErrors.length > 0 && (
+          <div className="flex items-center gap-3 rounded-[var(--radius)] border border-[hsl(var(--brand-error)/0.3)] bg-[hsl(var(--brand-error)/0.06)] px-4 py-3" role="alert" data-testid="home-queue-error">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[hsl(var(--brand-error-text))]" aria-hidden="true" />
+            <p className="text-sm flex-1">We couldn't load part of your list, so it may be incomplete.</p>
+            <Button size="sm" variant="outline" onClick={retryQueue}>Retry</Button>
           </div>
+        )}
+        {queueLoading ? (
+          <div className="space-y-2" aria-busy="true" aria-label="Loading your list">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-border">
+                <div className="w-9 h-9 rounded-full bg-secondary animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 w-2/3 rounded-full bg-secondary animate-pulse" />
+                  <div className="h-3 w-1/2 rounded-full bg-secondary animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : actionCount === 0 ? (
+          queueErrors.length === 0 && (
+            <div className="flex items-center gap-2 py-3 text-sm">
+              <CheckCircle2 className="w-4 h-4 text-primary" aria-hidden="true" />
+              You're all caught up - nothing waiting on you right now.
+            </div>
+          )
         ) : (
           <div className="space-y-2">
             {callsToReschedule.map((c: any) => (
@@ -207,7 +334,7 @@ export default function ParentHomePage() {
                 title={`Invoice from ${inv.providerName || "your provider"} - ${formatCents(inv.serviceAmount, inv.currency)}`}
                 detail={inv.dueAt ? `Due ${fmtWhen(inv.dueAt)}` : "Awaiting your payment"}
                 cta="Pay now"
-                onClick={() => window.open(`/pay/${inv.paymentToken}`, "_blank")}
+                onClick={() => navigate(`/pay/${inv.paymentToken}`)}
               />
             ))}
             {(queue?.ipFormPending || []).map(f => {
@@ -295,48 +422,68 @@ export default function ParentHomePage() {
             {/* Per-terminal next steps LAST: the concrete items above are
                 things blocking on the parent right now; these are the
                 standing "here's what comes next" per journey. */}
-            {journeyNextSteps.map((s) => {
-              const c = journeyStepCopy(s);
-              return (
-                <QueueRow
-                  key={`journey-step-${s.serviceLine}-${s.providerName || "none"}`}
-                  tone="task"
-                  icon={<Map className="w-4 h-4" />}
-                  title={c.title}
-                  detail={c.detail}
-                  cta={c.cta}
-                  onClick={() => navigate(c.to)}
-                />
-              );
-            })}
+            {nextStepRows.map((c) => (
+              <QueueRow
+                key={c.key}
+                tone="task"
+                icon={<Map className="w-4 h-4" />}
+                title={c.title}
+                detail={c.detail}
+                cta={c.cta}
+                onClick={() => navigate(c.to)}
+              />
+            ))}
           </div>
         )}
       </Card>
 
       {/* Upcoming meetings */}
-      <Card className="p-5 space-y-3">
+      <Card className="p-6 space-y-3">
         <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
-        {upcomingMeetings.length === 0 ? (
-          // Same empty-state anatomy as the action queue (icon + success green
-          // + py-3), so the two top cards are identical in height when both
-          // are empty.
-          <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
-            <CheckCircle2 className="w-4 h-4" />
-            No upcoming meetings scheduled.
+        {bookingsQuery.isError ? (
+          <div className="flex items-center gap-3 py-2" role="alert">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[hsl(var(--brand-error-text))]" aria-hidden="true" />
+            <p className="text-sm flex-1">We couldn't load your meetings.</p>
+            <Button size="sm" variant="outline" onClick={() => void bookingsQuery.refetch()}>Retry</Button>
           </div>
+        ) : bookingsQuery.isLoading ? (
+          <div className="py-3 space-y-2" aria-busy="true" aria-label="Loading meetings">
+            <div className="h-3.5 w-1/2 rounded-full bg-secondary animate-pulse" />
+            <div className="h-3 w-1/3 rounded-full bg-secondary animate-pulse" />
+          </div>
+        ) : upcomingMeetings.length === 0 ? (
+          // Neutral, not success green: for a parent who has not booked a
+          // Match Call yet, an empty calendar is not good news.
+          <p className="t-helper py-3">Nothing booked yet. When you're ready, {conciergeName} sets up a free consultation from chat.</p>
         ) : (
           <div className="divide-y">
-            {upcomingMeetings.slice(0, 3).map((b: any) => (
-              <div key={b.id} className="flex items-center gap-3 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
-                  <p className="t-helper">{fmtWhen(b.scheduledAt)}</p>
+            {upcomingMeetings.slice(0, 3).map((b: any) => {
+              const open = openMeetingId === b.id;
+              return (
+                <div key={b.id} className="py-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
+                      <p className="t-helper">{fmtWhen(b.scheduledAt)}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setOpenMeetingId(open ? null : b.id)}
+                      aria-expanded={open}
+                      aria-controls={`booking-detail-panel-${b.id}`}
+                      className="gap-1"
+                    >
+                      {open ? "Hide" : "Details"}
+                      {open ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
+                    </Button>
+                  </div>
+                  {/* Expands in place: the meeting card used to be a modal
+                      with Reschedule and Cancel inside it. */}
+                  {open && <BookingDetailPanel booking={b} onClose={() => setOpenMeetingId(null)} />}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
-                  Details
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -345,11 +492,12 @@ export default function ParentHomePage() {
       {/* Phase 7A: journey timelines - one card per active journey, every
           type the parent is running in parallel (surrogacy, egg donation,
           IVF, banks, legal). Derived server-side; parents see their own
-          account automatically. */}
-      <Card className="p-5 space-y-3">
+          account automatically. Home shows done / now / next per journey
+          with the whole road behind a toggle. */}
+      <Card className="p-6 space-y-3">
         <SectionHeader
           icon={<Map className="w-5 h-5 text-primary" />}
-          title="Your Journeys"
+          title="Your journey"
         />
         <JourneyTimelineCard variant="home" testId="home-journeys" />
       </Card>
@@ -363,10 +511,10 @@ export default function ParentHomePage() {
         const readyToSubmit = !submitted && (f.hasSecondParent ? f.signedSlots.includes(2) : f.signedSlots.includes(1));
         const href = f.lastSectionKey ? `/ip-form?section=${encodeURIComponent(f.lastSectionKey)}` : "/ip-form";
         return (
-          <Card className="p-5 space-y-3" data-testid="home-ip-form-card">
+          <Card className="p-6 space-y-3" data-testid="home-ip-form-card">
             <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Your Intended Parent Form" />
-            <div className="flex items-center justify-between gap-3">
-              <p className="t-helper">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="t-helper flex-1 min-w-[14rem]">
                 {submitted
                   ? "Submitted and shared with your surrogacy agency. You can review it any time."
                   : readyToSubmit
@@ -382,40 +530,35 @@ export default function ParentHomePage() {
       })()}
 
       {/* Billing row: cost sheets and invoices sit side by side on desktop (both
-          are short 3-row lists) and stack on mobile. No items-start here - the
-          invoices card carries two stat tiles the cost sheets card doesn't, so
-          the frames are let stretch to a shared height rather than ending on
-          two different lines. */}
-      {!isViewer && (
+          are short 3-row lists) and stack on mobile. Each card renders only
+          once it has something to show. */}
+      {(showCostSheets || showInvoices) && (
         <div className="grid gap-6 lg:grid-cols-2">
-        {/* Cost sheets */}
-        <Card className="p-5 space-y-3">
-          <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/my/cost-sheets" />
-          {costSheets.length === 0 ? (
-            <p className="t-helper py-2">No cost sheets yet. Providers share their pricing here after your consultations.</p>
-          ) : (
-            <div className="divide-y">
-              {costSheets.slice(0, 3).map((cs: any) => (
-                <div key={cs.id} className="flex items-center gap-3 py-3" style={{ opacity: cs.supersededAt ? 0.65 : 1 }}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{cs.providerName || "Provider"}</p>
-                    <p className="t-helper">
-                      {new Date(cs.createdAt).toLocaleDateString()}
-                      {cs.supersededAt ? " - Superseded" : cs.parentAcknowledgedAt ? " - Acknowledged" : " - Awaiting your review"}
-                    </p>
-                  </div>
-                  <p className="text-sm font-heading font-bold shrink-0">{formatCents(cs.totalCostCents)}</p>
-                  <Button variant="outline" size="sm" onClick={() => navigate(`/chat/${cs.sessionId}?msg=quote:${cs.id}`)}>
-                    Open
-                  </Button>
+        {showCostSheets && (
+        <Card className="p-6 space-y-3">
+          <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost sheets" viewAllTo="/my/cost-sheets" />
+          <div className="divide-y">
+            {costSheets.slice(0, 3).map((cs: any) => (
+              <div key={cs.id} className="flex items-center gap-3 py-3" style={{ opacity: cs.supersededAt ? 0.65 : 1 }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{cs.providerName || "Provider"}</p>
+                  <p className="t-helper">
+                    {new Date(cs.createdAt).toLocaleDateString()}
+                    {cs.supersededAt ? " - Superseded" : cs.parentAcknowledgedAt ? " - Acknowledged" : " - Awaiting your review"}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
+                <p className="text-sm font-heading font-bold shrink-0">{formatCents(cs.totalCostCents)}</p>
+                <Button variant="outline" size="sm" onClick={() => navigate(`/chat/${cs.sessionId}?msg=quote:${cs.id}`)} aria-label={`Open cost sheet from ${cs.providerName || "provider"}`}>
+                  Open
+                </Button>
+              </div>
+            ))}
+          </div>
         </Card>
+        )}
 
-        {/* Invoices summary */}
-        <Card className="p-5 space-y-3">
+        {showInvoices && (
+        <Card className="p-6 space-y-3">
           <SectionHeader icon={<ReceiptIcon className="w-5 h-5 text-primary" />} title="Invoices" viewAllTo="/my/invoices" />
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
@@ -438,30 +581,39 @@ export default function ParentHomePage() {
             </div>
           ))}
         </Card>
+        )}
         </div>
       )}
 
       {/* Agreements */}
-      <Card className="p-5 space-y-3">
-        {/* No dedicated agreements page - parents have 1-2 agreements, each
-            row opens the agreement directly. */}
-        <SectionHeader
-          icon={<FileSignature className="w-5 h-5 text-primary" />}
-          title="Agreements"
-        />
-        <AgreementRows
-          items={myAgreements.map((a: any) => ({
-            id: a.id,
-            status: a.status,
-            documentType: a.documentType,
-            createdAt: a.createdAt,
-            signedAt: a.signedAt,
-            title: a.provider?.name || "Provider",
-          }))}
-          emptyText="No agreements yet. Your provider sends the official agreement here after your deposit payment."
-        />
-      </Card>
-      <BookingDetailDialog booking={selectedMeeting} open={!!selectedMeeting} onClose={() => setSelectedMeeting(null)} />
+      {showAgreements && (
+        <Card className="p-6 space-y-3">
+          {/* No dedicated agreements page - parents have 1-2 agreements, each
+              row opens the agreement directly. */}
+          <SectionHeader
+            icon={<FileSignature className="w-5 h-5 text-primary" />}
+            title="Agreements"
+          />
+          <AgreementRows
+            items={myAgreements.map((a: any) => ({
+              id: a.id,
+              status: a.status,
+              documentType: a.documentType,
+              createdAt: a.createdAt,
+              signedAt: a.signedAt,
+              title: a.provider?.name || "Provider",
+            }))}
+            emptyText="No agreements yet. Your provider sends the official agreement here after your deposit payment."
+          />
+        </Card>
+      )}
+
+      {/* What comes later, in one line, instead of empty cards for each. */}
+      {laterSections.length > 0 && (
+        <p className="t-helper px-1" data-testid="home-later-sections">
+          Later on this page: {joinNames(laterSections)}.
+        </p>
+      )}
     </div>
   );
 }

@@ -88,14 +88,18 @@ export function ServiceTag({
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full font-semibold uppercase tracking-wide whitespace-nowrap",
-        size === "sm" ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]",
+        // 11px floor: 10px uppercase gold measured 2.9:1 on its own tint.
+        size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
         !meta && "bg-secondary text-foreground/70",
         onClick && "cursor-pointer hover:opacity-80 transition-opacity",
         className,
       )}
       style={meta ? {
         background: `hsl(var(${meta.cssVar}) / 0.13)`,
-        color: `hsl(var(${meta.cssVar}))`,
+        // The hue as text, pulled 30% toward ink: the gold and blue lines
+        // were 2.9:1 and 3.6:1 on their tints; mixed they all clear 4.5:1
+        // and the chip still reads as its service color.
+        color: `color-mix(in srgb, hsl(var(${meta.cssVar})) 70%, hsl(var(--foreground)))`,
       } : undefined}
       title={title}
       onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}

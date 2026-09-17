@@ -375,6 +375,16 @@ export function pickReadableFg(hex: string): string {
   return L > 0.55 ? "#1f2937" : "#ffffff";
 }
 
+/** Cap an "H S% L%" triplet's lightness so it works as body-size text on light
+ *  surfaces. Hue and saturation are untouched, so the color still reads as the
+ *  brand's own green, amber or red. */
+export function hslTextStep(hsl: string, maxLightness: number): string {
+  const m = hsl.match(/^(\d+)\s+(\d+)%\s+(\d+)%$/);
+  if (!m) return hsl;
+  const l = Math.min(Number(m[3]), maxLightness);
+  return `${m[1]} ${m[2]}% ${l}%`;
+}
+
 export function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -424,6 +434,13 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--brand-warning", hexToHsl(settings.warningColor));
   root.style.setProperty("--brand-error", hexToHsl(settings.errorColor));
   root.style.setProperty("--destructive", hexToHsl(settings.errorColor));
+  // Status hues as TEXT: the fill colors above are chosen for badges and
+  // rings and fail AA as 12-14px text on Paper (success 2.6:1, warning about
+  // 2:1 on its tint). The text steps keep the hue and cap lightness so every
+  // brand choice still clears 4.5:1 on Warm Sand, Paper and Linen.
+  root.style.setProperty("--brand-success-text", hslTextStep(hexToHsl(settings.successColor), 26));
+  root.style.setProperty("--brand-warning-text", hslTextStep(hexToHsl(settings.warningColor), 30));
+  root.style.setProperty("--brand-error-text", hslTextStep(hexToHsl(settings.errorColor), 40));
 
   for (const [field, cssVar] of ADVANCED_COLOR_MAP) {
     const value = settings[field] as string | null;

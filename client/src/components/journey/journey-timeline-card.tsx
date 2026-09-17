@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Check, ChevronDown, ChevronUp, AlertTriangle, Loader2, X } from "lucide-react";
 import { ServiceTag } from "@/components/ui/service-tag";
 import { JOURNEY_STAGE_ORDER, JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
@@ -101,6 +102,34 @@ const EVENT_LABELS: Record<string, string> = {
   CRM_OWNER_ASSIGNED: "Lead owner assigned",
 };
 
+/**
+ * The parent's names for the rungs. The ladder ids and CRM labels
+ * ("Registered", "Parent Form Submitted", "Invoice Sent", "Handed Off") are
+ * the provider's vocabulary; the parent home speaks to the family in second
+ * person. Ids not listed keep the server label.
+ */
+const PARENT_STAGE_LABELS: Record<string, string> = {
+  registered: "You're registered",
+  onboarding: "Getting to know you",
+  exploring: "Choosing profiles",
+  consult_scheduled: "Consultation booked",
+  consult_completed: "Consultation done",
+  ip_form_submitted: "Your parent form",
+  doctor_call_scheduled: "Doctor call booked",
+  doctor_call_completed: "Doctor call done",
+  match_call_scheduled: "Your Match Call",
+  matched: "Matched",
+  invoice_sent: "Your invoice",
+  invoice_paid: "Invoice paid",
+  agreement_sent: "Your agreement",
+  agreement_signed: "Agreement signed",
+  handed_off: "Journey complete",
+  no_show: "Call missed",
+  match_call_no_show: "Match Call missed",
+  not_matched: "Not matched",
+};
+const parentLabel = (st: StageOut) => PARENT_STAGE_LABELS[st.id] || st.label;
+
 function fmtDate(iso: string | null): string | null {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -108,7 +137,7 @@ function fmtDate(iso: string | null): string | null {
 
 function StageRow({ stage, isLast, stripMarkTone }: { stage: StageOut; isLast: boolean; stripMarkTone?: boolean }) {
   return (
-    <div className="flex gap-2.5" data-testid={`journey-stage-${stage.id}`}>
+    <div className="flex gap-2.5" role="listitem" aria-current={stage.state === "current" ? "step" : undefined} data-testid={`journey-stage-${stage.id}`}>
       <div className="flex flex-col items-center">
         {/* A branch dot draws as a standard stage dot - the fork already says
             something went sideways - but the LABEL keeps its warning tone.
@@ -208,6 +237,8 @@ function StageColumn({ stage, isFirst, isLast, branches, widthPct }: {
     <div
       className={widthPct ? "shrink-0 min-w-0" : "flex-1 basis-0 min-w-0"}
       style={widthPct ? { width: `${widthPct}%` } : undefined}
+      role="listitem"
+      aria-current={stage.state === "current" ? "step" : undefined}
       data-testid={`journey-stage-${stage.id}`}
     >
       {/* relative only when there is a branch: the stem is absolute inside
@@ -451,7 +482,7 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
             )}
             <ServiceTag service={journey.typeLabel} label={journey.typeLabel} className="shrink-0" />
           </div>
-          <div className="flex items-start flex-1 min-w-0">
+          <div className="flex items-start flex-1 min-w-0" role="list" aria-label={`${journey.typeLabel} journey steps`}>
             {mainStages.map((st, i) => (
               <StageColumn
                 key={st.id}
@@ -465,7 +496,7 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
           </div>
         </div>
       ) : (
-        <div>
+        <div role="list" aria-label={`${journey.typeLabel} journey steps`}>
           {mainStages.map((st, i) => {
             const branches = branchBySibling.get(st.id);
             return branches && branches.length > 0 ? (
@@ -611,40 +642,7 @@ export function JourneyTimelineCard({
   }
 
   if (variant === "home") {
-    // Below lg the vertical cards sit side by side (up to two across) -
-    // horizontal rungs would be ~30px apart there. Classes are spelled out
-    // because Tailwind can't see interpolated column counts.
-    const colClass = "sm:grid-cols-2";
-    // Same rung-index alignment rule as the record page: every ladder's
-    // column width comes from the LONGEST ladder, so rung N lands on the
-    // same vertical line across journeys.
-    const homeCols = Math.max(
-      ...journeys.map((jj) => jj.stages.filter((st) => !isBranchStage(st)).length),
-    );
-    return (
-      <div data-testid={testId}>
-        {/* Desktop: the same horizontal ladder the provider and admin Lead
-            Status use - one full-width row per journey (by request), instead
-            of the vertical cards side by side. */}
-        <div className="hidden lg:block space-y-3">
-          {journeys.map((j) => (
-            <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border bg-secondary/40 p-4">
-              <JourneyBlock journey={j} showProviderName horizontal cols={homeCols} />
-            </div>
-          ))}
-        </div>
-        <div className={`grid gap-4 lg:hidden ${colClass}`}>
-          {/* min-w-0 on each cell: grid items default to min-width:auto, so
-              without it a non-wrapping provider name widens its column past the
-              viewport (that's what broke the mobile layout). */}
-          {journeys.map((j) => (
-            <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border bg-secondary/40 p-4">
-              <JourneyBlock journey={j} showProviderName />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <HomeJourneys journeys={journeys} testId={testId} />;
   }
 
   return (
@@ -695,6 +693,101 @@ export function JourneyTimelineCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The parent home's view of the ladder: done, now, next. A parent at night
+ * does not need all twelve CRM rungs to know where they stand - measured on
+ * the old layout, two full ladders were 1161px of a 2580px phone page with
+ * one rung reached. "Show the whole road" reveals the full ladder (in the
+ * parent's words, vertical below xl, horizontal from xl where twelve columns
+ * finally have room for "Consultation"). The toggle lives in the URL, like
+ * every other view state.
+ */
+function HomeJourneys({ journeys, testId }: { journeys: JourneyOut[]; testId: string }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showAll = searchParams.get("journeys") === "all";
+  const setShowAll = (on: boolean) => {
+    const next = new URLSearchParams(searchParams);
+    if (on) next.set("journeys", "all"); else next.delete("journeys");
+    setSearchParams(next, { replace: true });
+  };
+  const speak = (j: JourneyOut): JourneyOut => ({ ...j, stages: j.stages.map((st) => ({ ...st, label: parentLabel(st) })) });
+  const spoken = journeys.map(speak);
+  const homeCols = Math.max(...spoken.map((jj) => jj.stages.filter((st) => !isBranchStage(st)).length));
+  return (
+    <div data-testid={testId} className="space-y-3">
+      {!showAll && spoken.map((j) => {
+        const main = j.stages.filter((st) => !isBranchStage(st));
+        const currentIdx = main.findIndex((st) => st.state === "current");
+        const lastDoneIdx = (() => { let k = -1; main.forEach((st, i) => { if (st.state === "done") k = i; }); return k; })();
+        const nowIdx = currentIdx >= 0 ? currentIdx : lastDoneIdx;
+        const done = currentIdx >= 0 ? main.slice(0, currentIdx).filter((st) => st.state === "done").slice(-1)[0] : (lastDoneIdx > 0 ? main[lastDoneIdx - 1] : undefined);
+        const now = nowIdx >= 0 ? main[nowIdx] : main[0];
+        const next = main.slice(nowIdx + 1).find((st) => st.state === "upcoming");
+        const reached = main.filter((st) => st.state === "done").length + (currentIdx >= 0 ? 1 : 0);
+        const rungs: Array<{ st: StageOut; role: "done" | "now" | "next" }> = [];
+        if (done) rungs.push({ st: done, role: "done" });
+        if (now) rungs.push({ st: now, role: "now" });
+        if (next) rungs.push({ st: next, role: "next" });
+        return (
+          <div key={`${j.journeyType}-${j.providerId}`} className="rounded-[var(--radius)] border border-border bg-secondary/40 p-4" data-testid={`journey-${j.journeyType}-${j.providerId}`}>
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <ServiceTag service={j.typeLabel} label={j.typeLabel} className="shrink-0" />
+              {j.providerName && <p className="text-sm font-medium truncate min-w-0" title={j.providerName}>{j.providerName}</p>}
+              <p className="t-helper ml-auto shrink-0">Step {Math.max(1, reached)} of {main.length}</p>
+            </div>
+            {j.attention && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--brand-warning-text))]" data-testid="journey-attention-chip">
+                <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                {j.attention.label}
+              </p>
+            )}
+            <ol className="mt-3 grid gap-3 sm:grid-cols-3" aria-label={`${j.typeLabel}: where you are`}>
+              {rungs.map(({ st, role }) => (
+                <li key={st.id} className="flex items-start gap-2.5 min-w-0" aria-current={role === "now" ? "step" : undefined}>
+                  <StageMark stage={st} />
+                  <span className="min-w-0">
+                    <span className="t-micro-label block">{role === "done" ? "Done" : role === "now" ? (st.state === "current" ? "Now" : "Done") : "Next"}</span>
+                    <span className={`block text-sm leading-5 ${stageLabelClass(st)}`}>{st.label}</span>
+                    {st.reachedAt && <span className="t-helper block">{fmtDate(st.reachedAt)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        );
+      })}
+      {showAll && (
+        <>
+          <div className="hidden xl:block space-y-3">
+            {spoken.map((j) => (
+              <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border border-border bg-secondary/40 p-4">
+                <JourneyBlock journey={j} showProviderName horizontal cols={homeCols} />
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-4 xl:hidden sm:grid-cols-2">
+            {spoken.map((j) => (
+              <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border border-border bg-secondary/40 p-4">
+                <JourneyBlock journey={j} showProviderName />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowAll(!showAll)}
+        className="inline-flex items-center gap-1 min-h-11 px-2 -ml-2 text-sm font-medium text-primary rounded-[var(--radius)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={showAll}
+        data-testid="home-journeys-toggle"
+      >
+        {showAll ? <ChevronUp className="w-4 h-4" aria-hidden="true" /> : <ChevronDown className="w-4 h-4" aria-hidden="true" />}
+        {showAll ? "Show less" : "Show the whole road"}
+      </button>
     </div>
   );
 }

@@ -1848,6 +1848,18 @@ export default function MarketplacePage() {
     }
   }, [isParentOnly, parentAvailableTypes, activeTab, dispatch]);
 
+  // ?tab=<id> deep link (Home's "explore your matches" rows, concierge links):
+  // select that tab once, then drop the param so Redux owns the tab from here
+  // and a later tab change does not snap back on refresh.
+  useEffect(() => {
+    const wanted = searchParams.get("tab");
+    if (!wanted) return;
+    if (TABS.some((t) => t.id === wanted)) dispatch(setMarketplaceTab(wanted));
+    const next = new URLSearchParams(searchParams);
+    next.delete("tab");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, dispatch]);
+
   // Deep-link / saved-filter migration: the old Doctors view was a sub-view of the
   // IVF Clinics tab, addressed as ?clinicView=doctors. Doctors is now a first-class
   // tab, so redirect any legacy link to it and strip the stale param.
