@@ -575,15 +575,39 @@ export function applyBrandToDocument(settings: BrandSettings) {
     ? (settings.chatInputFontSize ?? 17)
     : (settings.chatInputFontSizeDesktop ?? 15);
 
-  root.style.setProperty("--chat-bubble-font-size", `${chatBubbleSize}px`);
+  // The mobile chat sizes are authored against a 393pt-wide phone (iPhone 15/16
+  // Pro). Pinned as flat pixels they do not shrink on a narrower viewport - a
+  // 320pt phone, or any phone with Display Zoom on - so 21px text inside an
+  // 85%-wide bubble leaves room for only three or four words a line. Scale the
+  // mobile chat type and padding with the viewport instead: a 393pt phone keeps
+  // exactly the configured size, narrower phones step down proportionally, and
+  // the clamp floor stops it ever going unreadable. Desktop keeps flat pixels.
+  const MOBILE_REF_WIDTH = 393;
+  const fluidPx = (px: number, minRatio = 0.78) =>
+    isMobileOrTablet
+      ? `clamp(${(px * minRatio).toFixed(2)}px, ${((px / MOBILE_REF_WIDTH) * 100).toFixed(4)}vw, ${px}px)`
+      : `${px}px`;
+
+  const bubblePaddingX = settings.chatBubblePaddingX ?? 16;
+  const bubbleMaxWidth = settings.chatBubbleMaxWidth ?? 85;
+
+  root.style.setProperty("--chat-bubble-font-size", fluidPx(chatBubbleSize));
   root.style.setProperty("--chat-bubble-line-height", String(settings.chatBubbleLineHeight ?? 1.35));
-  root.style.setProperty("--chat-bubble-px", `${settings.chatBubblePaddingX ?? 16}px`);
+  // Padding floors higher than the font: a bubble still needs breathing room.
+  root.style.setProperty("--chat-bubble-px", fluidPx(bubblePaddingX, 0.7));
   root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 11}px`);
-  root.style.setProperty("--chat-bubble-max-width", `${settings.chatBubbleMaxWidth ?? 85}%`);
+  // Narrow phones also give the bubble a little more of the row back, since the
+  // avatar gutter costs proportionally more there.
+  root.style.setProperty(
+    "--chat-bubble-max-width",
+    isMobileOrTablet
+      ? `clamp(${bubbleMaxWidth}%, calc(${bubbleMaxWidth}% + (${MOBILE_REF_WIDTH}px - 100vw) * 0.06), ${Math.min(bubbleMaxWidth + 9, 96)}%)`
+      : `${bubbleMaxWidth}%`,
+  );
   root.style.setProperty("--chat-bubble-radius", `${settings.chatBubbleRadius ?? 20}px`);
   root.style.setProperty("--chat-timestamp-font-size", `${settings.chatTimestampFontSize ?? 11}px`);
   root.style.setProperty("--chat-timestamp-opacity", String(settings.chatTimestampOpacity ?? 0.45));
-  root.style.setProperty("--chat-input-font-size", `${chatInputSize}px`);
+  root.style.setProperty("--chat-input-font-size", fluidPx(chatInputSize, 0.85));
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
   root.style.setProperty("--quick-reply-font-size", `${settings.quickReplyFontSize ?? 14}px`);
   root.style.setProperty("--quick-reply-radius", `${settings.quickReplyRadius ?? 999}px`);
