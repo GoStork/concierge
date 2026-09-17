@@ -1,7 +1,7 @@
 import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
 
 export interface Matchmaker {
   id: string;
@@ -730,7 +730,7 @@ export function applyBrandToDocument(settings: BrandSettings) {
     const ext = pathname.substring(pathname.lastIndexOf("."));
     faviconEl.type = mimeMap[ext] || "";
     const separator = settings.faviconUrl.includes("?") ? "&" : "?";
-    const resolvedFavicon = getPhotoSrc(settings.faviconUrl) || settings.faviconUrl;
+    const resolvedFavicon = getBrandAssetSrc(settings.faviconUrl) || settings.faviconUrl;
     faviconEl.href = `${resolvedFavicon}${resolvedFavicon.includes("?") ? "&" : "?"}v=${Date.now()}`;
   }
 }

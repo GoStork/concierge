@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -219,7 +219,7 @@ export default function BookingPage() {
   const siteLogo = pageInfo?.siteSettings?.logoWithNameUrl || pageInfo?.siteSettings?.logoUrl;
   const providerBrandLogo = providerInfo?.brandSettings?.logoWithNameUrl || providerInfo?.brandSettings?.logoUrl;
   const rawLogoUrl = siteLogo || providerBrandLogo || providerInfo?.logoUrl;
-  const resolvedLogoUrl = getPhotoSrc(rawLogoUrl);
+  const resolvedLogoUrl = getBrandAssetSrc(rawLogoUrl);
   const userPhotoSrc = getPhotoSrc(userInfo?.photoUrl);
 
   const fontHeading = brand?.headingFont || "DM Sans";

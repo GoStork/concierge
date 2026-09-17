@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { queryClient } from "@/lib/queryClient";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
 import { parentVisibleTypeIds } from "@/lib/parent-marketplace-types";
 import {
   LogOut,
@@ -1156,7 +1156,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           <Link to={isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY' ? '/chat' : '/marketplace'} className="flex items-center gap-2.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md" data-testid="link-logo">
             {brandSettings?.logoWithNameUrl ? (
               <img
-                src={getPhotoSrc(brandSettings.logoWithNameUrl) || brandSettings.logoWithNameUrl}
+                src={getBrandAssetSrc(brandSettings.logoWithNameUrl) || brandSettings.logoWithNameUrl}
                 alt={brandSettings?.companyName || "GoStork"}
                 className="h-14 sm:h-14 w-auto max-w-[200px] sm:max-w-[260px] object-contain"
                 data-testid="img-logo-with-name"
@@ -1164,7 +1164,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 {brandSettings?.logoUrl ? (
-                  <img src={getPhotoSrc(brandSettings.logoUrl) || brandSettings.logoUrl} alt="" className="w-11 h-11 rounded-[var(--radius)] object-contain" data-testid="img-logo-icon" />
+                  <img src={getBrandAssetSrc(brandSettings.logoUrl) || brandSettings.logoUrl} alt="" className="w-11 h-11 rounded-[var(--radius)] object-contain" data-testid="img-logo-icon" />
                 ) : (
                   <div className="w-11 h-11 rounded-[var(--radius)] bg-primary flex items-center justify-center text-primary-foreground shadow-md shadow-primary/20">
                     <Baby className="w-6 h-6" />

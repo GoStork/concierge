@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2, AlertCircle, Download, Baby } from "lucide-react";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
 
 // formLabel = "W-9" | "W-8BEN-E": the page serves both IRS forms, so every
 // bit of copy names the one this row actually is.
@@ -65,7 +65,7 @@ export default function W9SigningPage() {
     // handleBack closes over stable refs; re-binding per render is pointless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGuest, sessionUrl]);
-  const logoSrc = brand?.logoUrl ? (getPhotoSrc(brand.logoUrl) || brand.logoUrl) : null;
+  const logoSrc = brand?.logoUrl ? (getBrandAssetSrc(brand.logoUrl) || brand.logoUrl) : null;
   const companyName = brand?.companyName || "GoStork";
 
   // Back action: try history first; if none (e.g. user opened the email link

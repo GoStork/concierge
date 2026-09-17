@@ -26,6 +26,7 @@ import * as crypto from "crypto";
 import { Readable } from "stream";
 import { GoogleGenAI } from "@google/genai";
 import { StorageService } from "../storage/storage.service";
+import { PrismaService } from "../prisma/prisma.service";
 import { trackGemini } from "../../lib/gemini-usage";
 import { safeFetch, assertPublicHttpUrl, SsrfBlockedError } from "../../lib/ssrf-guard";
 
@@ -52,7 +53,10 @@ const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES];
 @ApiTags("Uploads")
 @Controller("api/uploads")
 export class UploadsController {
-  constructor(@Inject(StorageService) private readonly storageService: StorageService) {}
+  constructor(
+    @Inject(StorageService) private readonly storageService: StorageService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+  ) {}
   @Post()
   @UseGuards(SessionOrJwtGuard)
   @ApiOperation({ summary: "Upload an image file" })
@@ -290,6 +294,57 @@ export class UploadsController {
       // Private bucket content - never let a shared cache hold it, and never
       // let a browser sniff a stored document into an active type.
       res.set("Cache-Control", "private, max-age=86400");
+      res.set("X-Content-Type-Options", "nosniff");
+      res.send(buffer);
+    } catch (err: any) {
+      res.status(404).json({ message: "File not found" });
+    }
+  }
+
+  // The brand logos live in the PRIVATE recordings bucket, but they are shown
+  // on pages nobody is signed in to yet - login, onboarding, guest signing,
+  // /sms-consent. Serving them through the authenticated /gcs route made the
+  // logo 401 for any visitor without a session cookie (it only "worked" on a
+  // device that happened to still hold one). This route is deliberately
+  // unauthenticated, and serves ONLY the handful of paths the live
+  // SiteSettings row points at - nothing else in the bucket is reachable.
+  @Get("brand-asset")
+  @ApiOperation({ summary: "Serve a brand logo/favicon from GCS (public)" })
+  @ApiQuery({ name: "path", required: true, type: String })
+  async serveBrandAsset(@Query("path") gcsPath: string, @Res() res: Response) {
+    if (!gcsPath || gcsPath.includes("..")) {
+      res.status(400).json({ message: "Invalid path" });
+      return;
+    }
+    if (!this.storageService.isConfigured()) {
+      res.status(503).json({ message: "GCS not configured" });
+      return;
+    }
+    const settings = await this.prisma.siteSettings.findFirst({
+      select: {
+        logoUrl: true,
+        logoWithNameUrl: true,
+        darkLogoUrl: true,
+        darkLogoWithNameUrl: true,
+        faviconUrl: true,
+      },
+    });
+    const allowed = new Set(
+      Object.values(settings || {})
+        .filter((v): v is string => typeof v === "string" && v.length > 0)
+        .map((url) => {
+          const m = url.match(/storage\.googleapis\.com\/[^/]+\/(.+)/);
+          return m ? decodeURIComponent(m[1]) : url;
+        }),
+    );
+    if (!allowed.has(gcsPath)) {
+      res.status(404).json({ message: "File not found" });
+      return;
+    }
+    try {
+      const { buffer, contentType } = await this.storageService.downloadBuffer(gcsPath);
+      res.set("Content-Type", contentType);
+      res.set("Cache-Control", "public, max-age=86400");
       res.set("X-Content-Type-Options", "nosniff");
       res.send(buffer);
     } catch (err: any) {

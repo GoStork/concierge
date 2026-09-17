@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2, AlertCircle, Download, Baby, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
 
 type SigningSessionResponse =
   | { isCompletedView: true; status: string; agreementId?: string; providerId?: string; providerName?: string | null }
@@ -52,7 +52,7 @@ export default function ProviderAgreementSigningPage() {
   });
 
   const isCompleted = data?.isCompletedView === true;
-  const logoSrc = brand?.logoUrl ? (getPhotoSrc(brand.logoUrl) || brand.logoUrl) : null;
+  const logoSrc = brand?.logoUrl ? (getBrandAssetSrc(brand.logoUrl) || brand.logoUrl) : null;
   const companyName = brand?.companyName || "GoStork";
 
   function handleBack() {

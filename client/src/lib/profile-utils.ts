@@ -82,6 +82,19 @@ export function getPhotoSrc(url: string | null | undefined): string | null {
   return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
 }
 
+// Brand logos/favicon live in the private GCS bucket but are rendered on pages
+// where nobody is signed in yet (login, onboarding, guest signing, sms-consent),
+// so they must go through the public brand-asset route rather than the
+// authenticated /api/uploads/gcs one - otherwise the logo 401s and shows as a
+// broken image to every logged-out visitor.
+export function getBrandAssetSrc(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith("/") || url.startsWith("data:")) return url;
+  const match = url.match(/storage\.googleapis\.com\/[^/]+\/(.+)/);
+  if (match) return `/api/uploads/brand-asset?path=${encodeURIComponent(decodeURIComponent(match[1]))}`;
+  return getPhotoSrc(url);
+}
+
 export function getProfileTypeLabel(type: string): string {
   if (type === "egg-donor") return "Egg Donor";
   if (type === "surrogate") return "Surrogate";

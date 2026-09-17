@@ -6,7 +6,7 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck, Stethoscope, Heart, Baby, FlaskConical, Search } from "lucide-react";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
 import { AiIntroScreen } from "@/components/onboarding/ai-intro-screen";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
@@ -781,7 +781,7 @@ export default function OnboardingPage() {
           <div className="flex justify-center">
             {(brand?.logoWithNameUrl || brand?.logoUrl) ? (
               <img
-                src={getPhotoSrc(brand.logoWithNameUrl || brand.logoUrl!) || undefined}
+                src={getBrandAssetSrc(brand.logoWithNameUrl || brand.logoUrl!) || undefined}
                 alt={brandName}
                 className="h-14 object-contain"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
