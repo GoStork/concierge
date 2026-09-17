@@ -63,3 +63,29 @@ export function getBaseUrl(): string {
 
   return "https://app.gostork.com";
 }
+
+/**
+ * True on the two dev Macs (dev-mbp / dev-imac custom domains, their ngrok
+ * tunnels, localhost). NODE_ENV cannot answer this - the Macs run the built
+ * server with NODE_ENV=production - so the host in APP_URL is the signal.
+ * Everything else is a production host: test-app.gostork.com today,
+ * app.gostork.com after the 2.0 cutover, with no change needed here.
+ *
+ * Use it for jobs that watch a resource SHARED across environments (one
+ * Twilio account, one Stripe account): a Notification.dedupeKey claim only
+ * dedupes within one database, so dev and prod would each alert.
+ */
+export function isDevHost(): boolean {
+  let host: string;
+  try {
+    host = new URL(getBaseUrl()).hostname;
+  } catch {
+    return false;
+  }
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    /^dev-[a-z0-9-]+\.gostork\.com$/.test(host) ||
+    /\.ngrok(-free)?\.(app|io|dev)$/.test(host)
+  );
+}

@@ -1,6 +1,7 @@
 import * as cron from "node-cron";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
+import { isDevHost } from "../../lib/get-base-url";
 
 /**
  * Watches the shared Twilio account for a resumed bot wave, so nobody has to
@@ -27,6 +28,11 @@ import { NotificationService } from "../notifications/notification.service";
  * Alerts email every GoStork admin, at most once per hour - claimed through
  * Notification.dedupeKey exactly like the booking reminders, because both
  * Macs run this same cron and a read-then-send gate would double-send.
+ *
+ * Production host only. The Twilio account is shared by every environment but
+ * the dedupeKey claim is per DATABASE, so with the watchdog running on the dev
+ * Macs (DEV db) and the prod VM (PROD db) each side won its own claim and the
+ * same burst was emailed twice (Sep 17 2026).
  */
 
 let scheduledTask: cron.ScheduledTask | null = null;
@@ -141,6 +147,10 @@ export async function runTwilioAbuseCheck(
 export function startTwilioAbuseWatchdog(prisma: PrismaService, notifications: NotificationService) {
   if (scheduledTask) {
     console.log("[twilio-watchdog] Scheduler already running");
+    return;
+  }
+  if (isDevHost()) {
+    console.log("[twilio-watchdog] Dev host - not started (the production server watches the shared Twilio account)");
     return;
   }
 
