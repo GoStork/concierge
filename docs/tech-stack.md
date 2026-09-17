@@ -159,6 +159,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `express-session@^1.18.1`
 - `jsonrepair@^3.14.0`
 - `memorystore@^1.6.7`
+- `multer@^2.4.0`
 - `node-cron@^4.2.1`
 - `passport@^0.7.0`
 - `passport-jwt@^4.0.1`
