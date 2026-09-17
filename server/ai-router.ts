@@ -12368,6 +12368,81 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // Success-rate context (eggSource/ageGroup/isNewPatient) is derived the same
     // way the doctor cards derive it - from the last clinic/doctor search args,
     // falling back to the parent's saved profile.
+    // COMPARISON GUARANTEE. "Can you compare 3 top clinics in NYC" came back
+    // with a booking card and no comparison at all - the parent's actual
+    // question was simply dropped. The repair path further up only fires when
+    // the model called resolve_comparison; here it called nothing. So when the
+    // CURRENT message asks for a comparison and no [[COMPARE_CARD]] survived,
+    // build the tag server-side from real rows rather than letting the turn
+    // answer something else. Entities come from a real search, never invented.
+    const askedForComparisonThisTurn =
+      /\b(compare|comparison|side[- ]by[- ]side|versus|vs\.?|head[- ]to[- ]head|stack (?:them )?up|which (?:one |of (?:them|these) )?is (?:the )?(?:better|best))\b/i.test(userMessage || "");
+    if (compareCardTags.length === 0 && askedForComparisonThisTurn && mcpClient && !serverBypassServed) {
+      try {
+        // How many? "compare 3 top clinics" -> 3. The card takes 2-4.
+        const askedFor = Number(String(userMessage || "").match(/\b([2-4])\b/)?.[1] || 3);
+        // "in NYC" / "in Boston" / "in California" - the place the parent named.
+        const cmpAskLocation = String(userMessage || "").match(/\bin\s+([A-Za-z][A-Za-z .'-]{1,40}?)\s*[?.!,]?\s*$/i)?.[1]?.trim() || null;
+        const wantCount = Math.max(2, Math.min(4, askedFor));
+        const lc = await latestCardPromise.catch(() => null);
+        const lastType = String((lc as any)?.type || "").toLowerCase();
+        const msgL = String(userMessage || "").toLowerCase();
+        const entityType =
+          /\bclinic|\bivf\b|\bfertility cent/.test(msgL) ? "Clinic"
+          : /egg donor|\bdonor egg/.test(msgL) ? "Egg Donor"
+          : /sperm donor/.test(msgL) ? "Sperm Donor"
+          : /surrogate/.test(msgL) ? "Surrogate"
+          : /agenc/.test(msgL) ? "Surrogacy Agency"
+          : lastType.includes("clinic") ? "Clinic"
+          : lastType.includes("egg") ? "Egg Donor"
+          : lastType.includes("sperm") ? "Sperm Donor"
+          : lastType.includes("surrogate") && !lastType.includes("agency") ? "Surrogate"
+          : lastType.includes("agency") ? "Surrogacy Agency"
+          : null;
+        const searchToolFor: Record<string, string> = {
+          "Clinic": "search_clinics",
+          "Egg Donor": "search_egg_donors",
+          "Sperm Donor": "search_sperm_donors",
+          "Surrogate": "search_surrogates",
+          "Surrogacy Agency": "search_surrogacy_agencies",
+        };
+        const toolName = entityType ? searchToolFor[entityType] : null;
+        // Prefer rows already fetched this turn; only search when there are none.
+        let ids: string[] = [];
+        for (const sr of lastSearchToolResults) {
+          if (toolName && sr.toolName !== toolName) continue;
+          const arr = parseFirstJsonArray(sr.resultText || "");
+          if (Array.isArray(arr)) ids.push(...arr.map((r: any) => String(r?.id || "")).filter(Boolean));
+        }
+        if (ids.length < 2 && toolName) {
+          const searchArgs: Record<string, unknown> =
+            toolName === "search_clinics"
+              ? {
+                  limit: Math.max(wantCount, 4),
+                  userId,
+                  // A location named in the ask wins over the profile's home,
+                  // so "top clinics in NYC" is not answered from her home state.
+                  ...(cmpAskLocation ? { location: cmpAskLocation } : (userRecord?.state ? { state: userRecord.state } : {})),
+                  ...(profile?.clinicAgeGroup ? { ageGroup: profile.clinicAgeGroup } : {}),
+                }
+              : { limit: Math.max(wantCount, 4), userId };
+          const res: any = await mcpClient.callTool({ name: toolName, arguments: searchArgs as any });
+          const body = Array.isArray(res?.content) ? String(res.content[0]?.text || "") : String(res?.text || "");
+          const arr = parseFirstJsonArray(body);
+          if (Array.isArray(arr)) ids = arr.map((r: any) => String(r?.id || "")).filter(Boolean);
+        }
+        const unique = Array.from(new Set(ids)).slice(0, wantCount);
+        if (entityType && unique.length >= 2) {
+          compareCardTags.push({ entityType, entities: unique, dimensions: "all" });
+          console.log(`[COMPARE_GUARANTEE] model emitted no card for a comparison ask - built ${entityType} x${unique.length} server-side`);
+        } else {
+          console.warn(`[COMPARE_GUARANTEE] comparison asked but only ${unique.length} ${entityType || "unknown-type"} rows available - leaving the turn alone`);
+        }
+      } catch (e: any) {
+        console.warn(`[COMPARE_GUARANTEE] failed: ${e?.message}`);
+      }
+    }
+
     if (compareCardTags.length > 0 && mcpClient) {
       const cmpSearchArgs: any =
         lastSearchToolResults.find((r) => r.toolName === "search_doctors")?.toolArgs ||

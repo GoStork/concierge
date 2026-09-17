@@ -310,16 +310,22 @@ export class ParentBriefingService {
         data: {
           sessionId: opts.sessionId,
           role: "assistant",
+          // Plain statement of what was shared, and nothing more. This used to
+          // end with "Anything you'd rather they didn't have, just say so here
+          // and I'll pass it on" - an invitation nothing in the system handled.
+          // A parent took it up ("Don't include my personal information"), got
+          // no reply, and her summary reached the provider unchanged. A promise
+          // with no code behind it is worse than no promise, so until a real
+          // redaction path exists this says only what is true.
           content:
-            `So you don't have to start from scratch on the call, I've shared a short summary of your journey with ` +
-            `${opts.providerName || "them"} - what you're looking for and where you are so far. ` +
-            `Anything you'd rather they didn't have, just say so here and I'll pass it on.`,
+            `Before your call with ${opts.providerName || "them"}, I sent them a short summary of what you're ` +
+            `looking for and where you are - so you don't have to start from scratch.`,
           senderType: "system",
           senderName: "GoStork",
           uiCardData: {
             parentBriefingNotice: true,
             providerContent:
-              "The parent has been told we shared their background with you, and can ask us to correct it.",
+              "The parent has been told we shared a summary of their journey with you.",
           } as any,
         },
       }).catch((e: any) =>
