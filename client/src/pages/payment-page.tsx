@@ -15,6 +15,7 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { Loader2, AlertCircle, CheckCircle2, Shield, Clock, Landmark, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
+import { safeInternalPath } from "@/lib/safe-redirect";
 
 interface InvoiceLineItem {
   id?: string;
@@ -411,15 +412,9 @@ function StripePaymentForm({ invoice, isMock, onSuccess }: {
 function PaymentSuccessLanding({ providerName, justPaid }: { providerName: string; justPaid: boolean }) {
   const navigate = useNavigate();
   const rawReturnTo = new URLSearchParams(window.location.search).get("returnTo");
-  const safeReturn = (() => {
-    if (!rawReturnTo) return null;
-    try {
-      const decoded = decodeURIComponent(rawReturnTo);
-      return decoded.startsWith("/") ? decoded : null;
-    } catch {
-      return null;
-    }
-  })();
+  // startsWith("/") let //evil.com and /\evil.com through, which on a payment
+  // success screen is a ready-made phishing hop. See lib/safe-redirect.ts.
+  const safeReturn = safeInternalPath(rawReturnTo);
   useEffect(() => {
     if (!safeReturn || !justPaid) return;
     const t = setTimeout(() => navigate(safeReturn), 2500);

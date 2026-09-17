@@ -136,7 +136,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `react-icons@^5.4.0`
 - `react-redux@^9.2.0`
 - `react-resizable-panels@^2.1.7`
-- `react-router-dom@^6.30.3`
+- `react-router-dom@^7.18.4`
 - `recharts@^2.15.2`
 - `tailwind-merge@^2.6.0`
 - `tailwindcss-animate@^1.0.7`
@@ -213,7 +213,6 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@types/react-big-calendar@^1.16.3`
 - `@types/sanitize-html@^2.16.1`
 - `@types/sharp@^0.31.1`
-- `esbuild@^0.27.4`
 - `rollup@^4.59.0`
 - `tsx@^4.21.0`
 
@@ -253,6 +252,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@types/ws@^8.5.13`
 - `@vitejs/plugin-react@^4.7.0`
 - `autoprefixer@^10.4.20`
+- `esbuild@^0.28.2`
 - `postcss@^8.4.47`
 - `typescript@5.6.3`
 - `vite@^7.3.0`

@@ -1512,6 +1512,48 @@ Also required on the production host before this ships:
 - `DAILY_WEBHOOK_SECRET` (now fails closed instead of accepting anything).
 - `TEST_RUNNER_TOKEN` if the admin test-runner dashboard is used there.
 
+### 10g. Dependency remediation, 2026-09-16: 21 advisories -> 0
+
+The whole phase came down to one habit: **check whether an advisory is on the
+package itself or on something underneath it before touching a major version.**
+Only two of the eight "fixes" npm proposed were the right move.
+
+| What npm proposed | What was actually done |
+|---|---|
+| upgrade `drizzle-orm` (SQL injection) | **deleted it** - unused template leftover, see the Drizzle commit |
+| `prisma` 7 -> 6 | override `mysql2` and `deepmerge-ts` upward (10f) |
+| `@nestjs/*` 11 -> 12 | nothing - their rating was inherited from `multer` |
+| `@google-cloud/storage` -> 8 | nothing - inherited from `uuid` |
+| `googleapis` -> 181 | nothing - inherited from `uuid` |
+| `exceljs` -> 3.4 | nothing - inherited from `uuid` |
+| `sharp` 0.34 -> 0.35 | **done** - real libvips/libheif CVEs on uploaded images |
+| `react-router-dom` 6 -> 7 | **done** - a real advisory affecting all of v6 |
+
+Two findings came out of this that were not on the audit list at all:
+
+**`multer` was a phantom dependency.** `server/chat-router.ts` imports it, but
+it was never declared - it resolved through `@nestjs/platform-express`'s copy.
+If Nest had stopped bundling it, chat uploads would have broken at runtime with
+nothing in package.json to explain why. Now declared directly.
+
+**An open redirect on the payment success screen.** `payment-page.tsx` guarded
+its `?returnTo=` with `decoded.startsWith("/")`, which passes `//evil.com`,
+`/\evil.com` and `/%5Cevil.com`. On a payment confirmation page that is a
+ready-made phishing hop. Now goes through `client/src/lib/safe-redirect.ts`,
+which resolves the value against the current origin and insists the result is
+still that origin. Measured: the old guard allowed 5 of 7 bypass strings, the
+new one allows none, and all four legitimate path shapes still work. The same
+helper now also backs the auth page's `returnTo`, which is router state today
+and therefore not attacker-controlled, but would become an open redirect the
+moment anyone wired it to a query parameter.
+
+**Note on `overrides`.** package.json now pins `mysql2`, `deepmerge-ts`,
+`uuid`, `multer` and `esbuild` from above. Two of those use npm's `$name` form,
+which means "follow our own direct dependency" - npm rejects a literal override
+that disagrees with a declared version. These need a glance whenever a parent
+package is upgraded: an override can silently hold a transitive dependency
+back as well as push it forward.
+
 ### 10f. Why Prisma was NOT downgraded
 
 `npm audit` reports `prisma` as high and offers `prisma@6.19.3` as the fix,
@@ -1612,13 +1654,10 @@ shown once at enrolment were actually saved.
    stranding providers mid-signature; they pick up a deadline on the next send.
    **Open follow-up:** revocation has no admin button yet - the column is
    honoured, but switching a link off today means setting it directly.
-6. **npm vulnerabilities: 21 -> 15** (4 high, 10 moderate, 1 low) as of
-   2026-09-16. Done so far: Drizzle deleted rather than upgraded (it was
-   unused), `sharp` 0.34.5 -> 0.35.4 for the libvips/libheif CVEs, and the
-   Prisma chain resolved by override (see 10f). Remaining, all needing their
-   own test pass: the `@nestjs/*` trio -> 12, `@google-cloud/storage` -> 8,
-   `googleapis` -> 181, `exceljs` -> 3.4, `react-router-dom` -> 7,
-   `esbuild` -> 0.28 (low, build-time only).
+6. ~~npm vulnerabilities~~ **DONE 2026-09-16: 21 -> 0.** Not one major
+   framework upgrade was needed, because almost every advisory was inherited
+   rather than on the package itself. See 10f for the reasoning and 10g for
+   what was done.
 7. **`cookies.txt` / `cookies2.txt` were committed with real session cookies.**
    Untracked and gitignored 2026-09-16, but they are still in git history -
    removing them needs a history rewrite, which is Eran's call. The cookies are

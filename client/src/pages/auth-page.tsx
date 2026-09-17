@@ -10,6 +10,7 @@ import { AlertCircle, Baby, Loader2, CheckCircle2, ShieldCheck } from "lucide-re
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { useEffect, useRef, useCallback, useState} from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
+import { safeInternalPath } from "@/lib/safe-redirect";
 
 // A clicked link WINS after login: multi-segment paths (a specific
 // agreement, chat session, pay link, profile - and the role home pages,
@@ -17,8 +18,12 @@ import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 // honored via returnTo. Only bare single-segment paths fall through to the
 // role-based landing (/dashboard -> chat).
 function isDeepLinkReturn(returnTo: string | undefined): boolean {
-  if (!returnTo) return false;
-  const path = returnTo.split("?")[0].replace(/\/+$/, "");
+  // Defence in depth: today this arrives through router state (set from our
+  // own location in App.tsx), not from a URL, so it is not attacker-supplied.
+  // It still goes through the same-origin check, so that if anyone ever wires
+  // it to a query parameter it cannot become an open redirect.
+  if (!safeInternalPath(returnTo)) return false;
+  const path = returnTo!.split("?")[0].replace(/\/+$/, "");
   return path.split("/").filter(Boolean).length >= 2;
 }
 
