@@ -196,6 +196,26 @@ process.on("uncaughtException", (err: any) => {
   const uploadsPath = path.resolve(process.cwd(), "public/uploads");
   app.use("/uploads", express.static(uploadsPath));
 
+  // Static favicon paths. index.html declares /favicon.png and browsers probe
+  // /favicon.ico + /apple-touch-icon.png on their own, but none of those files
+  // exist - they fell through to the SPA's index.html (200 text/html). The
+  // brand favicon was only ever set by JS, which Safari ignores for the tab
+  // icon, so Safari kept whatever icon it had cached for the host. Point all
+  // three at the live SiteSettings favicon (same public brand-asset route).
+  app.get(["/favicon.png", "/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"], async (_req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT "faviconUrl" FROM "SiteSettings" LIMIT 1');
+      const url: string | null = rows[0]?.faviconUrl || null;
+      const m = url?.match(/storage\.googleapis\.com\/[^/]+\/(.+)/);
+      if (!url) return res.status(404).end();
+      res.set("Cache-Control", "public, max-age=3600");
+      return res.redirect(302, m ? `/api/uploads/brand-asset?path=${encodeURIComponent(decodeURIComponent(m[1]))}` : url);
+    } catch (e: any) {
+      console.error("[favicon] lookup failed:", e?.message);
+      return res.status(404).end();
+    }
+  });
+
   const personasPath = path.resolve(process.cwd(), "server/personas");
   app.use("/persona-avatars", express.static(personasPath));
 
