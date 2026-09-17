@@ -1758,7 +1758,7 @@ async function createTestUser(testId: string, interestedServices: string[], base
   const email = `test-${testId.toLowerCase()}-${Date.now()}@gostork-test.com`;
   const regRes = await fetchWithServerRetry(`${baseUrl}/api/users`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: TEST_PASSWORD, name: `Test ${testId}` }),
   });
   if (!regRes.ok) throw new Error(`Register failed: ${await regRes.text()}`);
@@ -1766,7 +1766,7 @@ async function createTestUser(testId: string, interestedServices: string[], base
 
   const loginRes = await fetchWithServerRetry(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
   if (!loginRes.ok) throw new Error(`Login failed: ${await loginRes.text()}`);
@@ -2282,7 +2282,7 @@ async function main() {
   // Verify server
   try {
     await fetch(`${BASE_URL}/api/auth/login`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
       body: JSON.stringify({ email: "x", password: "x" }),
     });
   } catch {

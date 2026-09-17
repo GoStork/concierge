@@ -26,6 +26,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import { StorageService } from "../storage/storage.service";
+import { safeFetch } from "../../lib/ssrf-guard";
 
 export type FaceEntityType = "Egg Donor" | "Sperm Donor" | "Surrogate";
 
@@ -141,14 +142,28 @@ export async function fetchImageBytes(url: string): Promise<Buffer | null> {
         }
       }
       if (!raw) {
-        const res = await fetch(url);
+        // SSRF (OWASP A01): photoUrl is provider-writable and scraper-written,
+        // so this is a server-side fetch of a URL we do not control. safeFetch
+        // resolves DNS, refuses every reserved range, and re-checks each
+        // redirect hop - the same guard the image proxy uses.
+        const res = await safeFetch(url, { headers: { Accept: "image/*" } });
         if (!res.ok) return null;
         raw = Buffer.from(await res.arrayBuffer());
       }
     } else {
       // Local /uploads/... path served from public/.
+      //
+      // Path traversal (OWASP A01): `url` is a stored photoUrl, so "../" in it
+      // would walk out of public/ and read an arbitrary file off the disk.
+      // Resolve first, then insist the result is still inside public/ - a
+      // check on the resolved path, never on the raw string.
+      const publicRoot = path.resolve(process.cwd(), "public");
       const rel = url.startsWith("/") ? url.slice(1) : url;
-      raw = await fs.readFile(path.join(process.cwd(), "public", rel));
+      const resolved = path.resolve(publicRoot, rel);
+      if (resolved !== publicRoot && !resolved.startsWith(publicRoot + path.sep)) {
+        return null;
+      }
+      raw = await fs.readFile(resolved);
     }
     if (!raw || raw.length === 0) return null;
     return await sharp(raw)

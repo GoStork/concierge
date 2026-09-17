@@ -54,7 +54,7 @@ async function jfetch(url: string, opts: RequestInit): Promise<Response> {
 
 async function login(email: string): Promise<Record<string, string>> {
   const res = await jfetch(`${BASE}/api/auth/login`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
   const body: any = await res.json();
@@ -76,7 +76,7 @@ async function buildFixture(db: Client, tag: string): Promise<Fixture> {
 
   for (const [email, name] of [[parentEmail, `JR Parent ${tag}`], [providerEmail, `JR Prov ${tag}`]]) {
     await jfetch(`${BASE}/api/users`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
       body: JSON.stringify({ email, password: TEST_PASSWORD, name }),
     });
   }

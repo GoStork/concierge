@@ -29,13 +29,13 @@ async function getDB() {
 async function makeUser(tag: string): Promise<{ id: string; email: string; auth: string }> {
   const email = `test-reviews-${tag}-${Date.now()}@gostork-test.com`;
   const reg = await fetch(`${BASE}/api/users`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: PW, name: `Review Tester ${tag}` }),
   });
   if (!reg.ok) throw new Error(`register ${tag} failed: ${await reg.text()}`);
   const user = await reg.json();
   const login = await fetch(`${BASE}/api/auth/login`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: PW }),
   });
   if (!login.ok) throw new Error(`login ${tag} failed: ${await login.text()}`);
@@ -159,7 +159,7 @@ async function main() {
     created.userIds.push(provUser.id);
     await prisma.user.update({ where: { id: provUser.id }, data: { providerId, roles: ["PROVIDER_ADMIN"] } });
     // Re-login so the JWT/session picks up the provider role
-    const provLogin = await fetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: provUser.email, password: PW }) });
+    const provLogin = await fetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" }, body: JSON.stringify({ email: provUser.email, password: PW }) });
     const provAuth = `Bearer ${(await provLogin.json()).token}`;
 
     const mineList = await (await fetch(`${BASE}/api/reviews/mine`, { headers: hdr(provAuth) })).json();
@@ -194,7 +194,7 @@ async function main() {
     // GOSTORK_* account with no authenticator cannot complete a password
     // login. Roles are re-read from the database per request, so this token
     // becomes an admin token as soon as the update below lands.
-    const adminLogin = await fetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: adminUser.email, password: PW }) });
+    const adminLogin = await fetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" }, body: JSON.stringify({ email: adminUser.email, password: PW }) });
     await prisma.user.update({ where: { id: adminUser.id }, data: { roles: ["GOSTORK_ADMIN"] } });
     const adminAuth = `Bearer ${(await adminLogin.json()).token}`;
 

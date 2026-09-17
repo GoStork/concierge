@@ -36,7 +36,7 @@ import { NotificationService } from "./src/modules/notifications/notification.se
 import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
 import { sessionSecret, jwtSecret } from "./src/lib/app-secrets";
-import { authLimiter, passwordResetLimiter, publicWriteLimiter } from "./src/lib/rate-limits";
+import { authLimiter, passwordResetLimiter, publicWriteLimiter, publicBookingLimiter } from "./src/lib/rate-limits";
 import { buildCsp, cspMode, CSP_REPORT_PATH } from "./src/lib/csp";
 import { pool } from "./db";
 import path from "path";
@@ -188,6 +188,9 @@ process.on("uncaughtException", (err: any) => {
   app.use("/api/auth/verify-otp", authLimiter);
   app.use("/api/auth/reset-password", authLimiter);
   app.use("/api/auth/forgot-password", passwordResetLimiter);
+  // Public booking: unauthenticated by design, so the only brake is volume.
+  // Express matches this prefix before Nest sees the route.
+  app.use("/api/calendar/book", publicBookingLimiter);
 
   const uploadsPath = path.resolve(process.cwd(), "public/uploads");
   app.use("/uploads", express.static(uploadsPath));

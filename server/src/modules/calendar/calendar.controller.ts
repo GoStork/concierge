@@ -3,6 +3,8 @@ import {
   Get,
   Put,
   Post,
+  HttpCode,
+  HttpStatus,
   Patch,
   Delete,
   Body,
@@ -3005,7 +3007,15 @@ I'll check in with you right after the call. You've got this!`;
     return { booking };
   }
 
-  @Get("booking/:token/confirm")
+  /**
+   * POST, not GET (OWASP A01). A state-changing GET is fired by anything that
+   * merely *touches* the URL: an <img src> on any page, a link prefetcher, a
+   * chat unfurler, or a corporate mail scanner following links in the very
+   * email that carries this token. Confirming someone's booking must take a
+   * deliberate action, not a page load.
+   */
+  @Post("booking/:token/confirm")
+  @HttpCode(HttpStatus.OK)
   async confirmBooking(@Param("token") token: string) {
     const booking = await this.prisma.booking.findFirst({
       where: { confirmToken: token },
@@ -3043,7 +3053,9 @@ I'll check in with you right after the call. You've got this!`;
     return { message: "Booking confirmed", booking: updated };
   }
 
-  @Get("booking/:token/decline")
+  /** POST for the same reason as confirm above. */
+  @Post("booking/:token/decline")
+  @HttpCode(HttpStatus.OK)
   async declineBooking(@Param("token") token: string) {
     const booking = await this.prisma.booking.findFirst({
       where: { confirmToken: token },

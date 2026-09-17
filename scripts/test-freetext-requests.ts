@@ -96,12 +96,12 @@ async function createUser(db: Client, tag: string, services: string[]): Promise<
   const email = `test-${tag}-${Date.now()}@gostork-test.com`;
   await jfetch(`${BASE}/api/users`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: TEST_PASSWORD, name: `Test ${tag}` }),
   });
   const loginRes = await jfetch(`${BASE}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
   const loginBody: any = await loginRes.json();
@@ -454,7 +454,7 @@ async function createProviderFor(db: Client, u: TestUser, tag: string): Promise<
   const providerId = prov.rows[0].id;
   const provEmail = `test-${tag}-prov-${stamp}@gostork-test.com`;
   await jfetch(`${BASE}/api/users`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email: provEmail, password: TEST_PASSWORD, name: `Prov ${tag}` }),
   });
   const pu = await db.query(`SELECT id FROM "User" WHERE email = $1`, [provEmail]);
@@ -469,7 +469,7 @@ async function createProviderFor(db: Client, u: TestUser, tag: string): Promise<
   // (answering a whisper) rather than seeding rows directly.
   const provLogin = await jfetch(`${BASE}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email: provEmail, password: TEST_PASSWORD }),
   });
   const provBody: any = await provLogin.json();

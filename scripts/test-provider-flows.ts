@@ -75,7 +75,7 @@ async function jfetch(url: string, opts: RequestInit): Promise<Response> {
 async function login(email: string): Promise<Record<string, string>> {
   const res = await jfetch(`${BASE}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
   const body: any = await res.json();
@@ -105,12 +105,12 @@ async function createFixture(db: Client, tag: string): Promise<Fixture> {
 
   await jfetch(`${BASE}/api/users`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email: parentEmail, password: TEST_PASSWORD, name: `Test Parent ${tag}` }),
   });
   await jfetch(`${BASE}/api/users`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email: providerEmail, password: TEST_PASSWORD, name: `Test Provider Staff ${tag}` }),
   });
 
@@ -592,7 +592,7 @@ async function pr08(db: Client) {
     const direct = await tryBook(slug, f, { hoursOut: 72 });
     check("a plain consultation through the booking link is unaffected", direct.status < 400, `status=${direct.status}`);
     const directMatch = await fetch(`${BASE}/api/calendar/book/${slug}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
       body: JSON.stringify({
         scheduledAt: new Date(Date.now() + 96 * 3600_000).toISOString().replace(/\.\d{3}Z$/, ""),
         name: "Test Parent", email: f.parentEmail, timezone: "America/New_York",
@@ -787,7 +787,7 @@ async function tryBook(
   }
   const res = await fetch(`${BASE}/api/calendar/book/${slug}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify(body),
   });
   return { status: res.status, body: await res.json().catch(() => ({})) };
@@ -833,7 +833,7 @@ async function bookViaHttp(
   }
   const res = await jfetch(`${BASE}/api/calendar/book/${slug}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify(body),
   });
   return res.json() as Promise<any>;

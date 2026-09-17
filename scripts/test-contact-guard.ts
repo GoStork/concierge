@@ -51,7 +51,7 @@ const trash: { userIds: string[]; sessionIds: string[] } = { userIds: [], sessio
 
 async function login(email: string) {
   const res = await fetch(`${BASE}/api/auth/login`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: PW }),
   });
   const body = await res.json();
@@ -61,7 +61,7 @@ async function login(email: string) {
 
 async function register(email: string, name: string) {
   const r = await fetch(`${BASE}/api/users`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
     body: JSON.stringify({ email, password: PW, name }),
   });
   if (!r.ok) throw new Error(`register ${email}: ${await r.text()}`);
@@ -271,7 +271,7 @@ async function cg07() {
   });
   if (cfg?.bookingPageSlug) {
     const r = await fetch(`${BASE}/api/calendar/book/${cfg.bookingPageSlug}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
       body: JSON.stringify({
         scheduledAt: new Date(Date.now() + 7 * 864e5).toISOString(),
         name: "Guard Parent", email: f.parentEmail, timezone: "America/New_York",

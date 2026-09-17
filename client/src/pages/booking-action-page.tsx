@@ -45,9 +45,9 @@ export default function BookingActionPage({ action }: { action: ActionType }) {
   async function executeAction() {
     try {
       const endpoint = `/api/calendar/booking/${token}/${action}`;
-      const res = await fetch(endpoint, {
-        method: action === "suggest-time" ? "POST" : "GET",
-      });
+      // Always POST. These actions change state, so they must never be
+      // reachable by something merely fetching the URL (see the controller).
+      const res = await fetch(endpoint, { method: "POST" });
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
