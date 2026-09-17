@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { Check } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import type { ComparisonCardData } from "@/pages/concierge-chat-page";
+import type { ComparisonCardData } from "@/components/chat/concierge-cards";
 
 /**
  * Side-by-side comparison card for the AI concierge chat.

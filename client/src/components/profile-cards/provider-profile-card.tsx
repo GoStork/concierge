@@ -2,7 +2,7 @@ import { ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { InlineBookingCalendar } from "@/pages/concierge-chat-page";
+import { InlineBookingCalendar } from "@/components/chat/concierge-cards";
 import { RatingBadge } from "@/components/reviews/reviews-ui";
 
 // Provider-type chip under the name. The card serves EVERY provider type

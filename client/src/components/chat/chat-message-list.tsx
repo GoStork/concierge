@@ -8,6 +8,7 @@ import { CostSheetDraftStack } from "./cost-sheet-draft-stack";
 import { CelebrationBurst } from "./celebration-burst";
 import { useScrollToMessage } from "@/hooks/use-scroll-to-message";
 import { InlineBookingNotification } from "./inline-booking-notification";
+import { ChatInlineCards } from "./concierge-cards";
 import type { SessionMessage, ViewerRole } from "./chat-types";
 import type { ChatPalette } from "@/lib/chat-palette";
 
@@ -327,6 +328,22 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   <CelebrationBurst messageId={msg.id} createdAt={msg.createdAt} kind={(msg.uiCardData as any).celebration} />
                 )}
 
+                {/* The match / doctor / comparison cards Eva posted with this
+                    message. Read-only here: the admin monitor and the provider
+                    view show exactly what the parent was shown, but a watcher
+                    must never act on the parent's behalf. Without this the
+                    monitor showed Eva's text referring to "the card above" with
+                    no card anywhere. */}
+                {!own && (
+                  <ChatInlineCards
+                    msg={msg}
+                    allMessages={messages}
+                    brandColor={brandColor}
+                    placement="above"
+                    readOnly
+                  />
+                )}
+
                 {/* Message bubble + timestamp below */}
                 {showBubble && (
                   <div className={`flex w-full ${own ? "justify-end" : "justify-start"}`}>
@@ -375,6 +392,15 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                     </div>
                   </div>
                 )}
+
+                {/* Meeting, prep-doc, agreement and consultation/calendar cards. */}
+                <ChatInlineCards
+                  msg={msg}
+                  allMessages={messages}
+                  brandColor={brandColor}
+                  placement="below"
+                  readOnly
+                />
 
                 {/* Special card (attachment, video, calendar, etc.) */}
                 {msg.uiCardType && (

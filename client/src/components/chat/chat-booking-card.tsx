@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { format } from "date-fns";
 import { InlineSuggestTimeForm } from "./inline-suggest-time-form";
-import { RescheduleCalendarPicker } from "@/pages/concierge-chat-page";
+import { RescheduleCalendarPicker } from "@/components/chat/concierge-cards";
 
 interface ChatBookingCardProps {
   booking: any;

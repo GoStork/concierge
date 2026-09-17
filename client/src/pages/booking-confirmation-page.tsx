@@ -12,7 +12,7 @@ import {
   Loader2, Calendar, Clock, Video, User, Users, Check, X, RefreshCw
 } from "lucide-react";
 import { AddToCalendarButtons } from "@/components/calendar/add-to-calendar-buttons";
-import { RescheduleCalendarPicker } from "@/pages/concierge-chat-page";
+import { RescheduleCalendarPicker } from "@/components/chat/concierge-cards";
 import { format } from "date-fns";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
