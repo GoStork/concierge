@@ -616,9 +616,12 @@ Useful context for the executing session:
 - [ ] **Re-sync `ConciergePromptSection` DEV -> PROD before launch.** PROD was
   seeded 2026-08-18; every prompt edit since then was pushed to DEV only
   (by design). Diff each section's `content` between the two projects and
-  copy DEV over PROD. Known drift: `protocols` (2026-09-17 - human-escalation
-  quick replies gained "I no longer need the team" + the cancel rule; the
-  server code already expects the 4-reply set).
+  copy DEV over PROD. Why it matters: CODE reaches PROD on every push to main
+  (auto-deploy), prompts do not - so a prompt edit that ships with code must
+  be pushed to PROD the same day or the two disagree. `protocols` was synced
+  to PROD on 2026-09-17 (escalation quick replies gained "I no longer need the
+  team" + the cancel rule); any OTHER section edited since 2026-08-18 is still
+  unverified - diff them all.
 - [x] pgvector extension enabled on the new project (2026-08-18; `vector`
   and `pg_trgm` in schema `public` to match dev, HNSW indexes pre-created).
 - [ ] Decide provider/staff account migration: real provider logins (e.g.
