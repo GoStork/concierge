@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { geocodePlace, haversineMiles } from "./src/lib/geo";
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, repairCardTagTerminators, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession, isLegacyCurationReadyRow } from "./parent-visibility";
 import {
@@ -3269,6 +3270,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           mobileNumber: true,
           city: true,
           state: true,
+          // Origin for the clinic search radius (nearZip beats nearCity/nearState).
+          zip: true,
           country: true,
           gender: true,
           sexualOrientation: true,
@@ -7124,6 +7127,11 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         presentedProviderIds.size > 0 &&
         /(\btoo (far|expensive|pricey|costly|small|old|young|low)\b|\bnot (for|what) (me|i|us|we)\b|\bdoesn'?t work for (me|us)\b|\bnot interested\b|\bi'?ll pass\b|^\s*pass\b|\bdon'?t (like|want) (this|that|them|this one|that one)\b|\b(somewhere|something) (closer|cheaper|else)\b|\bfarther than\b|\btoo much money\b)/i.test(userMessage || "");
       const passesOnLastCard = asksForAnotherProfile || rejectsLastCard;
+      // A distance rejection specifically, which is the one we can act on with
+      // a real filter rather than only a prompt directive.
+      const rejectsForDistance =
+        rejectsLastCard &&
+        /(\btoo far\b|\bfarther than\b|\b(somewhere|something) closer\b|\bcloser to (me|us|home)\b|\btoo much (of a )?(drive|travel)\b|\bnot local\b)/i.test(userMessage || "");
       if (rejectsLastCard) {
         // Forcing a fresh excluded search gets her a DIFFERENT profile; this
         // makes the model use her stated reason as a constraint rather than
@@ -7199,8 +7207,49 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         }
         if (userRecord?.state) args.state = userRecord.state;
         if (userRecord?.city) args.city = userRecord.city;
+        // The origin for any radiusMiles the model (or the too-far path below)
+        // asks for. Always supplied so the model never has to invent a starting
+        // point; on its own it bounds nothing.
+        if (userRecord?.city) args.nearCity = userRecord.city;
+        if (userRecord?.state) args.nearState = userRecord.state;
+        if ((userRecord as any)?.zip) args.nearZip = (userRecord as any).zip;
         if (presentedProviderIds.size > 0) args.excludeIds = Array.from(presentedProviderIds);
         return args;
+      };
+
+      // "That's too far" is the one rejection we can answer with a real filter
+      // instead of a hope. Bound the next search to a radius that is genuinely
+      // closer than what she just turned down: IVF is not one visit, it is
+      // monitoring appointments every few days for weeks, so the useful radius
+      // is a routine drive - not "same state". Never wider than half the
+      // distance she rejected, so the answer is always meaningfully nearer.
+      const DEFAULT_CLINIC_RADIUS_MILES = 75;
+      const clinicRadiusForRejection = async (): Promise<number | null> => {
+        const origin = geocodePlace({
+          zip: (userRecord as any)?.zip,
+          city: userRecord?.city,
+          state: userRecord?.state,
+        });
+        if (!origin) return null; // international / unknown home - do not fake a bound
+        let rejected: number | null = null;
+        try {
+          const lc = await latestCardPromise;
+          const rejectedId = (lc as any)?.providerId;
+          if (rejectedId) {
+            const locs = await prisma.providerLocation.findMany({
+              where: { providerId: String(rejectedId) },
+              select: { city: true, state: true, zip: true },
+            });
+            for (const l of locs) {
+              const point = geocodePlace({ zip: l.zip, city: l.city, state: l.state });
+              if (!point) continue;
+              const miles = haversineMiles(origin, point);
+              if (rejected == null || miles < rejected) rejected = miles;
+            }
+          }
+        } catch { /* fall back to the default radius */ }
+        if (rejected == null) return DEFAULT_CLINIC_RADIUS_MILES;
+        return Math.max(25, Math.min(DEFAULT_CLINIC_RADIUS_MILES, Math.floor(rejected / 2)));
       };
       if (forceToolUseForSearch && /perfect clinic matches|clinic matches now|find your clinic matches/i.test(String(lastAiMsg?.content || ""))) {
         preSearchForReady = { name: "search_clinics", args: buildClinicSearchArgs() };
@@ -7257,6 +7306,13 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           // clinic ready turn was left with no search at all.
           toolName = "search_clinics";
           Object.assign(args, buildClinicSearchArgs());
+          if (rejectsForDistance) {
+            const r = await clinicRadiusForRejection();
+            if (r) {
+              args.radiusMiles = r;
+              console.log(`[TOO_FAR] clinic re-search bounded to ${r} miles of ${userRecord?.city}, ${userRecord?.state}`);
+            }
+          }
         } else if (preSearchService === "surrogate" && internationalOnly) {
           // PATH A: an international-only parent's "ready" means the AGENCY
           // search (the CountryProgram card), never a US surrogate profile.

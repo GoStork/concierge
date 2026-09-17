@@ -15,6 +15,7 @@ import { resolveCompensationAndTotalCost, getMatchedCostSheetItems } from "./mod
 import { fetchImageBytes, searchByImage, type FaceEntityType } from "./modules/face/face-recognition.service.js";
 import { trackGemini } from "./lib/gemini-usage";
 import { GEMINI_BATCH_MODEL } from "./lib/gemini-models";
+import { geocodePlace, haversineMiles } from "./lib/geo.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -1029,6 +1030,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             city: {
               type: "string",
               description: "Filter by city name",
+            },
+            radiusMiles: {
+              type: "number",
+              description: "HARD distance limit in miles from the parent's home (nearCity/nearState/nearZip, which the server fills in from their profile). Use this the moment a parent says a clinic is too far, or asks for something closer/nearby/within driving distance - state and city filters do NOT bound distance (a 'New York' clinic can be 200+ miles from a parent in Manhattan). Clinics further than this, and clinics whose location cannot be placed on a map (most non-US clinics), are excluded. Results come back nearest-first with distanceMiles on each.",
+            },
+            nearCity: {
+              type: "string",
+              description: "Origin city for radiusMiles. Normally server-filled from the parent's profile - only set it when the parent names a different starting point.",
+            },
+            nearState: {
+              type: "string",
+              description: "Origin US state for radiusMiles (abbreviation or full name). Normally server-filled from the parent's profile.",
+            },
+            nearZip: {
+              type: "string",
+              description: "Origin US ZIP for radiusMiles - more precise than city. Normally server-filled from the parent's profile.",
             },
             name: {
               type: "string",
@@ -2086,7 +2103,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsGenderSelection, wantsEmbryoTransfer, parentAge1, parentAge2, patientType, userId: reqUserId } = args as any;
+      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsGenderSelection, wantsEmbryoTransfer, parentAge1, parentAge2, patientType, userId: reqUserId, radiusMiles, nearCity, nearState, nearZip } = args as any;
 
       // Matching-requirements context: derived from the parent's profile
       // (server-injected userId), with model-supplied args as overrides.
@@ -2118,7 +2135,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const take = Math.min(rawLimit || 5, 10);
       const clinicSelect = {
         id: true, name: true, logoUrl: true, about: true, sponsoredUntil: true,
-        locations: { select: { city: true, state: true, address: true }, orderBy: { sortOrder: "asc" as const } },
+        locations: { select: { city: true, state: true, address: true, zip: true }, orderBy: { sortOrder: "asc" as const } },
         members: { select: { name: true, title: true, bio: true, isMedicalDirector: true }, orderBy: { sortOrder: "asc" as const }, take: 10 },
         ivfSuccessRates: {
           where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births", "pct_transfers_live_births_donor"] } },
@@ -2225,6 +2242,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return true;
       });
 
+      // HARD distance limit. A state or city filter does not bound distance -
+      // "New York" matched a clinic 193 miles from a parent in Manhattan, and
+      // when she said it was too far the search had no way to act on it. The
+      // radius is only applied when the ORIGIN resolves; an unresolvable origin
+      // (an international parent, or a profile with no usable city/state) skips
+      // the filter rather than silently returning nothing.
+      const radius = Number(radiusMiles) > 0 ? Number(radiusMiles) : null;
+      const origin = radius ? geocodePlace({ zip: nearZip, city: nearCity, state: nearState }) : null;
+      const distanceByClinicId = new Map<string, number>();
+      let droppedTooFar = 0;
+      let droppedUnplaceable = 0;
+      if (radius && origin) {
+        clinics = clinics.filter((c: any) => {
+          // A clinic is as close as its NEAREST location - a national group with
+          // a Manhattan office is not "too far" because its HQ is upstate.
+          let best: number | null = null;
+          for (const l of c.locations || []) {
+            const point = geocodePlace({ zip: l.zip, city: l.city, state: l.state });
+            if (!point) continue;
+            const miles = haversineMiles(origin, point);
+            if (best == null || miles < best) best = miles;
+          }
+          if (best == null) {
+            // Cannot be placed on a map, so it cannot be shown to satisfy a
+            // distance promise. Counted and reported, never silently dropped.
+            droppedUnplaceable++;
+            return false;
+          }
+          if (best > radius) { droppedTooFar++; return false; }
+          distanceByClinicId.set(c.id, best);
+          return true;
+        });
+        // No distance sort here on purpose: the radius is a HARD filter, and
+        // within it the existing success-rate ordering below still decides the
+        // ranking. Sorting by distance here would be silently overridden by it.
+      }
+
       // Build rich results with locations, doctors, and success rates
       let results = clinics.map((c: any) => {
         const locations = (c.locations || []).map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean);
@@ -2242,12 +2296,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isNewPatient,
         });
 
+        const distanceMiles = distanceByClinicId.has(c.id)
+          ? Math.round(distanceByClinicId.get(c.id)!)
+          : undefined;
+
         return {
           id: c.id,
           name: c.name,
           logoUrl: c.logoUrl,
           about: c.about ? c.about.slice(0, 200) : null,
           locations,
+          ...(distanceMiles != null ? { distanceMiles } : {}),
           doctors: doctors.slice(0, 5),
           successRate: sr.successRate,
           successRateLabel: sr.successRateLabel,
@@ -2290,11 +2349,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       results = results.slice(0, take);
 
       const ageLabel = targetAgeGroup === "under_35" ? "Under 35" : targetAgeGroup === "35_37" ? "35-37" : targetAgeGroup === "38_40" ? "38-40" : "Over 40";
+      // The model must never present a radius-filtered result as if nothing was
+      // left out - especially the unplaceable ones, which are mostly the
+      // international clinics an international parent would actually want.
+      let radiusNote = "";
+      if (radius && origin) {
+        const where = [nearZip, nearCity, nearState].filter(Boolean).join(", ") || "the parent's home";
+        radiusNote = `\n\nDISTANCE FILTER APPLIED: only clinics within ${radius} miles of ${where} are listed, nearest distance shown as "distanceMiles" on each result. Excluded: ${droppedTooFar} clinic(s) further than ${radius} miles`
+          + (droppedUnplaceable > 0 ? `, and ${droppedUnplaceable} whose location could not be placed on a map (mostly non-US clinics - say so if the parent may want an international option)` : "")
+          + `. Do NOT claim these are all the clinics available; they are all the clinics within ${radius} miles.`;
+      } else if (radius && !origin) {
+        radiusNote = `\n\nNOTE: a ${radius}-mile limit was requested but the parent's location could not be resolved (international, or no city/state on file), so NO distance filter was applied. Ask the parent where they are based before promising anything about distance.`;
+      }
       const excludedNote = excludedByRequirements.length > 0
         ? `\n\nNOTE: The following clinics were excluded because they do not meet the parent's requirements: ${excludedByRequirements.join("; ")}.`
         : "";
       return {
-        content: [{ type: "text", text: `Found ${results.length} IVF clinics (success rates shown for: ${targetEggSource === "donor" ? "donor eggs" : `own eggs, age group ${ageLabel}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the "successRateLabel" to tell the parent which metric the rate represents (e.g., "For patients in your age group (${ageLabel}) using ${targetEggSource === "donor" ? "donor eggs" : "their own eggs"}, this clinic has a X% live birth rate"). Use the locations, doctors, and successRatesByAge to write a personalized blurb.${minRateNote}${excludedNote}` }],
+        content: [{ type: "text", text: `Found ${results.length} IVF clinics (success rates shown for: ${targetEggSource === "donor" ? "donor eggs" : `own eggs, age group ${ageLabel}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the "successRateLabel" to tell the parent which metric the rate represents (e.g., "For patients in your age group (${ageLabel}) using ${targetEggSource === "donor" ? "donor eggs" : "their own eggs"}, this clinic has a X% live birth rate"). Use the locations, doctors, and successRatesByAge to write a personalized blurb.${minRateNote}${excludedNote}${radiusNote}` }],
       };
     }
 

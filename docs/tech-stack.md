@@ -26,6 +26,7 @@
 - **Security headers:** `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and HSTS in production, set in `server/index.ts`. No CSP yet (tracked in the launch runbook).
 - **API docs:** Swagger (`@nestjs/swagger`)
 - **MCP architecture:** all provider/donor/surrogate/clinic/KB reads go through MCP server tools
+- **Geo / distance:** `zipcodes` (offline US ZIP + city centroid dataset) behind `server/src/lib/geo.ts`, powering the `radiusMiles` hard distance filter on `search_clinics`. Deliberately offline rather than a geocoding API - no key, no per-call latency on a search turn, deterministic in tests. US only: a place that cannot be resolved (most non-US clinics) returns null and is excluded from a radius search rather than treated as nearby.
 - **Dev:** `tsx server/index.ts`; **Build:** esbuild → `dist/index.cjs` (also serves the built client from `dist/public`)
 
 ## Database & data
@@ -222,6 +223,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `otpauth@^9.5.2`
 - `qrcode@^1.5.4`
 - `sanitize-html@^2.17.6`
+- `zipcodes@^8.0.0`
 
 ### Dev / build dependencies
 
