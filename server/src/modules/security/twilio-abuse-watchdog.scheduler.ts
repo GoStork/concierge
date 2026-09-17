@@ -131,6 +131,12 @@ export async function runTwilioAbuseCheck(
     // balance is garnish - never block the alert on it
   }
 
+  // Both platforms share this Twilio account; our own OtpAttempt log says
+  // whether the burst is ours or the other platform's.
+  const ownOtpSends = await prisma.otpAttempt.count({
+    where: { outcome: { in: ["sent", "failed"] }, createdAt: { gte: new Date(windowStart) } },
+  });
+
   console.warn(
     `[twilio-watchdog] ALERT: ${total} sends in ${WINDOW_MINUTES}min (${nonUsCa} outside +1, ${failed} failed) - emailing admins`,
   );
@@ -141,6 +147,7 @@ export async function runTwilioAbuseCheck(
     failed,
     topDestinations,
     balance,
+    ownOtpSends,
   });
 }
 

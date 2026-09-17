@@ -4,7 +4,7 @@ import { BRAND_PRIMARY_FALLBACK } from "../../../../shared/brand-fallback";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
 import { formatPhoneDisplay } from "../../lib/format-phone";
-import { getBaseUrl } from "../../lib/get-base-url";
+import { getBaseUrl, getEnvironmentLabel } from "../../lib/get-base-url";
 import { isExternalMeetingUrl } from "../../lib/daily-room";
 import { esc, buildBrandedEmail, fetchEmailBrandData } from "./email-builder";
 import { parentAccountKey, resolveParentGates } from "../../../parent-privacy";
@@ -1705,6 +1705,8 @@ export class NotificationService implements OnModuleInit {
     failed: number;
     topDestinations: string[];
     balance: string | null;
+    /** Verification sends THIS platform logged in the same window (OtpAttempt). */
+    ownOtpSends: number;
   }) {
     const admins = await this.prisma.user.findMany({
       where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
@@ -1723,6 +1725,14 @@ export class NotificationService implements OnModuleInit {
       { label: "Failed / undelivered", value: String(params.failed) },
       { label: "Top destinations", value: esc(params.topDestinations.join(", ") || "-") },
       ...(params.balance ? [{ label: "Twilio balance", value: esc(params.balance) }] : []),
+      {
+        label: "Sent by this platform",
+        value:
+          params.ownOtpSends > 0
+            ? `${params.ownOtpSends} verification sends logged here in the window`
+            : "0 - this server logged no verification sends in the window, so the burst came from another platform on the same Twilio account",
+      },
+      { label: "Alert from", value: esc(getEnvironmentLabel()) },
     ];
 
     const html = buildBrandedEmail(brandData, {
@@ -1768,10 +1778,10 @@ export class NotificationService implements OnModuleInit {
     }
 
     const brandData = await this.getBrandData();
-    const detailRows = params.findings.map((f) => ({
-      label: esc(f.headline),
-      value: esc(f.detail),
-    }));
+    const detailRows = [
+      ...params.findings.map((f) => ({ label: esc(f.headline), value: esc(f.detail) })),
+      { label: "Alert from", value: esc(getEnvironmentLabel()) },
+    ];
 
     // A rejected second factor means the password is already known, so that
     // case gets the sharper instruction.
@@ -2492,7 +2502,7 @@ export class NotificationService implements OnModuleInit {
       title: params.title,
       greeting: "Security alert from the Stripe sentry.",
       body: esc(params.summary),
-      detailRows: params.detailRows || [],
+      detailRows: [...(params.detailRows || []), { label: "Alert from", value: esc(getEnvironmentLabel()) }],
       alertBox: { text: esc(params.action), type: "warning" as const },
       buttons: [{ label: params.linkLabel || "Open Stripe Dashboard", url: params.linkUrl || "https://dashboard.stripe.com" }],
     });

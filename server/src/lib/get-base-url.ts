@@ -89,3 +89,27 @@ export function isDevHost(): boolean {
     /\.ngrok(-free)?\.(app|io|dev)$/.test(host)
   );
 }
+
+/**
+ * Human-readable "which server sent this" for admin alert emails. The same
+ * admins receive alerts from the dev Macs and from production, and an alert
+ * that does not say where it came from cannot be acted on.
+ */
+export function getEnvironmentLabel(): string {
+  const url = getBaseUrl();
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // fall through with the raw value
+  }
+  let name = "Production";
+  if (isDevHost()) {
+    name = host.startsWith("dev-imac") || host.includes("imac") ? "Development (iMac)"
+      : host.startsWith("dev-mbp") || host === "gostork.ngrok.app" ? "Development (MacBook)"
+      : "Development";
+  } else if (host === "test-app.gostork.com") {
+    name = "Production 2.0 (pre-launch)";
+  }
+  return `${name} - ${url}`;
+}
