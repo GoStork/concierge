@@ -191,11 +191,36 @@ async function runOnce(prisma: PrismaService, notifications: NotificationService
   await notifications.sendAuthAnomalyAlert({ windowMinutes: WINDOW_MINUTES, findings: toSend });
 }
 
+/**
+ * Retention. Rows older than the window are deleted nightly; the long tail
+ * lives in the off-box Cloud Logging copy, which the application cannot delete.
+ * 400 days = a full year of lookback plus margin. deleteMany is idempotent, so
+ * it does not matter that every machine on the same database runs it.
+ */
+export const AUTH_AUDIT_RETENTION_DAYS = Math.max(
+  90,
+  Number(process.env.AUTH_AUDIT_RETENTION_DAYS) || 400,
+);
+
+export async function pruneAuthAuditLog(prisma: PrismaService, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - AUTH_AUDIT_RETENTION_DAYS * 86_400_000);
+  const { count } = await prisma.authAuditLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  if (count > 0) {
+    console.log(`[auth-watchdog] Retention: removed ${count} audit rows older than ${AUTH_AUDIT_RETENTION_DAYS} days`);
+  }
+  return count;
+}
+
 export function startAuthAuditWatchdog(prisma: PrismaService, notifications: NotificationService) {
   if (scheduledTask) return;
   scheduledTask = cron.schedule("*/15 * * * *", () => {
     runOnce(prisma, notifications).catch((e: any) =>
       console.error(`[auth-watchdog] Run failed: ${e?.message}`),
+    );
+  });
+  cron.schedule("20 4 * * *", () => {
+    pruneAuthAuditLog(prisma).catch((e: any) =>
+      console.error(`[auth-watchdog] Retention run failed: ${e?.message}`),
     );
   });
   console.log("[auth-watchdog] Scheduler started - reads the authentication audit log every 15 minutes");

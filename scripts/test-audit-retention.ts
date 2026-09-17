@@ -1,0 +1,25 @@
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { pruneAuthAuditLog, AUTH_AUDIT_RETENTION_DAYS } from "../server/src/modules/security/auth-audit-watchdog.scheduler";
+import { shipAuthEventOffbox, offboxAuditEnabled } from "../server/src/lib/auth-audit-offbox";
+const prisma: any = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
+let fail = 0; const ok = (n: string, c: boolean) => { console.log(`${c ? "PASS" : "FAIL"} ${n}`); if (!c) fail++; };
+(async () => {
+  const tag = "retention-test-" + Date.now();
+  const day = 86_400_000;
+  const old = await prisma.authAuditLog.create({ data: { event: "LOGIN_FAILURE", detail: tag, createdAt: new Date(Date.now() - (AUTH_AUDIT_RETENTION_DAYS + 5) * day) } });
+  const edge = await prisma.authAuditLog.create({ data: { event: "LOGIN_FAILURE", detail: tag, createdAt: new Date(Date.now() - (AUTH_AUDIT_RETENTION_DAYS - 5) * day) } });
+  const before = await prisma.authAuditLog.count({ where: { NOT: { detail: tag } } });
+  const removed = await pruneAuthAuditLog(prisma);
+  ok("window is 400 days", AUTH_AUDIT_RETENTION_DAYS === 400);
+  ok("removed exactly the one expired row", removed === 1);
+  ok("expired row gone", (await prisma.authAuditLog.findUnique({ where: { id: old.id } })) === null);
+  ok("row inside the window kept", (await prisma.authAuditLog.findUnique({ where: { id: edge.id } })) !== null);
+  ok("no real row touched", (await prisma.authAuditLog.count({ where: { NOT: { detail: tag } } })) === before);
+  ok("second run removes nothing", (await pruneAuthAuditLog(prisma)) === 0);
+  await prisma.authAuditLog.delete({ where: { id: edge.id } });
+  ok("off-box sink is OFF on a dev Mac", offboxAuditEnabled() === false);
+  const t = Date.now(); await shipAuthEventOffbox({ event: "LOGIN_FAILURE" });
+  ok("disabled sink returns instantly, no network", Date.now() - t < 50);
+  await prisma.$disconnect(); process.exit(fail ? 1 : 0);
+})();

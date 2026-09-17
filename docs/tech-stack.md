@@ -61,6 +61,7 @@
 - **Calendars:** Google APIs (`googleapis`) for Google Calendar + Gmail; **Microsoft Graph** for Outlook; **CalDAV** (`tsdav`) for Apple iCloud
 - **PandaDoc** (`pandadoc-editor`) - agreement signing
 - **Google Cloud Storage** (`@google-cloud/storage`) - recordings, photos, cost-sheet files
+- **Google Cloud Logging** (REST, no SDK - `server/src/lib/auth-audit-offbox.ts`) - write-only off-box copy of the authentication audit log, production host only
 - **HeyGen LiveAvatar** (REST/WebSocket, LITE mode; `LIVEAVATAR_API_KEY`/`HEYGEN_API_KEY`) - realtime lip-synced video avatar for Eva voice mode; video delivered to the browser via **LiveKit** (`livekit-client`)
 - **2captcha** - scraper reCAPTCHA solving
 

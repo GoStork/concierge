@@ -508,7 +508,8 @@ Useful context for the executing session:
 
 - [ ] Point app.gostork.com origin at the 2.0 production host (keep orange-cloud
   proxy).
-- [ ] **Bot Fight Mode must come OFF at launch** (verified ON 2026-08-18 with
+- [x] **Bot Fight Mode must come OFF at launch** - DONE, found OFF on
+  2026-09-17 (see the AI-bot migration note below). Keep it off. (Was verified ON 2026-08-18 with
   JS Detections; it is what serves `cf-mitigated: challenge` to non-browser
   requests). On standard plans Bot Fight Mode CANNOT be bypassed per-path -
   WAF skip rules do not apply to it - so left on, it silently kills ALL
@@ -930,7 +931,9 @@ State 2026-08-19 (live account acct_1TYZ1aCGqwxDjN6V, done in Eran's Chrome):
   main destination (handler lives in connect.controller; verify routing).
   Both routes answered 400 (signature rejected) unsigned through
   Cloudflare before creation, per the checklist.
-- [ ] ERAN: **Connect platform onboarding is INCOMPLETE on live**
+- [x] ERAN: **Connect platform onboarding** - DONE. Platform profile shows both
+  acknowledgements "Completed August 19, 2026" (Eran's screenshot, 2026-09-17).
+  Original note: Connect platform onboarding was INCOMPLETE on live
   (Settings > Connect > Platform profile shows "Onboarding incomplete" +
   two acknowledgements: refunds/chargebacks liability, ongoing seller
   compliance). Without it NO provider payouts in live. Complete at
@@ -1642,6 +1645,33 @@ scheduler involved (including that 24 failures stays silent while 26 fires, so
 the threshold is real and not decorative), and a live run against real audit
 rows proving it claims exactly one alert and the second run in the same hour is
 deduped rather than re-sent.
+
+### 10j. Audit log: off-box copy + retention (2026-09-17)
+
+The audit table sits in the database the application writes to, so taking over
+the application meant being able to rewrite its history. Now:
+
+- **Off-box copy.** `server/src/lib/auth-audit-offbox.ts` sends every event to
+  Cloud Logging (`projects/gostork/logs/gostork-auth-audit`) as it happens,
+  BEFORE and independently of the database insert. Enabled by
+  `AUTH_AUDIT_SINK=gcp` in the prod host `.env` only - the Macs have no
+  metadata server. No SDK, no agent: a metadata-server token plus
+  `entries:write`.
+- **Why a compromised host cannot erase it.** Verified from the VM with its own
+  token on 2026-09-17: `entries:write` 200, `entries:list` 403, log delete 403.
+  The VM carries the `logging.write` scope and nothing else for logging. Do NOT
+  widen that scope or grant the compute service account a Logging admin/viewer
+  role - that one change undoes the whole control.
+- **Retention.** Database rows older than 400 days are deleted nightly at 04:20
+  (`pruneAuthAuditLog`, `AUTH_AUDIT_RETENTION_DAYS`, floor 90). Test:
+  `npx tsx --env-file=.env scripts/test-audit-retention.ts`.
+- **A dead copy is loud.** A failed ship logs
+  `[auth-audit] OFF-BOX COPY FAILED` (at most once a minute). Grep for it.
+- [ ] ERAN/ops (needs the human gcloud login, the VM account rightly cannot):
+  dedicated log bucket with 400-day retention + a sink for
+  `logName:"gostork-auth-audit"`, then LOCK the bucket so retention cannot be
+  shortened. Until then the entries sit in `_Default` at 30 days.
+- To read: Logs Explorer, query `logName="projects/gostork/logs/gostork-auth-audit"`.
 
 ### 10f. Why Prisma was NOT downgraded
 

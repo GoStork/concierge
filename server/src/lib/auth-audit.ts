@@ -10,6 +10,8 @@
  *  2. Never break the request. Writing an audit row is best-effort - if the
  *     insert fails we log and carry on rather than failing someone's login.
  */
+import { shipAuthEventOffbox } from "./auth-audit-offbox";
+
 export type AuthAuditEvent =
   | "LOGIN_SUCCESS"
   | "LOGIN_FAILURE"
@@ -77,18 +79,20 @@ const oneLine = (v: string | null | undefined, max: number): string | null =>
  * (PrismaService or the raw client). Never throws.
  */
 export async function recordAuthEvent(db: any, input: AuthAuditInput): Promise<void> {
+  const data = {
+    event: input.event,
+    userId: input.userId ?? null,
+    email: oneLine(input.email?.toLowerCase(), 320),
+    actorId: input.actorId ?? null,
+    ip: oneLine(input.ip, 60),
+    userAgent: oneLine(input.userAgent, 300),
+    detail: oneLine(input.detail, 300),
+  };
+  // Off-box first and independently: if the database is the thing under attack
+  // (or down), the copy the application cannot delete must still be written.
+  void shipAuthEventOffbox({ ...data, at: new Date().toISOString() });
   try {
-    await db.authAuditLog.create({
-      data: {
-        event: input.event,
-        userId: input.userId ?? null,
-        email: oneLine(input.email?.toLowerCase(), 320),
-        actorId: input.actorId ?? null,
-        ip: oneLine(input.ip, 60),
-        userAgent: oneLine(input.userAgent, 300),
-        detail: oneLine(input.detail, 300),
-      },
-    });
+    await db.authAuditLog.create({ data });
   } catch (e: any) {
     console.error(`[auth-audit] Failed to record ${input.event}: ${e?.message}`);
   }
