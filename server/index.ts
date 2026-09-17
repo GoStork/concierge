@@ -31,6 +31,7 @@ import { startPendingBookingScheduler } from "./src/modules/calendar/pending-boo
 import { startSponsorshipExpiryScheduler } from "./src/modules/sponsorship/sponsorship-expiry.scheduler";
 import { startRankSnapshotScheduler } from "./src/modules/sponsorship/rank-snapshot.scheduler";
 import { startTwilioAbuseWatchdog } from "./src/modules/security/twilio-abuse-watchdog.scheduler";
+import { startAuthAuditWatchdog } from "./src/modules/security/auth-audit-watchdog.scheduler";
 import { SponsorshipService } from "./src/modules/sponsorship/sponsorship.service";
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
@@ -493,6 +494,7 @@ process.on("uncaughtException", (err: any) => {
   startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));
   startRankSnapshotScheduler(prismaService);
   startTwilioAbuseWatchdog(prismaService, notificationService);
+  startAuthAuditWatchdog(prismaService, notificationService);
   startStripeSecuritySweep(prismaService as any, notificationService);
   }
 

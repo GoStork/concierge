@@ -1554,6 +1554,40 @@ that disagrees with a declared version. These need a glance whenever a parent
 package is upgraded: an override can silently hold a transitive dependency
 back as well as push it forward.
 
+### 10i. The audit log is now watched, not just written (2026-09-16)
+
+`server/src/modules/security/auth-audit-watchdog.scheduler.ts`, every 15
+minutes, read-only over the last window. A log nobody reads tells you what
+happened only once someone thinks to look, which for an account takeover is far
+too late - and this company already lost a Stripe account to exactly that gap.
+
+Four signals:
+
+| Signal | Threshold | Why it matters |
+|---|---|---|
+| Failed sign-ins from one address | 25 in 15 min | credential stuffing; the rate limit already refuses most, this is so someone knows |
+| Failed sign-ins against one account | 12 in 15 min | someone working a specific person, usually a known admin - spraying detection misses this |
+| Rejected second factors on one account | 6 in 15 min | **the password is already known.** Only the authenticator is holding |
+| A grant INTO a GoStork staff role, or an admin deleting an account | any | not volumetric. These are rare and each one should be recognised |
+
+A demotion out of a staff role, and any non-staff role change, deliberately
+raise nothing - only escalation is interesting.
+
+Alerts email every active admin, at most once per hour PER SIGNAL, claimed
+through `Notification.dedupeKey` exactly like the Twilio watchdog. Both Macs
+and the prod VM run this same cron, so a read-then-send gate would double-send.
+
+The email says what to DO, not just what happened: a second-factor burst tells
+you to reset that password immediately, because everything except the
+authenticator has already fallen; an unexpected privilege grant tells you to
+treat it as a takeover in progress.
+
+Tested two ways: 10 cases against the detection function with no clock or
+scheduler involved (including that 24 failures stays silent while 26 fires, so
+the threshold is real and not decorative), and a live run against real audit
+rows proving it claims exactly one alert and the second run in the same hour is
+deduped rather than re-sent.
+
 ### 10f. Why Prisma was NOT downgraded
 
 `npm audit` reports `prisma` as high and offers `prisma@6.19.3` as the fix,
@@ -1808,9 +1842,8 @@ The IP rate limit stays as the only brake on password guessing. Lockout trades
 one denial of service for another, since anyone can lock a known address out on
 purpose. Do not re-raise it as an open finding.
 
-Still missing on top of this: no alerting
-when the failure rate spikes (the rows exist, nothing watches them), and the
-log has no retention policy or off-box copy.
+~~Still missing: no alerting when the failure rate spikes~~ **DONE 2026-09-16,
+see 10i.** The log still has no retention policy and no off-box copy.
 
 ### 10d. Content Security Policy (shipped 2026-09-16)
 

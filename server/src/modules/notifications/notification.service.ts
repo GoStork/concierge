@@ -1748,6 +1748,68 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /**
+   * Authentication anomaly alert (OWASP A09). One email per detection window,
+   * listing what the audit-log watchdog saw. Deliberately tells the reader
+   * what to DO, because "12 failed logins" without a next step is noise.
+   */
+  async sendAuthAnomalyAlert(params: {
+    windowMinutes: number;
+    findings: Array<{ kind: string; headline: string; detail: string }>;
+  }) {
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { email: true },
+    });
+    const recipients = admins.map((a) => a.email).filter(Boolean);
+    if (recipients.length === 0) {
+      this.logger.warn("[auth-watchdog] Anomaly detected but no admin emails to notify");
+      return;
+    }
+
+    const brandData = await this.getBrandData();
+    const detailRows = params.findings.map((f) => ({
+      label: esc(f.headline),
+      value: esc(f.detail),
+    }));
+
+    // A rejected second factor means the password is already known, so that
+    // case gets the sharper instruction.
+    const hasTwoFactor = params.findings.some((f) => f.kind === "two_factor_burst");
+    const hasPrivilege = params.findings.some((f) => f.kind === "privilege_change");
+
+    const html = buildBrandedEmail(brandData, {
+      title: hasPrivilege ? "Privilege Change on a Staff Account" : "Unusual Sign-in Activity",
+      greeting: "Hi team,",
+      body:
+        `The authentication watchdog found something worth a look in the last ${params.windowMinutes} minutes. ` +
+        "Every sign-in, second-factor result, password reset and role change is recorded, and this is what stood out.",
+      detailRows,
+      alertBox: {
+        text: hasTwoFactor
+          ? "Rejected second-factor codes mean the password is already known and only the authenticator is holding. Reset that password and review the account's recent activity now."
+          : hasPrivilege
+            ? "If you did not just make this change, treat it as an account takeover in progress: revoke the role, reset that admin's password, and check the sign-in log for how they got in."
+            : "If this is not you or a colleague, no action is needed yet - the rate limits are already refusing these. Check the sign-in log if it continues.",
+        type: hasTwoFactor || hasPrivilege ? "error" : "warning",
+      },
+      buttons: [{ label: "Open the sign-in log", url: `${getBaseUrl()}/account/security` }],
+      footer: "Sent at most once per hour per signal by the authentication watchdog.",
+    });
+
+    const subject = hasPrivilege
+      ? "Security alert: a staff role was granted"
+      : hasTwoFactor
+        ? "Security alert: repeated second-factor failures"
+        : `Security alert: unusual sign-in activity (${params.findings.length} signal${params.findings.length === 1 ? "" : "s"})`;
+
+    for (const to of recipients) {
+      await this.sendRawEmail(to, subject, html).catch((err: any) =>
+        this.logger.warn(`[auth-watchdog] Alert email to ${to} failed: ${err.message}`),
+      );
+    }
+  }
+
   async sendVideoWaitingNotification(params: {
     booking: any;
     joinerRole: "provider" | "parent";
