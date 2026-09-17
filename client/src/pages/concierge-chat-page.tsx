@@ -4126,6 +4126,38 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const noMatchmakerYet = !effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded;
 
+  // Retries are exhausted. Before telling a parent "something went wrong",
+  // check whether anything actually did: the reply is usually already saved -
+  // the stream broke on a phone's network, not the server - and printing a
+  // dead-end error next to a reply that exists is its own bug. Refetch the
+  // thread; only surface the error if the reply genuinely is not there.
+  const recoverOrShowSendError = async (sentAt: string) => {
+    const sid = sessionIdRef.current || sessionId;
+    let recovered = false;
+    if (sid) {
+      // Ask the server directly whether a reply landed after the turn we sent,
+      // rather than trusting "the refetch did not throw" - that would swallow
+      // the error even when the reply really is missing.
+      try {
+        const res = await fetch(`/api/ai-concierge/session/${sid}/messages`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          const msgs = Array.isArray(data) ? data : (data.messages || []);
+          recovered = msgs.some(
+            (m: any) => m?.role === "assistant" && new Date(m?.createdAt || 0).getTime() >= new Date(sentAt).getTime(),
+          );
+        }
+      } catch { recovered = false; }
+      if (recovered) await loadMessagesForSession(sid).catch(() => false);
+    }
+    if (recovered) return;
+    setMessages((prev) => [...prev, {
+      role: "assistant" as const,
+      content: "Something went wrong. Please try again.",
+      createdAt: new Date().toISOString(),
+    }]);
+  };
+
   const sendMessage = async (text: string, retryCount = 0, clientMsgId?: string, fixedReply?: string) => {
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
@@ -4165,6 +4197,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // can deduplicate and not create a second DB record if the stream failed mid-response.
     const msgId = retryCount === 0 ? crypto.randomUUID() : (clientMsgId || crypto.randomUUID());
     if (retryCount === 0) pendingClientMsgIdRef.current = msgId;
+    // Stamped before the request so the recovery check below can ask "did a
+    // reply land after this turn?" rather than guessing.
+    const sentAtIso = new Date().toISOString();
 
     // User just sent a message - they want to follow the AI response.
     // forceScrollRef bypasses userNearBottom (which smooth-scroll intermediate events can reset).
@@ -4511,11 +4546,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 sendMessage(userMessage, retryCount + 1, msgId);
               }, delay);
             } else {
-              setMessages((prev) => [...prev, {
-                role: "assistant" as const,
-                content: "Something went wrong. Please try again.",
-                createdAt: new Date().toISOString(),
-              }]);
+              void recoverOrShowSendError(sentAtIso);
             }
           }
         }
@@ -4536,11 +4567,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           sendMessage(userMessage, retryCount + 1, msgId);
         }, delay);
       } else {
-        setMessages((prev) => [...prev, {
-          role: "assistant" as const,
-          content: "Something went wrong. Please try again.",
-          createdAt: new Date().toISOString(),
-        }]);
+        void recoverOrShowSendError(sentAtIso);
       }
     } finally {
       if (!skipFinallyReset) {
