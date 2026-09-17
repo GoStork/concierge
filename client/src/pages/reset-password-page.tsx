@@ -147,7 +147,7 @@ export default function ResetPasswordPage() {
           </CardTitle>
           <p className="t-helper">
             {isProviderInvite
-              ? `Your account${orgName ? ` for ${orgName}` : ""} is ready. Choose a password, then sign in - setup takes about 45 minutes and you can do it in pieces.`
+              ? `Your account${orgName ? ` for ${orgName}` : ""} is ready. Choose a password, then sign in - setup takes under an hour and you can do it in pieces.`
               : isInvite
               ? "You've been added to your family's account. Choose a password, then sign in to finish setting up."
               : "Please enter your new password."}

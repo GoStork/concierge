@@ -92,7 +92,7 @@ export function TwoFactorCard() {
         {status?.enabled ? (
           <span
             className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-            style={{ background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success))" }}
+            style={{ background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success-text))" }}
             data-testid="badge-two-factor-on"
           >
             <ShieldCheck className="w-3 h-3" /> On
@@ -100,7 +100,7 @@ export function TwoFactorCard() {
         ) : (
           <span
             className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-            style={{ background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }}
+            style={{ background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning-text))" }}
             data-testid="badge-two-factor-off"
           >
             <ShieldAlert className="w-3 h-3" /> Off

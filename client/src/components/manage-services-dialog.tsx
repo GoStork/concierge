@@ -15,8 +15,10 @@ export const SERVICE_STATUS_OPTIONS = ["NEW", "IN_PROGRESS", "APPROVED", "DECLIN
 
 export const SERVICE_STATUS_STYLES: Record<string, string> = {
   NEW: "bg-muted text-muted-foreground",
-  IN_PROGRESS: "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] dark:bg-[hsl(var(--brand-warning)/0.2)] dark:text-[hsl(var(--brand-warning))]",
-  APPROVED: "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))] dark:bg-[hsl(var(--brand-success)/0.2)] dark:text-[hsl(var(--brand-success))]",
+  // Status hue as TEXT uses the darker -text step: "Egg Donor Agency:
+  // APPROVED" measured 2.31:1 in the base green on its own tint.
+  IN_PROGRESS: "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning-text))] dark:bg-[hsl(var(--brand-warning)/0.2)] dark:text-[hsl(var(--brand-warning))]",
+  APPROVED: "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success-text))] dark:bg-[hsl(var(--brand-success)/0.2)] dark:text-[hsl(var(--brand-success))]",
   DECLINED: "bg-destructive/15 text-destructive dark:bg-destructive/20 dark:text-destructive",
 };
 

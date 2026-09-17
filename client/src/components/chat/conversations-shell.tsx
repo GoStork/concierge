@@ -35,6 +35,9 @@ interface ConversationsShellProps {
    * scrolled into view whenever this key changes.
    */
   selectedKey?: string | null;
+  /** The line under "Your conversations live here" when nothing is selected.
+   *  Defaults to "pick a thread", which is false for an inbox with no threads. */
+  emptyHint?: string;
 }
 
 export function ConversationsShell({
@@ -54,6 +57,7 @@ export function ConversationsShell({
   searchQuery,
   onSearchChange,
   selectedKey,
+  emptyHint,
 }: ConversationsShellProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -165,8 +169,8 @@ export function ConversationsShell({
           <div className="flex-1 flex items-center justify-center text-center px-8">
             <div>
               <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-              <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Your conversations live here</h3>
-              <p className="t-helper">Pick a thread on the left to continue where you left off.</p>
+              <h2 className="font-display text-lg font-semibold text-muted-foreground mb-1">Your conversations live here</h2>
+              <p className="t-helper">{emptyHint || "Pick a thread on the left to continue where you left off."}</p>
             </div>
           </div>
         ) : detailContent}

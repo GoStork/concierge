@@ -47,10 +47,25 @@ function paintAnchor(
       document.getElementById(anchor) ||
       document.querySelector<HTMLElement>(`[data-testid="${anchor}"]`);
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.style.transition = "box-shadow 0.3s ease";
+      // Do not move a page that already shows the section: a first section
+      // at the top was being centred, so the provider arrived pre-scrolled
+      // (400px on a phone) and never saw the page's own heading. Reduced
+      // motion gets an instant jump, not a smooth scroll.
+      const r = el.getBoundingClientRect();
+      const headerRoom = 160; // fixed header + the sticky bar
+      const alreadyVisible = r.top >= headerRoom && r.top < window.innerHeight * 0.6;
+      if (!alreadyVisible && !(window.scrollY < 8 && r.top < window.innerHeight * 0.75 && r.top >= 0)) {
+        const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        el.style.scrollMarginTop = `${headerRoom}px`;
+        el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      }
+      // An outline with an offset, not a box-shadow hugging the box: the ring
+      // clipped "1 team member" and sat on "No programs yet" where the anchor
+      // is not a padded card.
+      el.style.transition = "outline-color 0.3s ease";
       el.style.borderRadius = "var(--radius)";
-      el.style.boxShadow = "0 0 0 3px hsl(var(--primary))";
+      el.style.outline = "3px solid hsl(var(--primary))";
+      el.style.outlineOffset = "6px";
       onFound(el);
     } else if (--tries > 0) {
       setTimeout(attempt, 300);
@@ -64,7 +79,7 @@ function paintAnchor(
   attempt();
   return () => {
     cancelled = true;
-    if (el) el.style.boxShadow = "";
+    if (el) { el.style.outline = ""; el.style.outlineOffset = ""; }
     onFound(null);
   };
 }
@@ -325,6 +340,11 @@ export function OnboardingCoachBar() {
               type="button"
               className="onb-section-flag-inner flex items-center gap-1.5 min-h-10 px-3.5 py-2 rounded-full bg-[hsl(var(--primary))] text-primary-foreground text-sm font-medium shadow-lg hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               disabled={markDone.isPending}
+              // Portalled to the end of the document: the name has to say
+              // which section and step it belongs to.
+              aria-label={isLastSection
+                ? (canMarkHere ? `Mark "${current.label}" as done` : `Finish the tour of ${current.label}`)
+                : `Next section after ${section.label}, in ${current.label}`}
               onClick={() => {
                 if (!isLastSection) {
                   setSectionIdx((i) => Math.min(sections.length - 1, i + 1));
@@ -342,13 +362,13 @@ export function OnboardingCoachBar() {
             >
               {isLastSection ? (
                 <>
-                  {markDone.isPending ? "Saving..." : canMarkHere ? "Done" : "Got it"}
-                  <Check className="w-4 h-4" />
+                  {markDone.isPending ? "Saving..." : canMarkHere ? "Mark done" : "Got it"}
+                  <Check className="w-4 h-4" aria-hidden="true" />
                 </>
               ) : (
                 <>
-                  Next
-                  <ArrowDown className="w-4 h-4" />
+                  Next section
+                  <ArrowDown className="w-4 h-4" aria-hidden="true" />
                 </>
               )}
             </button>
@@ -432,7 +452,7 @@ export function OnboardingCoachBar() {
           <ListChecks className="w-4 h-4" aria-hidden="true" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium flex items-center gap-2 min-w-0">
+          <div className="text-sm font-medium flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 min-w-0">
             <span className="line-clamp-2 md:line-clamp-1">{current.label}</span>
             <span className="text-xs font-normal text-muted-foreground flex items-center gap-1 shrink-0 whitespace-nowrap">
               <Clock className="w-3 h-3" aria-hidden="true" /> about {current.minutes} min · {data.doneCount}/{data.requiredCount} done
@@ -476,11 +496,12 @@ export function OnboardingCoachBar() {
             className="shrink-0 shadow-md font-medium min-h-11 md:min-h-0 md:h-10 md:px-4"
             disabled={markDone.isPending}
             onClick={() => markDone.mutate(current.key)}
+            aria-label={`Mark "${current.label}" as done`}
             data-testid="onboarding-coach-mark-done"
           >
-            <Check className="w-4 h-4 md:mr-1.5" />
+            <Check className="w-4 h-4 md:mr-1.5" aria-hidden="true" />
             <span className="hidden md:inline">{markDone.isPending ? "Saving..." : "All good - mark as done"}</span>
-            <span className="md:hidden ml-1">{markDone.isPending ? "Saving" : "Done"}</span>
+            <span className="md:hidden ml-1">{markDone.isPending ? "Saving" : "Mark done"}</span>
           </Button>
         )}
         {sectionFlag}
@@ -501,7 +522,7 @@ export function OnboardingCoachBar() {
         <span className="text-sm font-medium shrink-0">
           {requiredComplete ? "Setup complete" : `Getting started - ${data.doneCount}/${data.requiredCount}`}
         </span>
-        <span className="flex-1 min-w-[60px] max-w-[180px] h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={data.requiredCount} aria-valuenow={data.doneCount}>
+        <span className="flex-1 min-w-[60px] max-w-[180px] h-1.5 rounded-full bg-[hsl(var(--primary)/0.12)] overflow-hidden" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={data.requiredCount} aria-valuenow={data.doneCount} aria-valuetext={`${data.doneCount} of ${data.requiredCount} required steps done`}>
           <span className="block h-full rounded-full bg-[hsl(var(--primary))] transition-all" style={{ width: `${data.percent}%` }} />
         </span>
       </div>

@@ -3500,6 +3500,17 @@ function ProgramsView({
           onClick={() => {
             if (!uploadFirstMutation.isPending) uploadFileInputRef.current?.click();
           }}
+          // The file input is hidden and the zone was a bare div: there was
+          // no keyboard path to uploading the first cost sheet at all.
+          role="button"
+          tabIndex={0}
+          aria-label="Upload a cost sheet to create a new program"
+          onKeyDown={(e) => {
+            if ((e.key === "Enter" || e.key === " ") && !uploadFirstMutation.isPending) {
+              e.preventDefault();
+              uploadFileInputRef.current?.click();
+            }
+          }}
           data-testid="dropzone-upload-first"
         >
           <input

@@ -1233,6 +1233,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                   key={item.tabId || item.to}
                   to={item.to}
                   onClick={handleClick}
+                  aria-current={active ? 'page' : undefined}
+                  aria-label={item.badge && item.badge > 0 ? `${item.label}, ${item.badge} ${item.to === '/provider/home' ? (item.badge === 1 ? 'setup step left' : 'setup steps left') : 'new'}` : undefined}
                   data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                   className={`desktop-nav-link flex items-center gap-2 px-3 py-2 text-sm font-ui transition-all duration-200 shrink-0 whitespace-nowrap ${
                     active
@@ -1243,7 +1245,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                   <div className="relative">
                     <Icon className="w-5 h-5 shrink-0" />
                     {!!item.badge && item.badge > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full flex items-center justify-center text-[8px] font-bold text-primary-foreground px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
+                      <span aria-hidden="true" className="absolute -top-2 -right-2 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[11px] leading-none font-bold text-primary-foreground px-1 ring-2 ring-background" style={{ backgroundColor: 'hsl(var(--primary))' }}>
                         {item.badge > 99 ? "99+" : item.badge}
                       </span>
                     )}
@@ -1436,7 +1438,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 to={item.to}
                 onClick={handleClick}
                 aria-current={active ? 'page' : undefined}
-                aria-label={item.label}
+                aria-label={item.badge && item.badge > 0 ? `${item.label}, ${item.badge} ${item.to === '/provider/home' ? (item.badge === 1 ? 'setup step left' : 'setup steps left') : 'new'}` : item.label}
                 data-testid={`tab-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                 className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui transition-colors duration-200 ${iconOnly ? 'text-[0px]' : 'text-[13px]'}`}
                 style={{ color: active ? activeColor : inactiveColor }}

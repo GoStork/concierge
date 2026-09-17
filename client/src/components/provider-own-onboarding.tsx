@@ -147,7 +147,7 @@ function StepRow({ step, isNext, onOpen }: { step: OwnStep; isNext: boolean; onO
           <span className="t-helper block md:hidden">{tab}{step.status !== "done" ? ` - about ${step.minutes} min` : ""}</span>
         </span>
         {isNext && (
-          <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))]">Next</span>
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 bg-[hsl(var(--primary)/0.12)] text-foreground">Next</span>
         )}
         <span className="t-helper hidden md:block shrink-0 w-32 text-right truncate">{tab}</span>
         {step.status !== "done" && (
@@ -303,14 +303,14 @@ export function ProviderSetupStrip() {
   return (
     <button
       type="button"
-      onClick={() => navigate("/provider/home")}
+      onClick={() => navigate(next.link)}
       className="w-full flex items-center gap-2.5 min-h-11 px-3 py-2 rounded-[var(--radius)] border border-[hsl(var(--primary)/0.2)] bg-[hsl(var(--primary)/0.04)] text-left hover:bg-[hsl(var(--primary)/0.08)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="provider-setup-strip"
     >
       <ListChecks className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
       <span className="flex-1 min-w-0">
         <span className="block text-sm font-medium leading-5 line-clamp-2">{stepsLeft} step{stepsLeft === 1 ? "" : "s"} until parents can find you</span>
-        <span className="t-helper block truncate">About {minutesLeft} min - next: {next.label}</span>
+        <span className="t-helper block line-clamp-2">About {minutesLeft} min - next: {next.label}</span>
       </span>
       <ArrowRight className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
     </button>

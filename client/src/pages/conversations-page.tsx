@@ -3371,6 +3371,9 @@ const sendMessageMutation = useMutation({
           onBack={() => { setAssistantOpen(false); setSelectedSessionId(null); }}
           isLoading={providerSessionsQuery.isLoading}
           sidebarItems={sidebarContent}
+          emptyHint={(providerSessionsQuery.data || []).length === 0
+            ? "No families have written yet. Conversations appear here as soon as a parent asks about you or books a consultation."
+            : undefined}
           emptyMessage={searchQuery ? "No conversations match your search" : "No conversations yet"}
           emptyAction={!searchQuery ? (
             <p className="t-helper mt-1">When parents request a consultation, their conversations will appear here</p>

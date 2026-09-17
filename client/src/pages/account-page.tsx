@@ -1823,12 +1823,8 @@ function ParentMembersTab() {
 }
 
 export default function AccountPage() {
-  // Every Settings tab announced itself as the bare URL.
-  useEffect(() => {
-    const prev = document.title;
-    document.title = "Settings - GoStork";
-    return () => { document.title = prev; };
-  }, []);
+  // Every Settings tab announced itself as the bare URL; the per-tab title is
+  // set below, once the tab list is known.
   const { user, logoutMutation } = useAuth();
   const location = useLocation();
 
@@ -1949,10 +1945,29 @@ export default function AccountPage() {
     return tab;
   });
 
+  // Seventeen tabs do not fit 1440px: five sat off-screen with no cue,
+  // including a required setup step. A fade on the clipped edge says "more".
+  const [tabsOverflowRight, setTabsOverflowRight] = useState(false);
+  useEffect(() => {
+    const el = tabsNavRef.current;
+    if (!el) return;
+    const check = () => setTabsOverflowRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 8);
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => { el.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
+  }, [tabs.length]);
   const isTabActive = (tab: typeof tabs[0]) => {
     if (tab.end) return location.pathname === tab.to;
     return location.pathname.startsWith(tab.to);
   };
+  // "Company - Settings - GoStork": seventeen tabs shared one title.
+  const activeTabLabel = tabs.find((t) => isTabActive(t))?.label || null;
+  useEffect(() => {
+    const prev = document.title;
+    document.title = `${activeTabLabel ? `${activeTabLabel} - ` : ""}Settings - GoStork`;
+    return () => { document.title = prev; };
+  }, [activeTabLabel]);
 
   return (
     <div>
@@ -1974,7 +1989,13 @@ export default function AccountPage() {
       </div>
 
       <div className="border-b border-border/40 mb-6">
-        <nav ref={tabsNavRef} className="flex -mb-px overflow-x-auto scrollbar-hide" data-testid="account-tabs">
+        <nav
+          ref={tabsNavRef}
+          aria-label="Settings sections"
+          className="flex -mb-px overflow-x-auto scrollbar-hide"
+          style={tabsOverflowRight ? { WebkitMaskImage: "linear-gradient(to right, black calc(100% - 48px), transparent)", maskImage: "linear-gradient(to right, black calc(100% - 48px), transparent)" } : undefined}
+          data-testid="account-tabs"
+        >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = isTabActive(tab);

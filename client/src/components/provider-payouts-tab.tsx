@@ -171,7 +171,10 @@ export function ProviderPayoutsTab() {
   }
 
   return (
-    <div className="space-y-6">
+    // The tour's first section. It only existed in the already-ready branch
+    // above, so a provider who had set nothing up was scrolled past the
+    // method chooser to a read-only identity card.
+    <div className="space-y-6" data-onb-anchor="payouts-setup">
       <header>
         <h2 className="text-2xl font-heading">Payouts</h2>
         <p className="t-helper mt-1">

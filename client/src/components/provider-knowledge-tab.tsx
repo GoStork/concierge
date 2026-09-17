@@ -204,7 +204,7 @@ export default function ProviderKnowledgeTab({ providerId }: { providerId?: stri
           AI Knowledge Base
         </h2>
         <p className="t-helper mt-1">
-          The website content is read automatically when the provider joins GoStork. Upload documents to teach the AI concierge more about the practice.
+          We read your website automatically when you joined GoStork. Upload documents to teach your AI concierge more about your practice.
         </p>
       </div>
 
