@@ -991,7 +991,29 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // Onboarding logs the parent in mid-wizard; if the page moved from index 0 to
   // index 1 here, React remounted it and dropped the "creating your account"
   // state, flashing the code step and skipping the "meet your concierge" screen.
-  if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{children}{reminderPopup}</>;
+  if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) {
+    // /concierge is the SAME chat as /chat/*, reached straight from onboarding.
+    // It skips the wrapper below, so it missed the whiteCanvas rule and a new
+    // parent saw the chat on Warm Sand while every returning parent (who lands
+    // on /chat) saw it on white. Same override, same reason: the chat paints
+    // its own inner panels with bg-background. The keyed fragment keeps
+    // children at index 0 for the onboarding remount constraint above.
+    if (location.pathname.startsWith("/concierge")) {
+      return (
+        <>
+          <div
+            key="fullscreen-children"
+            className="min-h-screen bg-background"
+            style={{ "--background": "var(--card)" } as React.CSSProperties}
+          >
+            {children}
+          </div>
+          {reminderPopup}
+        </>
+      );
+    }
+    return <>{children}{reminderPopup}</>;
+  }
 
   const ALL_MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },
