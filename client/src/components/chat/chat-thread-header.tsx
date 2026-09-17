@@ -17,7 +17,7 @@
  * The right side is the human-escalation control in one of three states.
  */
 import type { ReactNode } from "react";
-import { ArrowLeft, ChevronRight, Headphones, User } from "lucide-react";
+import { ArrowLeft, ChevronRight, MessageCircle, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPhotoSrc } from "@/lib/profile-utils";
 
@@ -145,9 +145,9 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
               style={{ backgroundColor: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderRadius: "999px" }}
               data-testid="btn-talk-to-team"
             >
-              <Headphones className="w-3.5 h-3.5" />
-              <span className="sm:hidden">Team</span>
-              <span className="hidden sm:inline">Talking with Human</span>
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span className="sm:hidden">Human joined</span>
+              <span className="hidden sm:inline">A GoStork person is in this chat</span>
             </div>
           ) : (
             <Button
@@ -157,12 +157,13 @@ export function ChatThreadHeader({ brandColor, testId = "chat-thread-header", on
               style={{ borderColor: "hsl(var(--primary) / 0.3)", color: "hsl(var(--primary))", borderRadius: "999px" }}
               onClick={team.onClick}
               disabled={team.disabled || team.state === "notified"}
-              aria-label={team.state === "notified" ? "Team notified" : "Talk to GoStork Team"}
+              aria-label={team.state === "notified" ? "GoStork team notified" : "Chat with a real person at GoStork"}
+              title={team.state === "notified" ? "We let the GoStork team know - a real person will join this chat" : "A real person from GoStork will join this chat"}
               data-testid="btn-talk-to-team"
             >
-              <Headphones className="w-3.5 h-3.5" />
-              <span className="sm:hidden">{team.state === "notified" ? "Notified" : "Team"}</span>
-              <span className="hidden sm:inline">{team.state === "notified" ? "Team Notified" : "Talk to GoStork Team"}</span>
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span className="sm:hidden">{team.state === "notified" ? "Team notified" : "Ask a person"}</span>
+              <span className="hidden sm:inline">{team.state === "notified" ? "GoStork team notified" : "Chat with a real person"}</span>
             </Button>
           )}
         </div>
