@@ -535,6 +535,21 @@ Useful context for the executing session:
     disappears from Security Settings, re-run the UA check and set Training to
     **Block** if we still want the hard 403. www.gostork.com is not proxied by
     Cloudflare (Apache origin), so it is unaffected either way.
+  - **RESOLVED 2026-09-17: migration landed, Training set to Block.** The old
+    Block AI Bots switch is gone from Security > Settings; it is now
+    "Configure AI bot policies" under Bot traffic. Values found on the
+    gostork.com zone: Search = Allow (do not block), Agent = Allow (do not
+    block), Training = **Disallow** (robots.txt signal only, not the hard edge
+    block we want), Bot Preference Sync OFF, AI Labyrinth OFF, Bot Fight Mode
+    OFF. Changed exactly one control: Training Disallow -> **Block** (dashboard
+    confirmed "AI bot access updated" and the value persisted across a reload).
+    Search and Agent left as migrated; nothing else touched. Curl UA check both
+    before and after the change: GPTBot / ClaudeBot / CCBot = `403` on
+    app.gostork.com and test-app.gostork.com, Googlebot = `200`, plain
+    `Mozilla/5.0` = `200` on both hosts, so the hard 403 survived the migration
+    and normal traffic is unaffected. Note the 403s were already in place while
+    Training was merely "Disallow", so some other layer (managed ruleset) is
+    also matching these UAs - Training = Block now makes it explicit either way.
 - [ ] Cache rules: bypass cache for `/api/*`; ensure SSE
   (in-app notifications stream) is not buffered/cached by Cloudflare.
 - [ ] SSL mode: currently effectively Flexible (1.0 origin has no TLS -
