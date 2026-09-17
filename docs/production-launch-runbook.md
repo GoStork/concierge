@@ -523,6 +523,18 @@ Useful context for the executing session:
 - [ ] Other Security toggles as of 2026-08-18: Block AI Bots ACTIVE on all
   pages (crawler-focused - fine, but verify it never matches API/webhook
   traffic in smoke tests); AI Labyrinth OFF; Browser Integrity Check OFF.
+  - **2026-09-16 Cloudflare notice: the Block AI Bots switch is being
+    retired** and auto-migrated (rolling out through ~Sep 23) to three
+    controls: Search = Allow, Training = "Disallow AI Training", Agent = Block
+    on pages with ads. Verified 2026-09-17 before migration: GPTBot / ClaudeBot
+    / CCBot user agents get a hard `403` on app.gostork.com and
+    test-app.gostork.com. NOTE the downgrade: "Disallow AI Training" is a
+    robots.txt signal, NOT an edge block, so after migration those bots may
+    start getting `200`. Low risk (everything of value is behind login, auth
+    pages already send `X-Robots-Tag: noindex`), but once the old switch
+    disappears from Security Settings, re-run the UA check and set Training to
+    **Block** if we still want the hard 403. www.gostork.com is not proxied by
+    Cloudflare (Apache origin), so it is unaffected either way.
 - [ ] Cache rules: bypass cache for `/api/*`; ensure SSE
   (in-app notifications stream) is not buffered/cached by Cloudflare.
 - [ ] SSL mode: currently effectively Flexible (1.0 origin has no TLS -
