@@ -218,3 +218,22 @@ export async function findConnectedProviderSession(
   });
   return covering ?? null;
 }
+
+// Legacy rows from before the curation "ready" handoff was made a control
+// signal: the client fired "ready" on the parent's behalf to trigger the match
+// search and the server saved it as HER message, so a "ready" bubble she never
+// typed reappeared in her own transcript on every reload. New turns no longer
+// persist it (see isCurationReady in ai-router.ts); this hides the ones already
+// written. A parent can never have typed it herself - the client has always
+// intercepted a typed "ready" into the same silent send.
+export function isLegacyCurationReadyRow(m: {
+  role?: string | null;
+  content?: string | null;
+  uiCardType?: string | null;
+}): boolean {
+  return (
+    m.role === "user" &&
+    m.uiCardType == null &&
+    String(m.content ?? "").trim().toLowerCase() === "ready"
+  );
+}

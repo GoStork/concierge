@@ -2830,6 +2830,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const showCurationRef = useRef(false);
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
   const curationAwaitingRef = useRef(false);
+  // What the parent ACTUALLY typed/tapped to confirm the curation ("Yes",
+  // "go ahead", ...). The turn we send the model is the literal "ready"
+  // control signal, but that is not what she said - so the bubble we persist
+  // has to be her words, not ours.
+  const curationConfirmTextRef = useRef<string | null>(null);
   const [humanEscalated, setHumanEscalated] = useState(false);
   const [humanInChat, setHumanInChat] = useState(false);
   const [humanAgentPhotoUrl, setHumanAgentPhotoUrl] = useState<string | null>(null);
@@ -4133,7 +4138,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       fetch("/api/ai-concierge/chat", {
         method: "POST", headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
         credentials: "include",
-        body: JSON.stringify({ message: "ready", sessionId, matchmakerId: effectiveMatchmakerId }),
+        body: JSON.stringify({ message: "ready", sessionId, matchmakerId: effectiveMatchmakerId, isSystemTrigger: true }),
       }).catch(() => {});
       return;
     }
@@ -4177,6 +4182,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       });
       setInput("");
       curationAwaitingRef.current = false;
+      curationConfirmTextRef.current = text.trim();
       // No takeover. The search happens in the thread: one working line in
       // the persona's voice, the typing row, then the real match card. The
       // old CurationOverlay was a fixed, blurred, six-second portal with
@@ -4824,6 +4830,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           message: "ready",
           sessionId,
           matchmakerId: effectiveMatchmakerId,
+          // "ready" is a control signal, not something the parent said - the
+          // server must not save it as her chat bubble. It saves what she
+          // actually said instead, so the transcript stays truthful and her
+          // confirmation survives a reload.
+          isSystemTrigger: true,
+          curationConfirmText: curationConfirmTextRef.current || undefined,
         }),
       });
       if (!res.ok) throw new Error("Chat request failed");

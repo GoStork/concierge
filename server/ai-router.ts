@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId, truncateToolResultAtItemBoundary, UUID_RE } from "./match-card-parse";
-import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession } from "./parent-visibility";
+import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession, isLegacyCurationReadyRow } from "./parent-visibility";
 import {
   listOpenConsultations,
   evaluateConsultationLock,
@@ -2333,10 +2333,11 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true, deliveredAt: true, readAt: true },
     });
     // Review prompts + IP form nudges are parent-private - providers never see them.
-    const providerSafe = messages.filter((m: any) => m.uiCardType !== "review_prompt" && m.uiCardType !== "ip_form_prompt");
+    const providerSafe = messages.filter((m: any) => m.uiCardType !== "review_prompt" && m.uiCardType !== "ip_form_prompt" && !isLegacyCurationReadyRow(m));
     const filteredMessages = isProvider ? providerSafe : messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
+      if (isLegacyCurationReadyRow(m)) return false;
       if (m.uiCardType === "provider_only") return false;
       // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else.
       // agreement_signed (fully signed, all parties) and signer_signed (one
@@ -2452,6 +2453,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
     const filteredMessages = messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
+      if (isLegacyCurationReadyRow(m)) return false;
       // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else.
       // agreement_signed (fully signed, all parties) and signer_signed (one
       // signer just completed) are part of the agreement flow the parent
@@ -2808,13 +2810,37 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const isPhase1Init = req.body.isSystemTrigger === true && req.body.message === "phase1_init";
     const isMemberFirstOpen = req.body.isSystemTrigger === true && req.body.message === "member_first_open";
     const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init || isPhase1Init || isMemberFirstOpen;
+    // The curation -> search handoff sends the literal "ready" as the model-facing
+    // turn. It is a control signal the client fires on the parent's behalf, NOT
+    // something she typed, so saving it put a "ready" bubble she never wrote into
+    // her own transcript (invisible in the live tab, back on every reload) while
+    // her actual confirmation - "Yes" - was never persisted at all. Keep sending
+    // "ready" to the model (the whole forced-search path keys off it), but save
+    // her words instead. Deliberately NOT folded into isSystemTrigger: that flag
+    // also injects the consultation-callback instruction further down.
+    const isCurationReady =
+      req.body.isSystemTrigger === true &&
+      String(req.body.message ?? "").trim().toLowerCase() === "ready";
+    const curationConfirmText = String(req.body.curationConfirmText ?? "").trim();
+    const skipsUserMessageSave = isSystemTrigger || isCurationReady;
 
     // For system triggers, don't save a user message - just inject context and let AI respond.
     // For normal messages, deduplicate by clientMsgId (retry guard): if the client retries after
     // a stream failure, the first request's message is already in the DB - reuse it instead of
     // creating a second record with identical content.
     let savedUserMsg: { id: string } | null = null;
-    if (!isSystemTrigger) {
+    if (isCurationReady && curationConfirmText) {
+      savedUserMsg = await prisma.aiChatMessage.create({
+        data: {
+          sessionId: currentSessionId,
+          role: "user",
+          content: curationConfirmText,
+          senderType: "parent",
+          senderName: parentDisplayName,
+        },
+      });
+    }
+    if (!skipsUserMessageSave) {
       let existing: { id: string } | null = null;
       if (clientMsgId) {
         // Query recent user messages in this session and filter by clientMsgId in JS,
@@ -3272,7 +3298,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     //   1. Fresh user selects from the initial [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]] greeting
     //   2. Returning user with pre-saved services says "Not exactly" and then picks from the MULTI_SELECT
     // In both cases the preceding AI message contains recognizable service option text.
-    if (!isSystemTrigger && req.body.message && chatHistory.length <= 8) {
+    if (!skipsUserMessageSave && req.body.message && chatHistory.length <= 8) {
       try {
         const SERVICE_KEYWORD_MAP: Record<string, string> = {
           "surrogacy": "Surrogate",
@@ -3776,7 +3802,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         if (memBlock) parts.push(memBlock);
         // Explicit "remember that..." capture - awaited only when the message
         // actually asks to remember (rare), so no latency for normal turns.
-        if (!isSystemTrigger && req.body.message) {
+        if (!skipsUserMessageSave && req.body.message) {
           const captured = await captureExplicitMemory(acctIdForMemory, String(req.body.message));
           if (captured) {
             parts.push(`The parent JUST asked you to remember something and it is now saved: "${captured}". Briefly confirm you've noted it (one warm sentence) as part of your reply, then continue with their request.`);
@@ -3791,7 +3817,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // turns): the parent mentions a spouse/partner while the saved profile
       // says single/solo. Highest-stakes field - it flips the biological
       // journey tree - so force the confirm-then-save protocol.
-      if (!isSystemTrigger && req.body.message) {
+      if (!skipsUserMessageSave && req.body.message) {
         const mentionsSpouse = /\b(my|our)\s+(wife|husband|spouse|partner)\b/i.test(String(req.body.message));
         const savedSingle = /single|solo/i.test(String(userRecord?.relationshipStatus || "")) || /solo_/i.test(String(profile?.familyType || ""));
         if (mentionsSpouse && savedSingle) {
