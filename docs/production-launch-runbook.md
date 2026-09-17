@@ -1569,28 +1569,37 @@ Also required on the production host before this ships:
 `DAILY_WEBHOOK_SECRET` is EMPTY and `TEST_RUNNER_TOKEN` is unset (the latter is
 correct - the test runner is not used on prod).
 
-- [ ] **Daily.co webhooks never reach production - found 2026-09-17.** Prod and
-  both Macs share ONE Daily domain, Daily allows ONE webhook per domain, and
-  that one webhook points at `gostork-imac.ngrok.app` (the iMac, DEV database).
-  So a video call booked in prod gets no `meeting.started`, no
-  `recording.ready-to-download`: no recording reaches GCS and no transcript is
-  produced. The empty `DAILY_WEBHOOK_SECRET` is a symptom, not the fault -
-  setting it alone changes nothing because no event is ever delivered.
-  `autoRegisterWebhook()` is also a no-op off Replit (it keys on
-  `REPLIT_DOMAINS`). Fix at beta start, pick one:
-  (a) **separate Daily domain + API key for production** (recommended - dev
-  calls and real families' recordings should not share an account anyway, and
-  dev keeps its webhook); or (b) repoint the single webhook at
-  `https://test-app.gostork.com/api/video/webhook` and accept that dev
-  recordings stop processing. Either way: register with all three
-  `eventTypes`, and put the webhook's `hmac` into prod `DAILY_WEBHOOK_SECRET`.
-  **Decided 2026-09-17: option (a).** Blocked on Eran: a Daily domain IS an
-  account, so a second domain means a new Daily signup (Claude cannot create
-  accounts) - e.g. domain `gostork-prod`. Then hand Claude the new API key via
-  the host `.env` (`DAILY_API_KEY`); Claude registers the webhook and sets the
-  secret. Check the new account's plan covers cloud recording before relying
-  on it. Also re-check that provider `dailyRoomUrl` values in PROD were not
-  created under the dev domain - rooms do not move between domains.
+- [x] **Daily.co webhooks never reached production - found and FIXED 2026-09-17.**
+  Cause: prod and both Macs shared ONE Daily domain, Daily allows ONE webhook
+  per domain (re-confirmed: a second create returns "only 1 webhook is allowed
+  per domain"), and that webhook pointed at the iMac. So no prod call ever got
+  `meeting.started` / `recording.ready-to-download` - no recording, no
+  transcript. `autoRegisterWebhook()` is a no-op off Replit (keys on
+  `REPLIT_DOMAINS`), so nothing self-healed.
+  **Now: two Daily domains.**
+  - `gostork.daily.co` = PRODUCTION (kept here because prod's 4 stored
+    `User.dailyRoomUrl` rooms live on it and rooms cannot move between domains;
+    also the paid plan). Webhook 2bcd1c65 ->
+    `https://test-app.gostork.com/api/video/webhook`, all three eventTypes,
+    fresh hmac generated ON the host into `DAILY_WEBHOOK_SECRET` (the old hmac
+    lived on the dev Macs, so it was not reused). Verified through Cloudflare:
+    signed 201, unsigned 403, forged 403.
+  - `gostork-dev.daily.co` = DEV (free plan, created by Eran 2026-09-17).
+    Webhook f29d2fa5 -> `https://gostork.ngrok.app/api/video/webhook` (MacBook;
+    one webhook only, and both Macs share the dev DB, so either Mac can process
+    it - but the MacBook sleeps; move it to `gostork-imac.ngrok.app` if dev
+    recordings must process unattended). The 24 dev rooms were re-created on
+    the new domain with identical names/privacy/config, and the dev DB's 23
+    `User.dailyRoomUrl` + 1 upcoming `Booking.meetingUrl` were rewritten to the
+    new host. Past bookings keep their old URLs as history. Nothing was deleted
+    from `gostork.daily.co`.
+  - [ ] ERAN: the **iMac** `.env` still holds the PRODUCTION Daily key. Set its
+    `DAILY_API_KEY` and `DAILY_WEBHOOK_SECRET` to the same values as the
+    MacBook `.env`, then restart its server. Until then any room the iMac
+    creates lands on the production domain.
+  - [ ] Phase B flip: repoint the prod webhook URL to
+    `https://app.gostork.com/api/video/webhook` (delete + create; keep the
+    same hmac so no env change is needed).
 
 ### 10g. Dependency remediation, 2026-09-16: 21 advisories -> 0
 
