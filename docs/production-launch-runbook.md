@@ -2093,8 +2093,19 @@ only exists behind Cloudflare and can never show up on a dev Mac:
   nothing: **no call recording or transcript since July 10.** Proven fixed by
   replaying a signed event in Daily's documented shape: the booking's
   `actualStartedAt` was set. Unrecognised shapes now log a warning.
-- **NOT yet exercised under the policy:** the Trolley payout widget, voice
-  mode / LiveAvatar, the Turnstile signup step. The walk account (a test provider admin) had no agreement or
+- **Voice mode + LiveAvatar: exercised clean 2026-09-18** (natan123@gmail.com,
+  Deepgram STT + Cartesia TTS + the avatar at ~22fps over LiveKit, 0
+  violations). **Turnstile: exercised clean** (widget rendered and passed on
+  the phone step in a private window, 0 violations; stopped before sending the
+  SMS). NOTE: the voice button is hidden in any Eva thread that has a
+  senderType "provider" message - test voice on a parent whose Eva thread has
+  none.
+- **Not a GoStork source:** `window.__impPre=N` inline scripts and
+  `http://localhost:8400/detect.js` in reports come from the Impeccable design
+  tool (the green "IM" widget) on a developer's browser. Never allowlist them.
+- **NOT yet exercised under the policy:** only the Trolley payout widget
+  (provider-only, `/account/payouts`, pending Trolley approval). Everything
+  else has now been walked clean. The walk account (a test provider admin) had no agreement or
   booking of its own. Do these as part of the Phase A smoke tests, then read
   `grep csp-violation`.
 - [ ] Switch to `CSP_MODE=enforce` once the unexercised list above has been
