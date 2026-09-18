@@ -150,7 +150,9 @@ export function buildCsp(opts: { isProduction: boolean }): string {
       "https://challenges.cloudflare.com",
       "https://*.pandadoc.com",             // agreement and W-9 signing
       "https://*.pandadoc.eu",              // the template editor SDK hardcodes both
-      "https://widget.trolley.com",         // provider payout onboarding
+      // widget.trolley.com deliberately NOT listed: Trolley declined GoStork's
+      // application (2026-09), so the payout widget is dead code. Re-add it
+      // here if Trolley is ever approved, and walk /account/payouts after.
       "https://player.vimeo.com",           // donor intro videos
       "https://www.youtube.com",
       "https://www.youtube-nocookie.com",
