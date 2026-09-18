@@ -37,6 +37,7 @@ import { AppEventsService } from "../notifications/app-events.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { recordAuthEvent, requestIp, requestUserAgent } from "../../lib/auth-audit";
 import { insertUserSchema } from "@shared/schema";
+import { isFollowUpCall } from "../../../../shared/meeting-subtypes";
 import { hasProviderRole, PROVIDER_ROLES, GOSTORK_ROLES, PARENT_ACCOUNT_ROLES, isParentAccountAdmin } from "@shared/roles";
 import { z } from "zod";
 import { CreateUserDto, UserResponseDto } from "../../dto/user.dto";
@@ -1170,7 +1171,9 @@ export class UsersController {
         ? (await this.prisma.booking.findMany({
             where: {
               parentUserId: { in: ids },
-              meetingSubtype: { notIn: ["MATCH_CALL", "DOCTOR_CONSULTATION"] },
+              // A consultation is the null subtype. notIn [...] silently
+              // dropped every NULL row, so this matched nothing.
+              meetingSubtype: null,
               outcome: { in: ["COMPLETED", "UNVERIFIED"] },
             },
             select: { parentUserId: true },
@@ -1186,7 +1189,7 @@ export class UsersController {
       ? await this.prisma.booking.findMany({
           where: {
             parentUserId: { in: ids },
-            meetingSubtype: { notIn: ["MATCH_CALL", "DOCTOR_CONSULTATION"] },
+            meetingSubtype: null, // consultations only (notIn dropped NULL rows)
           },
           select: { parentUserId: true, status: true, scheduledAt: true, duration: true },
         })
@@ -2060,7 +2063,9 @@ export class UsersController {
       const done = b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED";
       const live = ["PENDING", "CONFIRMED"].includes(b.status)
         && new Date(b.scheduledAt).getTime() + ((b as any).duration || 30) * 60 * 1000 > bookingNowMs;
-      if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
+      if (isFollowUpCall(b.meetingSubtype)) {
+        // a follow-up with a connected provider is not a journey step
+      } else if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
         if (done) doctorCallCompletedAccounts.add(key, line);
         if (["PENDING", "CONFIRMED"].includes(b.status)) doctorCallScheduledAccounts.add(key, line);
       } else if (b.meetingSubtype !== "MATCH_CALL") {

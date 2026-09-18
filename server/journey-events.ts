@@ -11,6 +11,7 @@
  * emitted it. Errors are logged and swallowed.
  */
 import { prisma } from "./db";
+import { isFollowUpCall } from "../shared/meeting-subtypes";
 
 export type JourneyEventType =
   // Gate B of the two-tier privacy model opened for a (provider, parent) pair.
@@ -343,6 +344,7 @@ export async function emitBookingLifecycleEvent(
       },
     });
     if (!booking?.parentUserId) return; // no parent to attribute (pure external invite)
+    if (isFollowUpCall(booking.meetingSubtype)) return; // a follow-up is not a journey step
     const provName = (booking.providerUser?.provider?.name || "").trim().toLowerCase();
     const isHouse = provName === "gostork" || (booking.providerUser?.roles || []).some((r: any) => String(r).startsWith("GOSTORK"));
     if (isHouse) return; // concierge calls are not provider-journey events

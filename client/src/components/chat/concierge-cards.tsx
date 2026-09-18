@@ -57,6 +57,7 @@ import { Loader2, Send, FileText, Download, Heart, Brain, Stethoscope, MessageCi
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { parseApiError } from "@/lib/api-error";
+import { isFollowUpCall } from "@shared/meeting-subtypes";
 
 export interface MatchCard {
   name: string;
@@ -126,6 +127,9 @@ export interface ConsultationCardData {
   profilePhotoUrl?: string | null;
   subjectProfileId?: string | null;
   subjectType?: string | null;
+  meetingSubtype?: string | null;
+  /** FOLLOW_UP calendars only: the provider chat the call is booked from. */
+  followUpSessionId?: string;
 }
 
 export interface ChatMessage {
@@ -746,7 +750,7 @@ export function InlineBookingCalendar({
   memberName: string;
   brandColor: string;
   existingBooking?: any;
-  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null; meetingSubtype?: string | null };
+  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null; meetingSubtype?: string | null; followUpSessionId?: string };
   autoResetOnCancel?: boolean;
   showCalendarOnExpiry?: boolean;
   onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null; booking?: any }) => void;
@@ -950,6 +954,10 @@ export function InlineBookingCalendar({
         // Phase 4: Match Call / Doctor Call bookings carry a subtype that
         // gates the post-call readiness prompt + the 24h surrogate hold.
         body.meetingSubtype = consultationMeta.meetingSubtype;
+      }
+      if (consultationMeta?.followUpSessionId) {
+        // A follow-up is linked to the provider chat it was booked from.
+        body.followUpSessionId = consultationMeta.followUpSessionId;
       }
       if (consultationMeta?.aiSessionId) {
         body.aiSessionId = consultationMeta.aiSessionId;
@@ -1417,6 +1425,8 @@ export function ConsultationBookingCard({
                     ? `Match Call with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "Consultant"}`
                     : ((shownBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "DOCTOR_CONSULTATION"
                       ? `Doctor Call with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "Consultant"}`
+                      : isFollowUpCall((shownBooking as any).meetingSubtype ?? card.meetingSubtype)
+                        ? `Call with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "your team"}`
                       : `Consultation with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "Consultant"}`
                 : card.providerName === "GoStork"
                   ? `Schedule GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
@@ -1424,6 +1434,8 @@ export function ConsultationBookingCard({
                     ? `Schedule your Match Call with ${card.memberName || card.providerName || "Consultant"}`
                     : (card as any).meetingSubtype === "DOCTOR_CONSULTATION"
                       ? `Schedule your Doctor Call with ${card.memberName || card.providerName || "Consultant"}`
+                      : isFollowUpCall(card.meetingSubtype)
+                        ? `Schedule a call with ${card.memberName ? `${card.memberName}${card.providerName ? ` at ${card.providerName}` : ""}` : (card.providerName || "your team")}`
                       : `Schedule with ${card.memberName ? `${card.memberName}${card.providerName ? ` at ${card.providerName}` : ""}` : (card.providerName || "Consultant")}`}
             </span>
           </div>
@@ -1434,7 +1446,7 @@ export function ConsultationBookingCard({
             memberName={card.memberName || card.providerName}
             brandColor={brandColor}
             existingBooking={existingBooking}
-            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType, meetingSubtype: (card as any).meetingSubtype ?? null }}
+            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType, meetingSubtype: (card as any).meetingSubtype ?? null, followUpSessionId: card.followUpSessionId }}
             onBookingConfirmed={(meta) => { if (meta.booking) setJustBooked(meta.booking); onBookingConfirmed?.(meta); }}
           />
         </div>

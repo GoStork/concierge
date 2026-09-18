@@ -45,6 +45,7 @@ import {
   PAID_INVOICE_STATUSES, refundBranchOf,
   REFUND_REQUESTED_STAGE, REFUND_REQUESTED_LABEL, REFUND_COMPLETED_STAGE, REFUND_COMPLETED_LABEL,
 } from "../shared/journey-ladder";
+import { isFollowUpCall } from "../shared/meeting-subtypes";
 
 export interface JourneyStageOut {
   id: string;
@@ -446,9 +447,12 @@ export async function buildJourneyTimelines(
     // canceled/expired/no-show bookings stop proving the rung.
     // Session scoping: bookings LINKED to a different thread are excluded;
     // legacy/unlinked bookings (sessionId null) keep counting everywhere.
+    // A follow-up with a connected provider is not a journey step, so it
+    // neither ticks a rung nor masks a missed-call branch.
+    const journeyBookings = b.bookings.filter((bk: any) => !isFollowUpCall(bk.meetingSubtype));
     const scopedBookings = opts?.sessionId
-      ? b.bookings.filter((bk: any) => !bk.sessionId || bk.sessionId === opts.sessionId)
-      : b.bookings;
+      ? journeyBookings.filter((bk: any) => !bk.sessionId || bk.sessionId === opts.sessionId)
+      : journeyBookings;
     const nowMs = Date.now();
     const endOf = (bk: any) => new Date(bk.scheduledAt).getTime() + (bk.duration || 30) * 60 * 1000;
     const liveOf = (list: any[]) => list.filter((bk: any) => ["PENDING", "CONFIRMED"].includes(bk.status) && endOf(bk) > nowMs);

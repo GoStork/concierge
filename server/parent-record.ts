@@ -20,6 +20,7 @@
  */
 
 import { serviceKeysFromLabels } from "../shared/service-keys";
+import { isFollowUpCall } from "../shared/meeting-subtypes";
 import { prisma } from "./db";
 import { JOURNEY_STAGE_ORDER, resolveJourneyStage, CALL_EXPIRED_STAGE, PAID_INVOICE_STATUSES, refundBranchOf } from "../shared/journey-ladder";
 import { serviceLineOfSubject } from "./journey-timeline";
@@ -926,7 +927,9 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     // Same liveness test as the timeline: booked, and not yet over.
     const live = ["PENDING", "CONFIRMED"].includes(b.status)
       && new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000 > nowMs;
-    if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
+    if (isFollowUpCall(b.meetingSubtype)) {
+      // a follow-up with a connected provider is not a journey step
+    } else if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
       if (done) doctorCallCompletedOrgs.add(org, line);
       if (["PENDING", "CONFIRMED"].includes(b.status)) doctorCallScheduledOrgs.add(org, line);
     } else if (b.meetingSubtype !== "MATCH_CALL") {

@@ -7,6 +7,9 @@
  * platform already holds (the family's calls with this provider, the
  * provider's own knowledge base, the thread itself). Then Eva answers right
  * away instead of leaving the parent waiting on a question she can settle.
+ * When the parent asks for a new call, Eva shares the provider coordinator's
+ * calendar as a FOLLOW_UP booking (shared/meeting-subtypes.ts) - a plain
+ * call that is not a journey step.
  *
  * Deliberately NOT the full concierge pipeline: that stack is built for
  * Eva's private chat (intake, matching, booking cards, whispers) and fights
@@ -38,6 +41,8 @@ export interface ProviderChatGateInput {
 
 export interface ProviderChatGateDecision {
   answer: boolean;
+  /** "calendar": share the provider's booking calendar under the reply. */
+  action: "reply" | "calendar";
   reply: string;
   reason: string;
 }
@@ -52,7 +57,7 @@ function formatCallTime(at: Date, timeZone: string | null): string {
 }
 
 export async function decideEvaReplyInProviderChat(input: ProviderChatGateInput): Promise<ProviderChatGateDecision> {
-  const silent = (reason: string): ProviderChatGateDecision => ({ answer: false, reply: "", reason });
+  const silent = (reason: string): ProviderChatGateDecision => ({ answer: false, action: "reply", reply: "", reason });
 
   const section = await prisma.conciergePromptSection.findUnique({
     where: { key: PROVIDER_CHAT_GATE_KEY },
@@ -119,5 +124,5 @@ export async function decideEvaReplyInProviderChat(input: ProviderChatGateInput)
     console.error(`[provider-chat-gate] answer=true with an empty reply for session ${input.sessionId} - staying silent`);
     return silent("empty reply");
   }
-  return { answer: parsed.answer, reply, reason: String(parsed.reason || "") };
+  return { answer: parsed.answer, action: parsed.action === "calendar" ? "calendar" : "reply", reply, reason: String(parsed.reason || "") };
 }

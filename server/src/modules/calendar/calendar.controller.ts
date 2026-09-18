@@ -55,6 +55,7 @@ import {
 } from "../../../consultation-gates";
 import { findConnectedProviderSession } from "../../../parent-visibility";
 import { assertNotQuarantined } from "../../../trust-gate";
+import { FOLLOW_UP_CALL, VALID_MEETING_SUBTYPES, isFollowUpCall } from "../../../../shared/meeting-subtypes";
 import {
   GATES_CLOSED, calendarAttendeesFor, parentAccountKey, parentDisplayName,
   redactBookingForProvider, releasedAccountIds, resolveParentGates, resolveParentGatesBatch,
@@ -1662,6 +1663,8 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     // to prepare) and only to the parent's FIRST call with this provider.
     const isConsultation = !isMatch && !isDoctor;
     if (!booking.parentUserId) return;
+    // A follow-up with a connected provider has no prep flow.
+    if (isFollowUpCall(booking.meetingSubtype)) return;
     if (isConsultation && new Date(booking.scheduledAt).getTime() < Date.now() + 20 * 60 * 1000) return;
 
     // Prefer the surrogate 3-way session for this (parent, provider) pair.
@@ -2637,6 +2640,34 @@ I'll check in with you right after the call. You've got this!`;
    * results in ALLOW: a missed lock is a soft product miss, a wrong one is a
    * dead end the parent cannot see or undo.
    */
+  /**
+   * Links a FOLLOW_UP booking to the chat it was booked from. The id comes
+   * from a public endpoint, so it is honored only when that thread belongs to
+   * the booking parent's account and to the host's provider; anything else is
+   * dropped (the booking stands, just unlinked).
+   */
+  private async linkFollowUpToThread(sessionId: unknown, booking: any): Promise<void> {
+    if (typeof sessionId !== "string" || !sessionId || !booking.parentUser?.id) return;
+    const providerId = booking.providerUser?.providerId;
+    if (!providerId) return;
+    const [session, parent] = await Promise.all([
+      this.prisma.aiChatSession.findUnique({
+        where: { id: sessionId },
+        select: { providerId: true, user: { select: { id: true, parentAccountId: true } } },
+      }),
+      this.prisma.user.findUnique({ where: { id: booking.parentUser.id }, select: { parentAccountId: true } }),
+    ]);
+    const sameFamily = !!session?.user && (
+      session.user.id === booking.parentUser.id ||
+      (!!parent?.parentAccountId && session.user.parentAccountId === parent.parentAccountId)
+    );
+    if (!session || session.providerId !== providerId || !sameFamily) {
+      this.logger.warn(`[follow-up] Session ${sessionId} does not belong to this parent/provider - booking ${booking.id} left unlinked`);
+      return;
+    }
+    await this.prisma.booking.update({ where: { id: booking.id }, data: { sessionId } });
+  }
+
   private async enforceConsultationGates(body: any, config: any): Promise<void> {
     const parentUser = await this.prisma.user
       .findUnique({ where: { email: body.email }, select: { id: true } })
@@ -2686,8 +2717,10 @@ I'll check in with you right after the call. You've got this!`;
     }
 
     // The lock and the preliminary-step gate are about CONSULTATIONS, so a
-    // doctor call passes straight through.
+    // doctor call - and a follow-up with an already-connected provider -
+    // passes straight through.
     if (body.meetingSubtype === "DOCTOR_CONSULTATION") return;
+    if (isFollowUpCall(body.meetingSubtype)) return;
     if (!body.aiSessionId) return;
 
     const lock = await evaluateConsultationLock({
@@ -2836,9 +2869,9 @@ I'll check in with you right after the call. You've got this!`;
       }
 
       // Phase 4: Match Call / Doctor Call bookings carry a subtype that
-      // gates the post-call readiness prompt + the 24h surrogate hold.
-      // Whitelisted - anything else is stored as a plain consultation.
-      const VALID_MEETING_SUBTYPES = new Set(["MATCH_CALL", "DOCTOR_CONSULTATION"]);
+      // gates the post-call readiness prompt + the 24h surrogate hold; a
+      // FOLLOW_UP is a plain call with a connected provider (no journey
+      // step). Whitelisted - anything else is stored as a plain consultation.
       const meetingSubtype = VALID_MEETING_SUBTYPES.has(body.meetingSubtype) ? body.meetingSubtype : null;
 
       return tx.booking.create({
@@ -2857,7 +2890,9 @@ I'll check in with you right after the call. You've got this!`;
             ? `Match Call with ${config.user.name || config.user.email}`
             : meetingSubtype === "DOCTOR_CONSULTATION"
               ? `Doctor Call with ${config.user.name || config.user.email}`
-              : config.defaultSubject || `Meeting with ${config.user.name || config.user.email}`,
+              : meetingSubtype === FOLLOW_UP_CALL
+                ? `Follow-up call with ${config.user.name || config.user.email}`
+                : config.defaultSubject || `Meeting with ${config.user.name || config.user.email}`,
           meetingSubtype,
           attendeeEmails: allAttendeeEmails,
           attendeeName: body.name,
@@ -2900,7 +2935,13 @@ I'll check in with you right after the call. You've got this!`;
     // Eva chat (a race - the consultation thread didn't exist yet). The
     // journey then continued in the thread while the draft sat orphaned in
     // the Eva session, leaving a permanently stale Home work-queue item.
-    if (body.aiSessionId && booking.parentUser) {
+    if (isFollowUpCall(booking.meetingSubtype)) {
+      // A follow-up is booked from INSIDE the family's existing chat with this
+      // provider: link it to that exact thread and nothing else - no session
+      // status change, no consultation messages, no briefing, no cost sheet.
+      await this.linkFollowUpToThread(body.followUpSessionId, booking)
+        .catch((e) => this.logger.warn(`[follow-up] Thread link failed for ${booking.id}: ${e.message}`));
+    } else if (body.aiSessionId && booking.parentUser) {
       this.createConsultationChatSession(body, booking)
         .catch((e) => this.logger.error(`Failed to create consultation chat session: ${e.message}`))
         .finally(() => this.fireCostSheetAutoDraft(booking.id));

@@ -30,6 +30,7 @@ import { CalendarController } from "../calendar/calendar.controller";
 import { maybeCompleteBookingEarly } from "../calendar/call-outcome.sweep";
 import { BillingService } from "../billing/billing.service";
 import { hasProviderRole, hasAnyRole, isBillingManagerOnly } from "../../../../shared/roles";
+import { isFollowUpCall } from "../../../../shared/meeting-subtypes";
 import { adHocCallIdentity } from "./ad-hoc-call";
 
 const GOSTORK_STAFF = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"];
@@ -953,9 +954,15 @@ export class VideoController {
   }
 
   /** Sends AI follow-up messages to both parent and provider after a consultation call ends. */
-  private async firePostCallFollowUp(booking: { id: string; parentUserId?: string | null; providerUserId: string; subject?: string | null }) {
+  private async firePostCallFollowUp(booking: { id: string; parentUserId?: string | null; providerUserId: string; subject?: string | null; meetingSubtype?: string | null }) {
     const { parentUserId, providerUserId } = booking;
     if (!parentUserId) return;
+    // A follow-up with a connected provider is not a consultation: no
+    // "your consultation has ended" notice and no readiness prompt.
+    const subtype = booking.meetingSubtype !== undefined
+      ? booking.meetingSubtype
+      : (await this.prisma.booking.findUnique({ where: { id: booking.id }, select: { meetingSubtype: true } }))?.meetingSubtype;
+    if (isFollowUpCall(subtype)) return;
 
     // Resolve parent info and provider entity in parallel
     const [parentUser, providerEntity] = await Promise.all([
@@ -1043,6 +1050,8 @@ export class VideoController {
       // message's timezone - omitted here they were silently undefined.
       select: { meetingSubtype: true, providerUserId: true, bookerTimezone: true },
     });
+    // A follow-up with a connected provider is never the decision call.
+    if (isFollowUpCall(booking?.meetingSubtype)) return;
 
     // Get provider type and deposit milestone (fee config not required - readiness prompt
     // always fires; admin can set up billing after the fact)

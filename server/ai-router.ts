@@ -14,6 +14,7 @@ import {
 import { openConnectedAgencySubjectThread } from "./connected-agency-shortcut";
 import { providerTypeFromSubject } from "./provider-type-resolve";
 import { EVA_PROMPT_SECTION_KEYS } from "./ai-prompt-defaults";
+import { FOLLOW_UP_CALL } from "../shared/meeting-subtypes";
 import { blockContactInfo, isSharedWithProvider, logContactBlock, scanForContactInfo } from "./contact-guard";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
@@ -3237,7 +3238,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
             console.log(`[provider-chat-gate] session ${currentSessionId}: provider is actively replying - Eva stays silent`);
           } else {
             const [providerRow, knowledge] = await Promise.all([
-              prisma.provider.findUnique({ where: { id: currentSession.providerId }, select: { name: true } }),
+              prisma.provider.findUnique({ where: { id: currentSession.providerId }, select: { name: true, logoUrl: true } }),
               searchKnowledgeBase(userMessage, currentSession.providerId, 5),
             ]);
             const providerName = providerRow?.name || "the provider";
@@ -3252,12 +3253,42 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
               knowledge,
             });
             console.log(`[provider-chat-gate] session ${currentSessionId}: answer=${decision.answer} (${decision.reason})`);
-            if (decision.answer) {
+            // A new call: share the right coordinator's calendar as a
+            // FOLLOW_UP booking - a plain call linked to this chat, never a
+            // second consultation (shared/meeting-subtypes.ts).
+            let followUpCard: Record<string, unknown> | null = null;
+            if (decision.answer && decision.action === "calendar") {
+              const { pickProviderBookingMember } = await import("./provider-booking-member");
+              const member = await pickProviderBookingMember(currentSession.providerId, currentSession.subjectType);
+              if (member) {
+                followUpCard = {
+                  providerId: currentSession.providerId,
+                  providerName,
+                  providerLogo: providerRow?.logoUrl || null,
+                  bookingUrl: `/book/${member.slug}`,
+                  iframeEnabled: true,
+                  memberBookingSlug: member.slug,
+                  memberName: member.name,
+                  memberPhoto: member.photoUrl,
+                  meetingSubtype: FOLLOW_UP_CALL,
+                  followUpSessionId: currentSessionId,
+                };
+              } else {
+                console.error(`[provider-chat-gate] ${providerName} has no team member with a booking page - no calendar to share, Eva stays silent`);
+              }
+            }
+            if (decision.answer && (decision.action === "reply" || followUpCard)) {
               // Dual-audience: the parent reads `content`, the provider chat
               // renders `providerContent`, addressed to the provider.
-              const cardData = { providerContent: `Eva answered ${parentFirstName}'s message for you:\n\n${decision.reply}` };
+              const providerContent = followUpCard
+                ? `${parentFirstName} asked for a call - Eva shared ${followUpCard.memberName ? `${followUpCard.memberName}'s` : "your team's"} calendar so they can pick a time.`
+                : `Eva answered ${parentFirstName}'s message for you:\n\n${decision.reply}`;
+              const cardData = followUpCard ? { consultationCard: followUpCard, providerContent } : { providerContent };
               const evaMsg = await prisma.aiChatMessage.create({
-                data: { sessionId: currentSessionId, role: "assistant", content: decision.reply, senderType: "ai", uiCardData: cardData },
+                data: {
+                  sessionId: currentSessionId, role: "assistant", content: decision.reply, senderType: "ai", uiCardData: cardData as Prisma.InputJsonValue,
+                  ...(followUpCard ? { uiCardType: "rich" } : {}),
+                },
               });
               sse.sendToken(decision.reply);
               sse.sendDone({
@@ -3265,6 +3296,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
                 sessionId: currentSessionId,
                 userMessageId: savedUserMsg?.id ?? null,
                 userMessageDeliveredAt: userMsgDeliveredAt,
+                ...(followUpCard ? { consultationCard: followUpCard } : {}),
               });
               return;
             }

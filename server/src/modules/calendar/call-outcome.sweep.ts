@@ -1,4 +1,5 @@
 import { PrismaService } from "../prisma/prisma.service";
+import { isFollowUpCall } from "../../../../shared/meeting-subtypes";
 import { resolveParentEvaSessionId } from "../../../parent-visibility";
 import { NotificationService } from "../notifications/notification.service";
 import { emitJourneyEvent, emitJourneyEventOnceForBooking, bookingEventType } from "../../../journey-events";
@@ -178,6 +179,9 @@ export async function finalizeCompletedBooking(
     data: { outcome: "COMPLETED", outcomeAt: new Date() },
   });
   if (claimed.count === 0) return false;
+  // A follow-up with a connected provider is not a journey step: record the
+  // outcome, but no event, review checkpoint or IP-form prompt.
+  if (isFollowUpCall(booking.meetingSubtype)) return true;
 
   await emitJourneyEvent({
     eventType: bookingEventType("COMPLETED", booking.meetingSubtype),
@@ -283,6 +287,9 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
       }
 
       await prisma.booking.update({ where: { id: booking.id }, data: { outcome, outcomeAt: new Date() } });
+      // A follow-up is not a journey step: no journey event and no win-back
+      // (a provider no-show still alerts the admins below).
+      const followUp = isFollowUpCall(booking.meetingSubtype);
 
       const isBacklog = isBacklogCall;
       const eventBase =
@@ -290,7 +297,9 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
         : outcome === "NO_SHOW_PROVIDER" ? "NO_SHOW_PROVIDER"
         : outcome === "NO_SHOW_BOTH" ? "NO_SHOW_BOTH"
         : null;
-      if (eventBase) {
+      if (followUp) {
+        // no journey event
+      } else if (eventBase) {
         await emitJourneyEvent({
           eventType: bookingEventType(eventBase as any, booking.meetingSubtype),
           parentUserId: booking.parentUserId,
@@ -311,7 +320,7 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
       if (isBacklog) continue;
 
       // Parent didn't show (alone or both absent) -> Eva win-back.
-      if (outcome === "NO_SHOW_PARENT" || outcome === "NO_SHOW_BOTH") {
+      if (!followUp && (outcome === "NO_SHOW_PARENT" || outcome === "NO_SHOW_BOTH")) {
         await sendWinback(prisma, booking, "no_show");
       }
 
@@ -356,6 +365,7 @@ export async function runCanceledNotRebookedSweep(prisma: PrismaService): Promis
   for (const booking of candidates) {
     try {
       if (isGoStorkHouseBooking(booking)) continue;
+      if (isFollowUpCall(booking.meetingSubtype)) continue; // not a lost consultation
       const orgProviderId = booking.providerUser?.provider?.id || null;
 
       // "Rebooked" = ANY newer live booking between this parent account and
