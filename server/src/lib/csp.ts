@@ -49,6 +49,16 @@ export function cspWithNonce(policy: string, nonce: string): string {
 /** Where violation reports are posted. Same origin, so no CORS dance. */
 export const CSP_REPORT_PATH = "/api/csp-report";
 
+/**
+ * Daily serves calls from daily.co and FAILS OVER to these domains when
+ * daily.co is unreachable. Their CSP guide is explicit that every daily.co
+ * entry needs the fallbacks beside it - otherwise the policy works every day
+ * except the day Daily has an incident, which is the worst time to find out.
+ * https://docs.daily.co/guides/privacy-and-security/content-security-policy
+ */
+const DAILY_HOSTS = ["*.daily.co", "*.dailywebrtc.com", "*.dailywebrtc.net"];
+const dailyHttps = DAILY_HOSTS.map((h) => `https://${h}`);
+
 export function buildCsp(opts: { isProduction: boolean }): string {
   const { isProduction } = opts;
 
@@ -71,13 +81,14 @@ export function buildCsp(opts: { isProduction: boolean }): string {
       "'report-sample'",
       "https://static.cloudflareinsights.com", // Cloudflare Web Analytics, injected at the edge
       "https://js.stripe.com",              // Stripe Elements / card fields
+      "https://*.js.stripe.com",            // Stripe starts frames on sibling origins for speed
       "https://challenges.cloudflare.com",  // Turnstile bot check on signup
       // Daily.co ships in our bundle, but the call client pulls extra pieces
       // from its own domain at runtime. Video calls are the one critical
       // surface that cannot be exercised from here without a live booking, so
       // this is deliberately permissive toward their origin rather than
       // risking a blocked call in production.
-      "https://*.daily.co",
+      ...dailyHttps,
       // Voice mode builds its AudioWorklet from a Blob URL
       // (client/src/lib/voice/audio.ts). AudioWorklet module loads are
       // governed by script-src, so without this the microphone pipeline dies.
@@ -111,8 +122,12 @@ export function buildCsp(opts: { isProduction: boolean }): string {
       "https://r.stripe.com",
       "https://challenges.cloudflare.com",
       "https://cloudflareinsights.com",     // where the analytics beacon posts
-      "https://*.daily.co",                 // video call signalling
-      "wss://*.daily.co",
+      ...dailyHttps,                        // video call signalling
+      ...DAILY_HOSTS.map((h) => `wss://${h}`),
+      "https://*.pluot.blue",               // Daily's call telemetry/signalling backend
+      "wss://*.pluot.blue",
+      "https://link.com",                   // Stripe Link, offered inside the Payment Element
+      "https://*.link.com",
       // The talking-avatar session connects to a LiveKit URL that LiveAvatar
       // hands out per session, so there is no single host to pin. Their
       // regions live under livekit.cloud; if that ever changes the avatar goes
@@ -126,9 +141,12 @@ export function buildCsp(opts: { isProduction: boolean }): string {
 
     "frame-src": [
       "'self'",                             // /video/:id is framed same-origin
-      "https://*.daily.co",
+      ...dailyHttps,
       "https://js.stripe.com",
-      "https://hooks.stripe.com",
+      "https://*.js.stripe.com",
+      "https://hooks.stripe.com",           // 3D Secure and other redirect challenges
+      "https://link.com",
+      "https://*.link.com",
       "https://challenges.cloudflare.com",
       "https://*.pandadoc.com",             // agreement and W-9 signing
       "https://*.pandadoc.eu",              // the template editor SDK hardcodes both
