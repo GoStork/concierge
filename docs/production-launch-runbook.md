@@ -2048,7 +2048,7 @@ config, the GCS bucket IAM and object ACLs, Stripe/Twilio/SendGrid console
 settings, real PandaDoc-signed webhook traffic, and any authenticated
 penetration testing of the provider/admin UI beyond the API layer.
 
-#### 10d addendum - what report-only caught, 2026-09-18 (still CSP_MODE=report)
+#### 10d addendum - what report-only caught, 2026-09-18 (now ENFORCING, see below)
 
 test-app has almost no real users before launch, so "N clean days" there is
 weak evidence by nature. What the thin log DID catch is the class of thing that
@@ -2108,9 +2108,24 @@ only exists behind Cloudflare and can never show up on a dev Mac:
   else has now been walked clean. The walk account (a test provider admin) had no agreement or
   booking of its own. Do these as part of the Phase A smoke tests, then read
   `grep csp-violation`.
-- [ ] Switch to `CSP_MODE=enforce` once the unexercised list above has been
-  walked clean. Scheduled task `csp-report-review` re-reads all three logs on
-  2026-09-25 and ASKS - it never switches on its own.
+- [x] **ENFORCING since 2026-09-18 ~19:55 UTC** on production (test-app), the
+  MacBook and the iMac - `CSP_MODE=enforce` in each `.env` (backups:
+  `.env.bak-csp-20260918`). Approved by Eran after every reachable surface was
+  walked clean. Trolley was never walked because Trolley declined GoStork, so
+  `widget.trolley.com` was REMOVED from frame-src (5d520069) - re-add it and
+  walk `/account/payouts` if Trolley is ever approved. Verified after the
+  switch: header is `content-security-policy` (not -report-only), HTTP 200
+  through Cloudflare, login + onboarding + chat + the Stripe payment page
+  render, 0 violations on prod and MacBook. The iMac had NO `CSP_MODE` line,
+  and the code defaults to enforce, so it had quietly been enforcing since
+  2026-09-16 with no reported breakage - extra evidence.
+  **Rollback:** set `CSP_MODE=report` (or `off`) in that host's `.env` and
+  restart (`sudo systemctl restart gostork` on the VM). Violations still post
+  to `/api/csp-report` and log as `[csp-violation]` - grep for them after any
+  new third-party integration.
+- [ ] Phase B: the policy is host-agnostic ('self' + vendor hosts), so the flip
+  to app.gostork.com needs no CSP change - but load app.gostork.com once
+  after the flip and grep for `csp-violation`.
 
 ### 10a. Stripe account-takeover defense (lessons from the GoStork 1.0 breach, Aug-Sep 2024)
 
