@@ -846,11 +846,13 @@ input[type="time"]::-webkit-date-and-time-value {
 }
 
 /* A brand focus ring for every control that does not bring its own. :where()
-   keeps specificity at zero, so a component's focus-visible:ring / outline
+   keeps specificity at zero (the :focus-visible itself sits inside :where
+   too - outside it, it counted as a class and beat `outline-none`, drawing a
+   box around the underline inputs on onboarding), so a component's focus-visible:ring / outline
    classes still win; this only replaces the browser default (a thin blue
    "auto" outline) and covers the controls that had nothing at all - the audit
    counted 63 on the Egg Donors tab and 72 on Branding. */
-:where(a, button, summary, input, select, textarea, [role="button"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="slider"], [role="combobox"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible {
+:where(a, button, summary, input, select, textarea, [role="button"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="slider"], [role="combobox"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):where(:focus-visible) {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
