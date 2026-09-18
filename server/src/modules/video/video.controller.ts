@@ -780,11 +780,26 @@ export class VideoController {
     }
 
     const event = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const eventType = event?.event;
+    // Daily's documented envelope is { version, type, id, payload, event_ts }.
+    // This used to read `event.event`, which Daily never sends, so every real
+    // event was signature-checked, answered 200, and then silently dropped:
+    // no meeting ever got actualStartedAt after June 2026, and because the
+    // recording handler requires actualStartedAt, no recording was processed
+    // either. Found 2026-09-18 by a real dev call.
+    const eventType: string | undefined = event?.type;
     const payload = event?.payload;
-    const roomName = payload?.room_name;
+    // The room key differs by event: meeting.started / meeting.ended send
+    // `room`, recording.ready-to-download sends `room_name`.
+    const roomName: string | undefined = payload?.room ?? payload?.room_name;
 
-    if (!roomName) return { ok: true };
+    if (!eventType || !roomName) {
+      this.logger.warn(
+        `Daily webhook ignored - unrecognised shape (type=${JSON.stringify(eventType ?? null)}, ` +
+        `payload keys=${Object.keys(payload || {}).join(",") || "none"})`,
+      );
+      return { ok: true };
+    }
+    this.logger.log(`Daily webhook ${eventType} room=${roomName}`);
 
     // Try to find provider user by their persistent Daily room URL
     const providerUser = await this.prisma.user.findFirst({
