@@ -1,6 +1,7 @@
 import * as cron from "node-cron";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
+import { TEST_RUNNER_DETAIL_PREFIX } from "../../lib/auth-audit";
 
 /**
  * Watches the authentication audit trail and emails admins when it looks like
@@ -64,6 +65,10 @@ export function findAuthAnomalies(
   const twoFactorFailsByAccount = new Map<string, number>();
 
   for (const r of rows) {
+    // Our own test suites, identified by the test-runner secret. Recorded for
+    // the trail, never alerted on (a concierge test run paged admins with
+    // "48 failed sign-ins from 127.0.0.1" on 2026-09-18).
+    if (r.detail?.startsWith(TEST_RUNNER_DETAIL_PREFIX)) continue;
     if (r.event === "LOGIN_FAILURE") {
       const ip = r.ip || "unknown";
       failsByIp.set(ip, (failsByIp.get(ip) || 0) + 1);

@@ -41,7 +41,7 @@ function clientIp(req: any): string {
  * So the bypass is an explicit shared secret that only the test runner knows,
  * compared in constant time. No secret configured means no bypass at all.
  */
-function isTestRunner(req: any): boolean {
+export function isTestRunner(req: any): boolean {
   const token = process.env.TEST_RUNNER_TOKEN;
   if (!token) return false;
   const provided = req.headers?.["x-test-runner-token"];

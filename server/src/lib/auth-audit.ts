@@ -27,6 +27,13 @@ export type AuthAuditEvent =
   | "USER_DELETED_BY_ADMIN"
   | "USER_DISABLED";
 
+/**
+ * Prefix on `detail` for events caused by our own test suites (the request
+ * carried the valid TEST_RUNNER_TOKEN). The row is still written - the audit
+ * trail stays complete - but the watchdog does not alert on it.
+ */
+export const TEST_RUNNER_DETAIL_PREFIX = "test_runner:";
+
 export interface AuthAuditInput {
   event: AuthAuditEvent;
   userId?: string | null;

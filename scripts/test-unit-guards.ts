@@ -790,6 +790,32 @@ async function ut20() {
     parent.senderType === "parent" && parent.subject.endsWith("(PFCLA)"), JSON.stringify(parent));
 }
 
+// ─── UT-21: the auth watchdog alerts on attacks, not on our own test suites ──
+async function ut21() {
+  const { findAuthAnomalies } = await import("../server/src/modules/security/auth-audit-watchdog.scheduler");
+  const { TEST_RUNNER_DETAIL_PREFIX } = await import("../server/src/lib/auth-audit");
+  const fail = (n: number, ip: string, email: string, detail = "bad_credentials_or_disabled") =>
+    Array.from({ length: n }, () => ({ event: "LOGIN_FAILURE", email, userId: null, ip, detail }));
+
+  check("24 failures from one address stay silent",
+    findAuthAnomalies(fail(24, "203.0.113.9", "a@x.com").map((r, i) => ({ ...r, email: `u${i}@x.com` }))).length === 0);
+  const burst = findAuthAnomalies(fail(26, "203.0.113.9", "a@x.com").map((r, i) => ({ ...r, email: `u${i}@x.com` })));
+  check("26 failures from one address fire", burst.some((f) => f.kind.includes("ip")), JSON.stringify(burst.map((f) => f.kind)));
+
+  const suite = findAuthAnomalies(fail(48, "127.0.0.1", "x", `${TEST_RUNNER_DETAIL_PREFIX}bad_credentials_or_disabled`));
+  check("48 test-runner failures (the 2026-09-18 false alarm) stay silent", suite.length === 0, JSON.stringify(suite));
+
+  const mixed = findAuthAnomalies([
+    ...fail(48, "127.0.0.1", "x", `${TEST_RUNNER_DETAIL_PREFIX}bad_credentials_or_disabled`),
+    ...fail(26, "198.51.100.7", "victim@x.com"),
+  ]);
+  check("a real attack alongside a test run still fires", mixed.length > 0 && mixed.every((f) => !f.headline.includes("127.0.0.1")),
+    JSON.stringify(mixed.map((f) => f.headline)));
+
+  const unmarked = findAuthAnomalies(fail(48, "127.0.0.1", "x"));
+  check("the same burst WITHOUT the test-runner mark still fires", unmarked.length > 0, String(unmarked.length));
+}
+
 // ─── UT-19: QUESTION INTERCEPT trigger - structure, not substrings ───────────
 // The old regex matched substring PRESENCE of question words and fired the
 // multi-second regenerate-the-reply path on declarative fragments. Both
@@ -854,6 +880,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-18", name: "Every tag the prompt promises to strip is stripped before the parent sees it", run: ut18 },
   { id: "UT-19", name: "QUESTION INTERCEPT trigger matches interrogative structure, not question-word substrings", run: ut19 },
   { id: "UT-20", name: "Ad-hoc calls by GoStork staff are hosted and labelled as GoStork, never the thread's clinic", run: ut20 },
+  { id: "UT-21", name: "Auth watchdog alerts on attacks, never on our own test suites", run: ut21 },
 ];
 
 (async () => {

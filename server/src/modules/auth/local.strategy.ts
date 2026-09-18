@@ -3,7 +3,8 @@ import { PassportStrategy } from "@nestjs/passport";
 import { Strategy } from "passport-local";
 import { AuthService } from "./auth.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { recordAuthEventAsync, requestIp, requestUserAgent } from "../../lib/auth-audit";
+import { recordAuthEventAsync, requestIp, requestUserAgent, TEST_RUNNER_DETAIL_PREFIX } from "../../lib/auth-audit";
+import { isTestRunner } from "../../lib/rate-limits";
 
 @Injectable()
 export class LocalStrategy extends PassportStrategy(Strategy) {
@@ -25,7 +26,10 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
         email,
         ip: requestIp(req),
         userAgent: requestUserAgent(req),
-        detail: "bad_credentials_or_disabled",
+        // Still recorded, but marked: a request carrying the test-runner
+        // secret is our own suite, and the watchdog must not page admins for
+        // it. Same trust as the rate limiter, which already skips these.
+        detail: `${isTestRunner(req) ? TEST_RUNNER_DETAIL_PREFIX : ""}bad_credentials_or_disabled`,
       });
       throw new UnauthorizedException("Invalid credentials");
     }

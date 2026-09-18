@@ -2310,10 +2310,10 @@ async function main() {
 
   // Verify server
   try {
-    await fetch(`${BASE_URL}/api/auth/login`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-test-runner-token": process.env.TEST_RUNNER_TOKEN || "" },
-      body: JSON.stringify({ email: "x", password: "x" }),
-    });
+    // Health endpoint, not a throwaway login: a fake "x"/"x" sign-in was
+    // recorded as a failed login on every run and tripped the auth watchdog.
+    const health = await fetch(`${BASE_URL}/__health`);
+    if (!health.ok) throw new Error(`health ${health.status}`);
   } catch {
     console.error(`❌ Cannot reach ${BASE_URL} - is the server running?`);
     process.exit(1);

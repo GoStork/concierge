@@ -229,6 +229,13 @@ async function renderSmsTemplateForLog(contentSid: string, vars: Record<string, 
   return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key) => (vars[key] !== undefined ? vars[key] : m));
 }
 
+const AUTH_FINDING_LABELS: Record<string, string> = {
+  ip_burst: "Failed sign-ins",
+  account_burst: "Targeted account",
+  two_factor_burst: "Second factor",
+  privilege_change: "Privilege change",
+};
+
 @Injectable()
 export class NotificationService implements OnModuleInit {
   private readonly logger = new Logger(NotificationService.name);
@@ -1779,7 +1786,12 @@ export class NotificationService implements OnModuleInit {
 
     const brandData = await this.getBrandData();
     const detailRows = [
-      ...params.findings.map((f) => ({ label: esc(f.headline), value: esc(f.detail) })),
+      // Short label, the finding and its explanation together in the value:
+      // a sentence-long label left the explanation one letter per line on a phone.
+      ...params.findings.map((f) => ({
+        label: AUTH_FINDING_LABELS[f.kind] || "Signal",
+        value: `<strong>${esc(f.headline)}</strong><br>${esc(f.detail)}`,
+      })),
       { label: "Alert from", value: esc(getEnvironmentLabel()) },
     ];
 

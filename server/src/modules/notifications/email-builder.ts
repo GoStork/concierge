@@ -202,10 +202,15 @@ export function buildBrandedEmail(
 ${opts.detailRows.map(r => {
   const isDateTime = /\b(date|time)\b/i.test(r.label);
   const valueWrap = isDateTime ? "white-space:nowrap;" : "word-break:break-word;";
+  // Labels are normally one or two words and must not wrap ("Date", "Client").
+  // A long label with nowrap takes the whole row on a phone and crushes the
+  // value to one letter per line (seen on the auth watchdog alert,
+  // 2026-09-18), so anything longer may wrap and is capped at 45%.
+  const labelWrap = r.label.length <= 24 ? "white-space:nowrap;" : "white-space:normal;width:45%;";
   // Links inside a detail value (e.g. the Client row's "View profile") take
   // the brand color here so callers never hardcode one.
   const value = r.value.replace(/<a\s/g, `<a style="color:${brand.brandColor};" `);
-  return `<tr><td style="padding:10px 14px;color:${brand.mutedForegroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 14px;color:${brand.foregroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;${valueWrap}">${value}</td></tr>`;
+  return `<tr><td style="padding:10px 14px;color:${brand.mutedForegroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};${labelWrap}vertical-align:top;">${r.label}</td><td style="padding:10px 14px;color:${brand.foregroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;${valueWrap}">${value}</td></tr>`;
 }).join("\n")}
 </table>` : "";
 
