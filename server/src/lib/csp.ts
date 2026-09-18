@@ -11,8 +11,14 @@
  *    contains "embed", "player" or "iframe", so an agency page we sync can
  *    frame arbitrary content into the app. frame-src is the control for that.
  *
- * No nonce plumbing: the built index.html carries no inline script, so
- * `script-src 'self'` is enough and there is nothing to inject per request.
+ * Nonce: our own built index.html carries no inline script, so `'self'` would
+ * be enough for OUR code. The nonce exists for Cloudflare. Behind the proxy,
+ * Cloudflare injects an inline bot-detection script into every HTML page
+ * (found in the report-only log on test-app, 2026-09-18 - it never appears on
+ * the dev Macs). Cloudflare reads the nonce out of our CSP response header and
+ * stamps it onto the script it injects, so a per-request nonce lets that one
+ * script run without opening the door to 'unsafe-inline'. The nonce is never
+ * written into our own HTML, so an attacker who injects markup cannot reuse it.
  * `style-src` does need 'unsafe-inline' because the UI sets style attributes
  * throughout (Radix, and our own inline brand tones); inline styles are a far
  * smaller risk than inline script.
@@ -30,6 +36,14 @@ export function cspMode(): CspMode {
   const raw = (process.env.CSP_MODE || "enforce").toLowerCase();
   if (raw === "off" || raw === "report") return raw;
   return "enforce";
+}
+
+/** Swapped for a fresh random value on every response - see cspWithNonce(). */
+const NONCE_PLACEHOLDER = "__CSP_NONCE__";
+
+/** Stamps one request's nonce into the policy built once at boot. */
+export function cspWithNonce(policy: string, nonce: string): string {
+  return policy.replace(NONCE_PLACEHOLDER, nonce);
 }
 
 /** Where violation reports are posted. Same origin, so no CORS dance. */
@@ -50,6 +64,12 @@ export function buildCsp(opts: { isProduction: boolean }): string {
 
     "script-src": [
       "'self'",
+      `'nonce-${NONCE_PLACEHOLDER}'`,       // Cloudflare's injected bot-detection script
+      // Ask the browser to include the first 40 characters of a blocked inline
+      // script in the report. Without it a violation only says "inline" and
+      // the culprit has to be guessed.
+      "'report-sample'",
+      "https://static.cloudflareinsights.com", // Cloudflare Web Analytics, injected at the edge
       "https://js.stripe.com",              // Stripe Elements / card fields
       "https://challenges.cloudflare.com",  // Turnstile bot check on signup
       // Daily.co ships in our bundle, but the call client pulls extra pieces
@@ -90,6 +110,7 @@ export function buildCsp(opts: { isProduction: boolean }): string {
       "https://m.stripe.network",
       "https://r.stripe.com",
       "https://challenges.cloudflare.com",
+      "https://cloudflareinsights.com",     // where the analytics beacon posts
       "https://*.daily.co",                 // video call signalling
       "wss://*.daily.co",
       // The talking-avatar session connects to a LiveKit URL that LiveAvatar

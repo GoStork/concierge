@@ -38,7 +38,8 @@ import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
 import { sessionSecret, jwtSecret } from "./src/lib/app-secrets";
 import { authLimiter, passwordResetLimiter, publicWriteLimiter, publicBookingLimiter } from "./src/lib/rate-limits";
-import { buildCsp, cspMode, CSP_REPORT_PATH } from "./src/lib/csp";
+import { randomBytes } from "crypto";
+import { buildCsp, cspMode, cspWithNonce, CSP_REPORT_PATH } from "./src/lib/csp";
 import { pool } from "./db";
 import path from "path";
 import { aiRouter } from "./ai-router";
@@ -155,7 +156,7 @@ process.on("uncaughtException", (err: any) => {
     if (mode !== "off" && !req.path.startsWith("/api/")) {
       res.setHeader(
         mode === "report" ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
-        csp,
+        cspWithNonce(csp, randomBytes(16).toString("base64")),
       );
     }
     next();
@@ -178,6 +179,8 @@ process.on("uncaughtException", (err: any) => {
           directive: oneLine(r["effective-directive"] || r["violated-directive"], 80),
           blocked: oneLine(r["blocked-uri"], 300),
           document: oneLine(r["document-uri"], 300),
+          source: oneLine(r["source-file"], 200),
+          sample: oneLine(r["script-sample"], 80),
         }));
       } catch { /* a malformed report must never cost us anything */ }
       res.status(204).end();
