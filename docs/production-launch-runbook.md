@@ -2083,9 +2083,18 @@ only exists behind Cloudflare and can never show up on a dev Mac:
   dead ends first: dev agreements whose PandaDoc document was voided still
   read `SENT` in our DB, and the W-9 / provider-agreement test documents 404 at
   PandaDoc. Check `GET /public/v1/documents/:id` before picking a test doc.)
-- **NOT yet exercised under the policy:** a live Daily call (dev has no
-  CONFIRMED upcoming booking - the video page refuses PENDING ones), the
-  Trolley payout widget, voice mode / LiveAvatar, the Turnstile signup step. The walk account (a test provider admin) had no agreement or
+- **Daily video call: exercised clean 2026-09-18** (Eran started an ad-hoc
+  call from chat as admin, 39s on gostork-dev.daily.co, 0 violations).
+  **That call exposed a webhook bug, fixed in 23ca7a30:** the handler read
+  `event.event` + `payload.room_name`, but Daily sends `type` and, for
+  meeting.started/ended, `payload.room`. Every real event passed the signature
+  check, got 200, and was dropped - no booking got `actualStartedAt` after
+  2026-06-23, so `recording.ready-to-download` (which requires it) processed
+  nothing: **no call recording or transcript since July 10.** Proven fixed by
+  replaying a signed event in Daily's documented shape: the booking's
+  `actualStartedAt` was set. Unrecognised shapes now log a warning.
+- **NOT yet exercised under the policy:** the Trolley payout widget, voice
+  mode / LiveAvatar, the Turnstile signup step. The walk account (a test provider admin) had no agreement or
   booking of its own. Do these as part of the Phase A smoke tests, then read
   `grep csp-violation`.
 - [ ] Switch to `CSP_MODE=enforce` once the unexercised list above has been
