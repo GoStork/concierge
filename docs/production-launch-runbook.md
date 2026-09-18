@@ -1585,18 +1585,20 @@ correct - the test runner is not used on prod).
     lived on the dev Macs, so it was not reused). Verified through Cloudflare:
     signed 201, unsigned 403, forged 403.
   - `gostork-dev.daily.co` = DEV (free plan, created by Eran 2026-09-17).
-    Webhook f29d2fa5 -> `https://gostork.ngrok.app/api/video/webhook` (MacBook;
-    one webhook only, and both Macs share the dev DB, so either Mac can process
-    it - but the MacBook sleeps; move it to `gostork-imac.ngrok.app` if dev
-    recordings must process unattended). The 24 dev rooms were re-created on
-    the new domain with identical names/privacy/config, and the dev DB's 23
+    Webhook -> `https://gostork-imac.ngrok.app/api/video/webhook` (the iMac,
+    because it never sleeps; one webhook only, and both Macs share the dev DB so
+    events processed there serve MacBook testing too). Verified 2026-09-18:
+    signed 201, unsigned 403, forged 403. Both Macs' `.env` carry the SAME dev
+    `DAILY_API_KEY` + `DAILY_WEBHOOK_SECRET` (iMac updated over SSH at
+    `erans-imac.local`, clone `~/GitHub-iMac/concierge`, backup
+    `.env.bak-daily-20260918`). The 24 dev rooms were re-created on the new
+    domain with identical names/privacy/config, and the dev DB's 23
     `User.dailyRoomUrl` + 1 upcoming `Booking.meetingUrl` were rewritten to the
     new host. Past bookings keep their old URLs as history. Nothing was deleted
     from `gostork.daily.co`.
-  - [ ] ERAN: the **iMac** `.env` still holds the PRODUCTION Daily key. Set its
-    `DAILY_API_KEY` and `DAILY_WEBHOOK_SECRET` to the same values as the
-    MacBook `.env`, then restart its server. Until then any room the iMac
-    creates lands on the production domain.
+  - Scripting note: Daily's `DELETE /v1/webhooks/:id` returns an EMPTY body.
+    A script that JSON-parses it dies after the delete and before the create,
+    leaving the domain with zero webhooks. Always list afterwards.
   - [ ] Phase B flip: repoint the prod webhook URL to
     `https://app.gostork.com/api/video/webhook` (delete + create; keep the
     same hmac so no env change is needed).
