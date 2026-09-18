@@ -2048,6 +2048,44 @@ config, the GCS bucket IAM and object ACLs, Stripe/Twilio/SendGrid console
 settings, real PandaDoc-signed webhook traffic, and any authenticated
 penetration testing of the provider/admin UI beyond the API layer.
 
+#### 10d addendum - what report-only caught, 2026-09-18 (still CSP_MODE=report)
+
+test-app has almost no real users before launch, so "N clean days" there is
+weak evidence by nature. What the thin log DID catch is the class of thing that
+only exists behind Cloudflare and can never show up on a dev Mac:
+
+- **Cloudflare injects an inline bot-detection script into every HTML page**
+  plus its analytics beacon (`static.cloudflareinsights.com`). Enforcing would
+  have blocked both. Fix: a per-request nonce in `script-src` - Cloudflare
+  reads the nonce from our header and stamps it onto its injected script
+  (verified on test-app: header nonce == `<script nonce=...>`, and it works
+  with the Report-Only header too). HTML is `no-store` / `cf-cache-status:
+  DYNAMIC`, so a nonce is never cached. **If HTML is ever cached at the edge,
+  this breaks - cached pages would carry a stale nonce.** Beacon hosts
+  allowlisted in script-src and connect-src.
+- **Vendor CSP guides vs our list** (the log cannot find these - nobody had
+  exercised them): added Daily's failover domains `*.dailywebrtc.com`,
+  `*.dailywebrtc.net`, `*.pluot.blue` (without them the policy works every day
+  except the day Daily has an incident), Stripe's `*.js.stripe.com`, and
+  `link.com` / `*.link.com` for Link inside the Payment Element.
+- Reports now carry `source` and `sample` (`'report-sample'`), so an "inline"
+  or "eval" violation names its culprit instead of being guessed at.
+- **After the fixes:** test-app home + onboarding in a real Chrome through
+  Cloudflare = 0 violations (was 2 per load). Dev walk of chat, the Stripe
+  payment page (all three Stripe frames loaded), payouts = 0 violations.
+- **Unexplained, watch for it:** older dev-log entries show `eval` blocked on
+  `/chat` and `/account/*`. Our bundle has no executed eval (the one match is
+  lodash's never-reached `Function("return this")` fallback), and the same
+  pages produced none in the walk, so a browser extension is the suspect.
+- **NOT yet exercised under the policy:** a PandaDoc signing frame, a live
+  Daily call, the Trolley payout widget, voice mode / LiveAvatar, the Turnstile
+  signup step. The walk account (a test provider admin) had no agreement or
+  booking of its own. Do these as part of the Phase A smoke tests, then read
+  `grep csp-violation`.
+- [ ] Switch to `CSP_MODE=enforce` once the unexercised list above has been
+  walked clean. Scheduled task `csp-report-review` re-reads all three logs on
+  2026-09-25 and ASKS - it never switches on its own.
+
 ### 10a. Stripe account-takeover defense (lessons from the GoStork 1.0 breach, Aug-Sep 2024)
 
 Background: 1.0's Stripe account was taken over (2FA was SMS - defeated;
