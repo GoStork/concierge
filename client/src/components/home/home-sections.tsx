@@ -48,9 +48,9 @@ export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss,
               115px wide and a one-line truncate cut "Start exploring profiles
               for your Surrogacy journey" and "...Egg Donation journey" to the
               same "Start exploring ...". */}
-          <span className="text-sm font-medium leading-5 line-clamp-2">{title}</span>
+          <span className="text-sm font-medium leading-5 line-clamp-2 [overflow-wrap:anywhere]">{title}</span>
           <span className="sr-only">. </span>
-          <span className="t-helper line-clamp-2">{detail}</span>
+          <span className="t-helper line-clamp-2 [overflow-wrap:anywhere]">{detail}</span>
         </span>
         <span className="text-xs font-semibold shrink-0 flex items-center gap-0.5 pl-1 text-primary" aria-hidden="true">
           {cta}
