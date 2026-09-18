@@ -537,6 +537,30 @@ async function ut13() {
     client: lockClient({ ...base, partners: { pAgency: ["pOther"] } }).client,
   });
   check("a partner clinic in the same program is not blocked", partner.allowed, JSON.stringify(partner.code));
+
+  // A multi-line org with no chat thread cannot be placed on a line. It must
+  // fail open, and the warning must be worth reading: once per LIVE booking,
+  // never for a call the 7-day rule already released.
+  const multiLine = { id: "pMulti", name: "Multi", services: ["Egg Donor Agency", "Surrogacy Agency"].map((name) => ({ providerType: { name } })) };
+  const warnings: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...a: any[]) => { warnings.push(a.join(" ")); };
+  try {
+    const mk = (id: string, daysFromNow: number) =>
+      consult({ id, sessionId: null, scheduledAt: new Date(Date.now() + daysFromNow * DAY), createdAt: new Date(Date.now() - 60 * DAY), providerUser: { provider: multiLine } });
+    const ambiguousClient = () => lockClient({ bookings: [mk("bLiveAmbiguous", 2), mk("bStaleAmbiguous", -30)], sessions: [] }).client;
+    const first = await listOpenConsultations(["u1"], ambiguousClient());
+    await listOpenConsultations(["u1"], ambiguousClient());
+    await listOpenConsultations(["u1"], ambiguousClient());
+    check("an unplaceable multi-line booking fails OPEN (holds no lock)", first.length === 0, String(first.length));
+    const mine = warnings.filter((w) => w.includes("[consultation-lock]"));
+    check("the live ambiguous booking is reported exactly once across three evaluations",
+      mine.filter((w) => w.includes("bLiveAmbiguous")).length === 1, String(mine.length));
+    check("an already-released ambiguous booking is never reported",
+      mine.every((w) => !w.includes("bStaleAmbiguous")), JSON.stringify(mine));
+  } finally {
+    console.warn = realWarn;
+  }
 }
 
 // ─── UT-14: which service line a provider is locked on ───────────────────────

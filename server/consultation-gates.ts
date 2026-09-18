@@ -258,9 +258,6 @@ export async function listOpenConsultations(
     const serviceNames = (provider.services || [])
       .map((s: any) => s.providerType?.name)
       .filter(Boolean) as string[];
-    const providerTypeName = resolveTypeFromLoaded(serviceNames, session?.subjectType, provider.id);
-    if (!providerTypeName) continue; // ambiguous: fail open, no lock
-
     const releaseEligibleAt = new Date(b.scheduledAt.getTime() + windowMs);
     let releasedBy: LockRelease = "NONE";
 
@@ -280,6 +277,19 @@ export async function listOpenConsultations(
       releasedBy = "STALE_WINDOW";
     }
 
+    // Resolved AFTER the release check on purpose: an ambiguous line only
+    // matters on a booking that could still hold a lock. Old session-less
+    // bookings (public share-link calls, pre-thread history) are ambiguous
+    // forever, and warning about each of them on every evaluation buried the
+    // one case worth reading - a LIVE booking we could not place.
+    const providerTypeName = resolveTypeFromLoaded(
+      serviceNames,
+      session?.subjectType,
+      provider.id,
+      releasedBy === "NONE" ? b.id : null,
+    );
+    if (!providerTypeName) continue; // ambiguous: fail open, no lock
+
     out.push({
       bookingId: b.id,
       sessionId: b.sessionId ?? null,
@@ -297,10 +307,18 @@ export async function listOpenConsultations(
 }
 
 /** Same rules as resolveLockProviderType, on already-loaded service names. */
+const warnedAmbiguousBookings = new Set<string>();
+
+/**
+ * `warnForBookingId` is the live booking this decision is for, or null when the
+ * booking has already released and the ambiguity changes nothing. Each live
+ * booking is reported once per process, not once per evaluation.
+ */
 function resolveTypeFromLoaded(
   serviceNames: string[],
   subjectType: string | null | undefined,
   providerId: string,
+  warnForBookingId: string | null,
 ): LockedProviderType | null {
   if (!serviceNames.length) return null;
   const fromSubject = providerTypeFromSubject(subjectType);
@@ -310,9 +328,13 @@ function resolveTypeFromLoaded(
     const only = serviceNames[0];
     return isLockedProviderType(only) ? only : null;
   }
-  console.warn(
-    `[consultation-lock] Ambiguous service line for provider ${providerId} (runs ${serviceNames.join(", ")}) - failing OPEN`,
-  );
+  if (warnForBookingId && !warnedAmbiguousBookings.has(warnForBookingId)) {
+    if (warnedAmbiguousBookings.size > 5000) warnedAmbiguousBookings.clear();
+    warnedAmbiguousBookings.add(warnForBookingId);
+    console.warn(
+      `[consultation-lock] Ambiguous service line for LIVE booking ${warnForBookingId}, provider ${providerId} (runs ${serviceNames.join(", ")}, subjectType="${subjectType ?? ""}") - failing OPEN, this call holds no lock`,
+    );
+  }
   return null;
 }
 
