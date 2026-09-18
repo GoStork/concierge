@@ -1500,7 +1500,12 @@ with no code change. Pinned to `prisma@^7.4.0` in devDependencies 2026-08-25.
   inbound Twilio/SendGrid route exists.
 - [x] Session cookie flags (secure, httpOnly, sameSite) - **DONE 2026-09-16**,
   `sameSite: "lax"` added; verify again from behind Cloudflare at cutover.
-- [ ] Admin accounts audit; remove/disable test admin logins.
+- [x] Admin accounts audit - DONE 2026-09-18 (read-only query on PROD): exactly
+  ONE account holds any `GOSTORK_*` role, eran.amir@gostork.com, two-factor
+  enrolled, not disabled. No test admin logins exist in production. Re-run
+  before Phase B and whenever staff are added:
+  `select email, roles, "totpEnabledAt" is not null from "User" where exists
+  (select 1 from unnest(roles) r where r like 'GOSTORK%')`.
 - [x] Rate limiting on auth routes - **DONE 2026-09-16** (`server/src/lib/rate-limits.ts`:
   20 attempts / 15 min on login, verify-otp, reset-password; 10 / hr on
   forgot-password; 60 / 15 min on the client-error sink). Re-check the ceilings
