@@ -285,7 +285,7 @@ function AppRoutes() {
         <Route path="/video/:bookingId" element={<VideoRoomPage />} />
         <Route path="/room/:bookingId" element={<VideoRoomPage />} />
         <Route path="/recordings/:bookingId" element={<ProtectedRoute><RecordingPage /></ProtectedRoute>} />
-        <Route path="/booking/:bookingId" element={<BookingConfirmationPage />} />
+        <Route path="/booking/:token" element={<BookingConfirmationPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </LayoutShell>

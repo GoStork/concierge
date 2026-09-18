@@ -554,15 +554,65 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         continueText = `Now let's keep going - I'll help you with ${rest.join(", ")} and ${last}!`;
       }
 
+      // Every booking starts PENDING until the provider confirms, so this
+      // message must say "requested", never "all set" - telling a parent the
+      // call is on when the provider may still decline was the flow's worst
+      // moment (booking critique, Sep 2026). The confirmed/declined line is
+      // posted into this same chat by postConsultationOutcomeToEva() when the
+      // provider acts; it finds this session through consultationRequestBookingId.
+      const when = formatWhen(booking.scheduledAt, booking.bookerTimezone || await resolveProviderTimezone(this.prisma, booking.providerUserId));
+      const requested = booking.status === "CONFIRMED"
+        ? `You're booked with ${provider.name} for ${when}. You can message them directly any time in Chats.`
+        : `You've requested ${when} with ${provider.name}. They'll confirm the time, and I'll let you know here and by email as soon as they do. You can already message them directly in Chats.`;
+      const requestedAt = new Date();
       await this.prisma.aiChatMessage.create({
         data: {
           sessionId: conciergeSessionId,
           role: "assistant",
-          content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them - you'll find it in your inbox under "Provider Conversations."\n\n${continueText}`,
+          content: requested,
           senderType: "ai",
+          createdAt: requestedAt,
+          uiCardData: { consultationRequestBookingId: booking.id },
+        },
+      });
+      // The next step is its own message, so the booking line stands alone
+      // instead of pivoting to call prep mid-sentence.
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: conciergeSessionId,
+          role: "assistant",
+          content: continueText,
+          senderType: "ai",
+          createdAt: new Date(requestedAt.getTime() + 1),
           ...(confirmQuickReplies ? { uiCardData: { quickReplies: confirmQuickReplies } } : {}),
         },
       });
+    }
+  }
+
+  /**
+   * Tells the parent in their Eva chat that the provider confirmed or declined
+   * a consultation they requested there. Finds the chat through the marker the
+   * "requested" message carries; a booking made outside Eva has none and is
+   * covered by the email/SMS alone. Best effort - never blocks the action.
+   */
+  private async postConsultationOutcomeToEva(booking: any, outcome: "confirmed" | "declined") {
+    try {
+      const marker = await this.prisma.aiChatMessage.findFirst({
+        where: { uiCardData: { path: ["consultationRequestBookingId"], equals: booking.id } },
+        select: { sessionId: true },
+      });
+      if (!marker) return;
+      const org = booking.providerUser?.provider?.name || booking.providerUser?.name || "The provider";
+      const when = formatWhen(booking.scheduledAt, booking.bookerTimezone || await resolveProviderTimezone(this.prisma, booking.providerUserId));
+      const content = outcome === "confirmed"
+        ? `${org} confirmed your call for ${when}. You're all set - the video link is in your calendar invite and on Home.`
+        : `${org} can't make ${when}. Nothing is booked, so you can pick another time whenever you like - just ask me and I'll bring the calendar back.`;
+      await this.prisma.aiChatMessage.create({
+        data: { sessionId: marker.sessionId, role: "assistant", content, senderType: "ai" },
+      });
+    } catch (e: any) {
+      this.logger.warn(`[CONSULTATION] Outcome message (${outcome}) failed for booking ${booking?.id}: ${e?.message}`);
     }
   }
 
@@ -1035,7 +1085,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const bookings = await this.prisma.booking.findMany({
       where,
       include: {
-        providerUser: { select: { id: true, name: true, email: true, photoUrl: true, dailyRoomUrl: true } },
+        providerUser: { select: { id: true, name: true, email: true, photoUrl: true, dailyRoomUrl: true, provider: { select: { name: true } } } },
         parentUser: { select: { id: true, name: true, email: true, photoUrl: true, parentAccountId: true } },
       },
       orderBy: { scheduledAt: "asc" },
@@ -1461,6 +1511,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     // GoStork concierge calls get GoStork's own greeting in the parent's Eva
     // chat. Self-gates on the host being GoStork staff; deduped once-per-parent.
     this.fireGoStorkConciergeAutoReply(updated as any).catch(() => {});
+    void this.postConsultationOutcomeToEva(updated, "confirmed");
     return updated;
   }
 
@@ -1851,6 +1902,7 @@ I'll check in with you right after the call. You've got this!`;
     this.deleteOutlookCalendarEvent(updated).catch(() => {});
     this.deleteParentOutlookCalendarEvent(updated).catch(() => {});
     this.emitBookingEvent("booking_declined", updated, user.id);
+    void this.postConsultationOutcomeToEva(updated, "declined");
     return updated;
   }
 
@@ -2267,39 +2319,48 @@ I'll check in with you right after the call. You've got this!`;
 
     if (!config) throw new NotFoundException("Booking page not found");
 
-    const override = await this.prisma.availabilityOverride.findUnique({
-      where: { userId_date: { userId: config.userId, date: new Date(date + "T00:00:00") } },
-    });
-
-    if (override && !override.isAvailable) {
-      return {
-        user: config.user,
-        date,
-        timezone: timezone || config.timezone,
-        meetingDuration: config.meetingDuration,
-        slots: [],
-        overrideLabel: override.label,
-      };
-    }
-
-    const requestedDate = new Date(date + "T00:00:00");
-    const dayOfWeek = requestedDate.getDay();
-
-    let timeWindows: { startTime: string; endTime: string }[];
-
-    if (override && override.isAvailable && override.slots) {
-      timeWindows = override.slots as { startTime: string; endTime: string }[];
-    } else {
-      timeWindows = config.availabilitySlots
-        .filter((s) => s.dayOfWeek === dayOfWeek && s.isActive)
-        .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
-    }
-
-    const userTz = timezone || config.timezone;
+    // Working hours live in the HOST's timezone ("09:00-17:00" New York),
+    // while the booker asks for a day in THEIR timezone. The old code laid
+    // the host's "09:00" onto the booker's day, so a parent in California saw
+    // 9:00 AM Pacific (noon in New York) and a London visitor who picked
+    // "9:00 AM" booked the host at 4:00 AM. Now each window is placed on the
+    // host's own date, every slot is a real instant, and only instants that
+    // fall on the booker's requested day are returned - labelled in the
+    // booker's zone, which is how POST /book reads them back.
+    const hostTz = config.timezone || "America/New_York";
+    const userTz = timezone || hostTz;
     const dayStart = DateTime.fromISO(date, { zone: userTz }).startOf("day");
     const dayEnd = dayStart.endOf("day");
     const startOfDay = dayStart.toJSDate();
     const endOfDay = dayEnd.toJSDate();
+
+    // The booker's day spans one or two host dates (three across the date line).
+    const hostDates = Array.from(new Set([
+      dayStart.setZone(hostTz).toISODate(),
+      dayStart.plus({ hours: 12 }).setZone(hostTz).toISODate(),
+      dayEnd.setZone(hostTz).toISODate(),
+    ].filter(Boolean) as string[]));
+
+    type HostWindow = { base: DateTime; startTime: string; endTime: string };
+    const timeWindows: HostWindow[] = [];
+    let blockedLabel: string | null = null;
+    for (const hd of hostDates) {
+      const override = await this.prisma.availabilityOverride.findUnique({
+        where: { userId_date: { userId: config.userId, date: new Date(hd + "T00:00:00") } },
+      });
+      const base = DateTime.fromISO(hd, { zone: hostTz }).startOf("day");
+      if (override && !override.isAvailable) {
+        if (hd === date) blockedLabel = override.label || null;
+        continue;
+      }
+      const windows: { startTime: string; endTime: string }[] =
+        override && override.isAvailable && override.slots
+          ? (override.slots as { startTime: string; endTime: string }[])
+          : config.availabilitySlots
+              .filter((s) => s.dayOfWeek === base.weekday % 7 && s.isActive)
+              .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
+      for (const w of windows) timeWindows.push({ base, ...w });
+    }
 
     const allUserBlocks = await this.prisma.calendarBlock.findMany({
       where: {
@@ -2314,13 +2375,14 @@ I'll check in with you right after the call. You've got this!`;
 
     const availableBlocks = existingBlocks.filter((b) => b.blockType === "available");
     for (const ab of availableBlocks) {
-      const abStart = DateTime.fromJSDate(new Date(ab.startTime), { zone: userTz });
-      const abEnd = DateTime.fromJSDate(new Date(ab.endTime), { zone: userTz });
+      const abStart = DateTime.fromJSDate(new Date(ab.startTime), { zone: hostTz });
+      const abEnd = DateTime.fromJSDate(new Date(ab.endTime), { zone: hostTz });
+      const abBase = abStart.startOf("day");
       const abStartTime = abStart.toFormat("HH:mm");
       const abEndTime = abEnd.toFormat("HH:mm");
-      const alreadyCovered = timeWindows.some((tw) => tw.startTime <= abStartTime && tw.endTime >= abEndTime);
+      const alreadyCovered = timeWindows.some((tw) => +tw.base === +abBase && tw.startTime <= abStartTime && tw.endTime >= abEndTime);
       if (!alreadyCovered) {
-        timeWindows.push({ startTime: abStartTime, endTime: abEndTime });
+        timeWindows.push({ base: abBase, startTime: abStartTime, endTime: abEndTime });
       }
     }
 
@@ -2328,9 +2390,10 @@ I'll check in with you right after the call. You've got this!`;
       return {
         user: config.user,
         date,
-        timezone: timezone || config.timezone,
+        timezone: userTz,
         meetingDuration: config.meetingDuration,
         slots: [],
+        ...(blockedLabel ? { overrideLabel: blockedLabel } : {}),
       };
     }
 
@@ -2506,11 +2569,13 @@ I'll check in with you right after the call. You've got this!`;
       while (currentMinutes + duration <= endMinutes) {
         const hour = Math.floor(currentMinutes / 60);
         const minute = currentMinutes % 60;
-        const slotStartDT = dayStart.set({ hour, minute, second: 0, millisecond: 0 });
+        const slotStartDT = slot.base.set({ hour, minute, second: 0, millisecond: 0 });
         const slotStart = slotStartDT.toJSDate();
         const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
 
-        if (slotStart < minNoticeTime) {
+        // Host hours on a neighbouring host date that land outside the
+        // booker's requested day belong to another day's list.
+        if (slotStart < startOfDay || slotStart > endOfDay || slotStart < minNoticeTime) {
           currentMinutes += duration + buffer;
           continue;
         }
@@ -2533,15 +2598,25 @@ I'll check in with you right after the call. You've got this!`;
         });
 
         if (!hasConflict && !hasBlockConflict && !hasGoogleConflict) {
-          const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-          const endMin = currentMinutes + duration;
-          const endTimeStr = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
-          availableSlots.push({ time: timeStr, endTime: endTimeStr });
+          const inBookerTz = slotStartDT.setZone(userTz);
+          availableSlots.push({
+            time: inBookerTz.toFormat("HH:mm"),
+            endTime: inBookerTz.plus({ minutes: duration }).toFormat("HH:mm"),
+          });
         }
 
         currentMinutes += duration + buffer;
       }
     }
+
+    // Windows from two host dates can arrive out of order, and an available
+    // block can repeat a weekly window.
+    const seenSlots = new Set<string>();
+    const orderedSlots = availableSlots
+      .sort((a, b) => a.time.localeCompare(b.time))
+      .filter((sl) => (seenSlots.has(sl.time) ? false : (seenSlots.add(sl.time), true)));
+    availableSlots.length = 0;
+    availableSlots.push(...orderedSlots);
 
     return {
       user: config.user,
@@ -3054,6 +3129,7 @@ I'll check in with you right after the call. You've got this!`;
     this.syncBookingToOutlookCalendar(updated).catch(() => {});
     this.syncBookingToParentOutlookCalendar(updated).catch(() => {});
     this.emitBookingEvent("booking_confirmed", updated, updated.providerUserId);
+    void this.postConsultationOutcomeToEva(updated, "confirmed");
     return { message: "Booking confirmed", booking: updated };
   }
 
@@ -3089,6 +3165,7 @@ I'll check in with you right after the call. You've got this!`;
     this.deleteOutlookCalendarEvent(updated).catch(() => {});
     this.deleteParentOutlookCalendarEvent(updated).catch(() => {});
     this.emitBookingEvent("booking_declined", updated, updated.providerUserId);
+    void this.postConsultationOutcomeToEva(updated, "declined");
     return { message: "Booking declined", booking: updated };
   }
 

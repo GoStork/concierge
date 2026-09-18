@@ -1098,13 +1098,15 @@ export async function postPreliminaryAckCard(input: {
   return postGateCard({
     gate: "PRELIMINARY_STEP",
     sessionId,
-    // Three sentences, in the concierge's own voice, naming her once. The
+    // In the concierge's own voice, naming the profile once. The
     // 124-word version named the profile six times, switched the speaker to
     // "GoStork" at the highest-stakes moment, and filled a phone screen.
     content:
-      `Quick heads-up before the calendar: this call is the first step toward a match with ${subject}, so ${displayName} will prepare for it as real interest. ` +
-      `Booking shares your name and contact details with them, and it is still free with nothing binding. ` +
-      `If she is someone you are seriously considering, confirm below and the calendar opens right here.`,
+      // Two sentences (booking critique, Sep 2026): the old third sentence
+      // repeated the name-and-contact disclosure the booking form states
+      // right above Confirm, and "If she is..." was wrong for sperm donors.
+      `Quick heads-up before the calendar: this call is the first step toward a match with ${subject}, so ${displayName} will prepare for it as real interest - still free, nothing binding. ` +
+      `If you're seriously considering this match, confirm below and the calendar opens right here.`,
     senderName: voiceName,
     cardData: {
       providerId: input.providerId,

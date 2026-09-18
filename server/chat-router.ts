@@ -3993,6 +3993,13 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
     }
 
     let providerUserIds: string[] = [];
+    // Eva's private chat is where a consultation gets booked, but the booking
+    // is linked to the parent-provider thread it opens (sessionId), and the
+    // thread filter below then hid it from Eva: after a reload the card lost
+    // its booking and offered an empty calendar again. The account's threads
+    // with providers whose cards appear here are this chat's own bookings.
+    let evaThreadIds: string[] = [];
+    const threadSubject = new Map<string, string | null>();
     if (session.providerId) {
       const providerUsers = await prisma.user.findMany({
         where: { providerId: session.providerId, roles: { hasSome: PROVIDER_ROLES } },
@@ -4033,6 +4040,12 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
           select: { id: true },
         });
         providerUserIds = providerUsers.map(u => u.id);
+        const threads = await prisma.aiChatSession.findMany({
+          where: { userId: { in: parentAccountUserIds }, providerId: { in: Array.from(providerIds) }, id: { not: session.id } },
+          select: { id: true, subjectProfileId: true },
+        });
+        evaThreadIds = threads.map(t => t.id);
+        for (const t of threads) threadSubject.set(t.id, t.subjectProfileId ?? null);
       }
       for (const uid of directProviderUserIds) {
         if (!providerUserIds.includes(uid)) providerUserIds.push(uid);
@@ -4075,6 +4088,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         OR: [
           { sessionId: session.id },
           { sessionId: null, createdAt: { gte: session.createdAt } },
+          ...(evaThreadIds.length ? [{ sessionId: { in: evaThreadIds } }] : []),
         ],
       },
       include: {
@@ -4094,6 +4108,9 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
     });
 
     for (const b of bookings) {
+      // Which profile the booking's thread is about, so Eva's card for one
+      // donor never shows another donor's call with the same agency.
+      if (b.sessionId && threadSubject.has(b.sessionId)) (b as any).subjectProfileId = threadSubject.get(b.sessionId);
       const parentAccount = await prisma.user.findUnique({
         where: { id: session.userId },
         select: { parentAccountId: true },

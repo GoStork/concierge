@@ -15,6 +15,7 @@
  * card type added here shows up on every surface from then on.
  */
 import { useSyncExternalStore, useState, useEffect, useRef, useMemo } from "react";
+import { TimezonePicker } from "@/components/calendar/timezone-picker";
 import { ivfContextSearch } from "@/components/ivf-success-rates-section";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { ComparisonCard } from "@/components/chat/comparison-card";
@@ -575,16 +576,16 @@ export function BookingForm({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-0.5">
                 <Label htmlFor="book-name-inline" className="t-form-label-sm">Name *</Label>
-                <Input id="book-name-inline" value={name} onChange={(e) => setName(e.target.value)} required className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-name-inline" />
+                <Input id="book-name-inline" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-name-inline" />
               </div>
               <div className="space-y-0.5">
                 <Label htmlFor="book-email-inline" className="t-form-label-sm">Email *</Label>
-                <Input id="book-email-inline" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-email-inline" />
+                <Input id="book-email-inline" autoComplete="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-email-inline" />
               </div>
             </div>
             <div className="space-y-0.5">
               <Label htmlFor="book-phone-inline" className="t-form-label-sm">Phone</Label>
-              <Input id="book-phone-inline" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-phone-inline" />
+              <Input id="book-phone-inline" autoComplete="tel" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 text-base md:h-9 md:text-sm" data-testid="input-book-phone-inline" />
             </div>
           </>
         )}
@@ -658,7 +659,7 @@ export function BookingForm({
                 {/* Booking is the consent moment: the provider sees who the parent is
             from here on. Say so before the button, not after. */}
         <p className="t-helper mb-2" data-testid="text-booking-consent">
-          Confirming shares your name, email and phone with the provider so they can prepare for the call.
+          Confirming shares your name, email and phone with the provider so they can prepare for the call. They confirm the time next, and you get an email as soon as they do.
         </p>
         <Button
           type="submit"
@@ -748,7 +749,7 @@ export function InlineBookingCalendar({
   consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null; meetingSubtype?: string | null };
   autoResetOnCancel?: boolean;
   showCalendarOnExpiry?: boolean;
-  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
+  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null; booking?: any }) => void;
   /** When provided, the form fields are pre-populated with this contact info instead of the logged-in user's. Used by admin to book on behalf of a parent. */
   prefill?: { name: string; email: string; phone?: string };
 }) {
@@ -797,6 +798,7 @@ export function InlineBookingCalendar({
   const [newAttendeePhone, setNewAttendeePhone] = useState("");
   const [booking, setBooking] = useState<any>(existingBookingProp || null);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [rescheduleSlot, setRescheduleSlot] = useState<string | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
   const prevBookingRef = useRef<{ id?: string; status?: string } | null>(
@@ -856,12 +858,30 @@ export function InlineBookingCalendar({
   const monthStr = format(currentMonth, "yyyy-MM");
   const today = startOfDay(new Date());
   const calendarDays = generateCalendarDays(currentMonth);
-  const bookerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [bookerTimezone, setBookerTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+  // A parent who connected a calendar for conflict checking only sees times
+  // they are actually free. The public /book page did this and chat did not;
+  // both run through this component now.
+  const userRoles: string[] = user ? ((user as any).roles || []) : [];
+  const isParentBooker = userRoles.includes("PARENT") && userRoles.length === 1 && !prefill;
+  const { data: parentConnections } = useQuery<any[]>({
+    queryKey: ["/api/calendar/connections", "parent-booking"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/connections", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isParentBooker,
+    staleTime: 5 * 60_000,
+  });
+  const conflictParentId = isParentBooker && parentConnections?.some((c: any) => c.isConflictCalendar && c.connected) ? (user as any).id : null;
+  const conflictParam = conflictParentId ? `&parentUserId=${encodeURIComponent(conflictParentId)}` : "";
 
   const { data: availabilityDays } = useQuery<{ availableDays: number[] }>({
-    queryKey: ["/api/calendar/availability-days", slug, monthStr, bookerTimezone],
+    queryKey: ["/api/calendar/availability-days", slug, monthStr, bookerTimezone, conflictParentId],
     queryFn: async () => {
-      const res = await fetch(`/api/calendar/availability-days/${slug}?month=${monthStr}&timezone=${bookerTimezone}`, { credentials: "include" });
+      const res = await fetch(`/api/calendar/availability-days/${slug}?month=${monthStr}&timezone=${bookerTimezone}${conflictParam}`, { credentials: "include" });
       if (!res.ok) return { availableDays: [] };
       return res.json();
     },
@@ -893,10 +913,10 @@ export function InlineBookingCalendar({
   });
 
   const { data: availability, isLoading: slotsLoading } = useQuery({
-    queryKey: ["/api/calendar/availability", slug, dateStr, bookerTimezone],
+    queryKey: ["/api/calendar/availability", slug, dateStr, bookerTimezone, conflictParentId],
     queryFn: async () => {
       if (!dateStr) return null;
-      const res = await fetch(`/api/calendar/availability/${slug}?date=${dateStr}&timezone=${bookerTimezone}`, { credentials: "include" });
+      const res = await fetch(`/api/calendar/availability/${slug}?date=${dateStr}&timezone=${bookerTimezone}${conflictParam}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load availability");
       return res.json();
     },
@@ -949,7 +969,7 @@ export function InlineBookingCalendar({
         setStep("pending");
         queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
         queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-        onBookingConfirmed?.({ providerId: consultationMeta?.providerId, subjectProfileId: consultationMeta?.subjectProfileId });
+        onBookingConfirmed?.({ providerId: consultationMeta?.providerId, subjectProfileId: consultationMeta?.subjectProfileId, booking: data });
       }
     },
   });
@@ -1039,15 +1059,18 @@ export function InlineBookingCalendar({
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setStep("pending")}
-            className="flex-1 text-center text-xs font-medium py-2.5 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
+            onClick={() => { setCancelError(null); setStep("pending"); }}
+            className="flex-1 text-center text-sm font-medium min-h-11 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
             data-testid="btn-cancel-keep"
           >
-            Keep Meeting
+            Keep meeting
           </button>
           <button
             onClick={async () => {
               setCancelling(true);
+              setCancelError(null);
+              // A failed cancel used to do nothing at all, leaving the parent
+              // to guess whether the meeting was still on. Say so.
               try {
                 const res = await fetch(`/api/calendar/booking/${booking.publicToken}/cancel-public`, { method: "POST", credentials: "include" });
                 if (res.ok) {
@@ -1055,16 +1078,22 @@ export function InlineBookingCalendar({
                   setStep("cancelled");
                   queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
                   queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+                } else {
+                  const data = await res.json().catch(() => null);
+                  setCancelError(data?.message || "We couldn't cancel it just now. Your meeting is still booked - try again in a moment.");
                 }
-              } catch {} finally { setCancelling(false); }
+              } catch {
+                setCancelError("We couldn't reach the server. Your meeting is still booked - check your connection and try again.");
+              } finally { setCancelling(false); }
             }}
             disabled={cancelling}
-            className="flex-1 text-center text-xs font-medium py-2.5 rounded-[var(--radius)] bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors cursor-pointer disabled:opacity-50"
+            className="flex-1 text-center text-sm font-medium min-h-11 rounded-[var(--radius)] bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors cursor-pointer disabled:opacity-50"
             data-testid="btn-cancel-confirm"
           >
-            {cancelling ? "Cancelling..." : "Yes, Cancel"}
+            {cancelling ? "Cancelling..." : "Yes, cancel"}
           </button>
         </div>
+        {cancelError && <p className="text-sm text-destructive text-center" role="alert">{cancelError}</p>}
       </div>
     );
   }
@@ -1076,10 +1105,7 @@ export function InlineBookingCalendar({
           <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
             <X className="w-6 h-6 text-destructive" />
           </div>
-          <p className="font-bold text-sm">Meeting Cancelled</p>
-          <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-            Cancelled
-          </span>
+          <p className="font-bold text-sm">Meeting cancelled</p>
         </div>
         <p className="t-helper text-center">This meeting has been cancelled and all participants have been notified.</p>
         <button
@@ -1205,9 +1231,7 @@ export function InlineBookingCalendar({
           </Button>
         </div>
 
-        <p className="t-helper text-center" data-testid="text-booking-timezone">
-          Times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, " ")}
-        </p>
+        <TimezonePicker value={bookerTimezone} onChange={setBookerTimezone} idPrefix={`tz-${slug}`} />
         <div className="grid grid-cols-7 gap-0.5 text-center">
           {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
             <div key={d} className="text-[12px] font-medium text-muted-foreground py-1 uppercase">{d}</div>
@@ -1296,7 +1320,7 @@ export function SelectedDateSlots({
             <button
               key={slot.time}
               onClick={() => onSelectSlot(slot.time)}
-              className="px-2 py-2 min-h-11 md:min-h-0 rounded-full text-sm md:text-xs font-medium transition-all cursor-pointer bg-secondary border border-border hover:bg-primary/10 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-foreground/80"
+              className="px-2 py-2 min-h-11 md:min-h-0 rounded-full text-sm md:text-xs font-medium transition-all cursor-pointer bg-secondary border border-border [@media(hover:hover)]:hover:bg-primary/10 [@media(hover:hover)]:hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-foreground/80"
               data-testid={`slot-inline-${slot.time}`}
             >
               {formatTime12(slot.time)}
@@ -1325,7 +1349,7 @@ export function ConsultationBookingCard({
   userEmail?: string;
   userName?: string;
   onCallbackSubmitted?: () => void;
-  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
+  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null; booking?: any }) => void;
 }) {
   const [callbackExpanded, setCallbackExpanded] = useState(true);
   const [callbackName, setCallbackName] = useState(userName || "");
@@ -1334,6 +1358,14 @@ export function ConsultationBookingCard({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [callbackError, setCallbackError] = useState("");
+  // The booking the inline calendar just made. The header used to wait for
+  // the chat page's session-bookings list to catch up, so for a while it
+  // kept saying "Schedule with..." above an "Awaiting confirmation" card.
+  const [justBooked, setJustBooked] = useState<any>(null);
+  const shownBooking = existingBooking || justBooked;
+  // Booking is the reveal: the masked "the Egg Donor's Agency" gives way to
+  // the organisation the parent is now actually talking to.
+  const bookedOrg = shownBooking?.providerUser?.provider?.name || card.providerName;
 
   async function handleCallbackSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1378,14 +1410,14 @@ export function ConsultationBookingCard({
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarCheck className="w-4 h-4 text-primary-foreground" />
             <span className="text-primary-foreground text-sm font-semibold">
-              {existingBooking && existingBooking.status !== "CANCELLED"
+              {shownBooking && shownBooking.status !== "CANCELLED"
                 ? card.providerName === "GoStork"
                   ? `GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
-                  : ((existingBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "MATCH_CALL"
-                    ? `Match Call with ${card.memberName || card.providerName || "Consultant"}`
-                    : ((existingBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "DOCTOR_CONSULTATION"
-                      ? `Doctor Call with ${card.memberName || card.providerName || "Consultant"}`
-                      : `Consultation Call with ${card.memberName || card.providerName || "Consultant"}`
+                  : ((shownBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "MATCH_CALL"
+                    ? `Match Call with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "Consultant"}`
+                    : ((shownBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "DOCTOR_CONSULTATION"
+                      ? `Doctor Call with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "Consultant"}`
+                      : `Consultation with ${card.memberName ? `${card.memberName} at ${bookedOrg}` : bookedOrg || "Consultant"}`
                 : card.providerName === "GoStork"
                   ? `Schedule GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
                   : (card as any).meetingSubtype === "MATCH_CALL"
@@ -1403,7 +1435,7 @@ export function ConsultationBookingCard({
             brandColor={brandColor}
             existingBooking={existingBooking}
             consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType, meetingSubtype: (card as any).meetingSubtype ?? null }}
-            onBookingConfirmed={onBookingConfirmed}
+            onBookingConfirmed={(meta) => { if (meta.booking) setJustBooked(meta.booking); onBookingConfirmed?.(meta); }}
           />
         </div>
       </div>
@@ -2308,7 +2340,7 @@ export function ChatInlineCards({
   userEmail?: string;
   userName?: string;
   onCallbackSubmitted?: () => void;
-  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
+  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null; booking?: any }) => void;
   /** Slot rendered between the match cards and the doctor cards - the parent
    *  chat puts the quick-reply chips there, so the decision sits with the face. */
   afterMatchCards?: React.ReactNode;

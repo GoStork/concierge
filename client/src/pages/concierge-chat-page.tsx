@@ -1974,6 +1974,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (!(idMatch || userIdMatch)) return false;
         if ((b.meetingSubtype ?? null) !== cardSubtype) return false;
         if (b.status === "CANCELLED") return false;
+        // Two cards for the same agency (two donors) must each keep their
+        // own call; the server tags bookings with their thread's profile.
+        if (card?.subjectProfileId && b.subjectProfileId && b.subjectProfileId !== card.subjectProfileId) return false;
         const scheduledMs = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
         const createdMs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         // Future meeting OR a meeting created at/after this calendar card was shown.

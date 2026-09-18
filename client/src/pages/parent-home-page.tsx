@@ -21,7 +21,7 @@ import { Map } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { BookingDetailPanel } from "@/components/booking-detail-dialog";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,24 @@ function marketplaceTabFor(serviceLine: string | null | undefined, typeLabel: st
   return null;
 }
 
+// A ladder rung names the state AFTER the step ("Consultation Completed").
+// As a to-do it must name the action, or the parent reads it as done.
+const NEXT_STEP_PHRASES: Record<string, string> = {
+  consult_scheduled: "book a consultation",
+  consult_completed: "have your consultation",
+  ip_form_submitted: "fill in the parent form",
+  doctor_call_scheduled: "book a doctor call",
+  doctor_call_completed: "have your doctor call",
+  match_call_scheduled: "book a match call",
+  matched: "confirm your match",
+  invoice_sent: "receive your invoice",
+  agreement_sent: "receive your agreement",
+  agreement_signed: "sign your agreement",
+};
+function nextStepPhrase(stepId: string, label: string): string {
+  return NEXT_STEP_PHRASES[stepId] || label.toLowerCase();
+}
+
 function joinNames(items: string[]): string {
   if (items.length <= 1) return items.join("");
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
@@ -75,8 +93,16 @@ function joinNames(items: string[]): string {
 }
 
 export default function ParentHomePage() {
-  const conciergeName = useConciergeName();
-  const [openMeetingId, setOpenMeetingId] = useState<string | null>(null);
+  // Which meeting is expanded lives in the URL (?meeting=), so the queue row
+  // for an upcoming consultation can open it and Back closes it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openMeetingId = searchParams.get("meeting");
+  const setOpenMeetingId = (id: string | null) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set("meeting", id); else next.delete("meeting");
+      return next;
+    }, { replace: true });
   const { user } = useAuth();
   const navigate = useNavigate();
   const firstName = greetingNameOf(user as any);
@@ -97,7 +123,7 @@ export default function ParentHomePage() {
   const queueQuery = useQuery<DashboardQueue>({ queryKey: ["/api/my/dashboard-queue"], ...fresh });
   const queue = queueQuery.data;
 
-  const chatSessionsQuery = useQuery<Array<{ id: string; unreadCount?: number }>>({
+  const chatSessionsQuery = useQuery<Array<{ id: string; unreadCount?: number; providerId?: string | null; matchmakerName?: string | null }>>({
     queryKey: ["/api/my/chat-sessions"],
     queryFn: async () => {
       const res = await fetch("/api/my/chat-sessions", { credentials: "include" });
@@ -107,6 +133,11 @@ export default function ParentHomePage() {
     ...fresh,
   });
   const chatSessions = chatSessionsQuery.data ?? [];
+  const chosenConciergeName = chatSessions.find((cs) => !cs.providerId && cs.matchmakerName)?.matchmakerName || null;
+  // The parent chose their concierge in onboarding; the first persona in the
+  // brand list is only the fallback (Home said "From Ariel" to a parent whose
+  // concierge is Adam). Their Eva thread is the session with no provider.
+  const conciergeName = useConciergeName(chosenConciergeName);
 
   const invoicesQuery = useQuery<any[]>({
     queryKey: ["/api/my/invoices"],
@@ -184,6 +215,16 @@ export default function ParentHomePage() {
   // "Start exploring profiles for your X journey" rows truncated to the same
   // words on a phone and both went to the same bare /marketplace, so the
   // service leads the title and each row lands on its own deck.
+  // Opened from the queue row above, the panel may be below the fold.
+  useEffect(() => {
+    if (!openMeetingId) return;
+    const el = document.getElementById(`booking-detail-panel-${openMeetingId}`);
+    const r = el?.getBoundingClientRect();
+    if (el && r && (r.top < 0 || r.bottom > window.innerHeight)) {
+      el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+    }
+  }, [openMeetingId, upcomingMeetings.length]);
+
   const journeyNextSteps = queue?.journeyNextSteps || [];
   const journeyStepCopy = (s: NonNullable<DashboardQueue["journeyNextSteps"]>[number]) => {
     const svc = `${s.typeLabel}${s.providerName ? ` with ${s.providerName}` : ""}`;
@@ -197,8 +238,29 @@ export default function ParentHomePage() {
           : { title: `${s.typeLabel}: your next step`, detail: `${conciergeName} will walk you through it in chat`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
       case "invoice_paid":
         return { title: `${s.typeLabel}: your invoice is waiting`, detail: `${svc}: pay it to move to the agreement`, cta: "View billing", to: "/my/billing" };
+      case "consult_completed":
+      case "doctor_call_completed": {
+        // The next rung is the call itself. Worded as a finished fact
+        // ("consultation completed") it told a parent with a call five days
+        // out that it had already happened. With the booking in hand, say
+        // when it is and whether the provider has confirmed.
+        const b = upcomingMeetings.find((m: any) =>
+          (s.sessionId && m.sessionId === s.sessionId) ||
+          (s.providerName && m.providerUser?.provider?.name === s.providerName));
+        const callWord = s.stepId === "doctor_call_completed" ? "doctor call" : "consultation";
+        if (b) {
+          const org = b.providerUser?.provider?.name || s.providerName || "your provider";
+          return {
+            title: `${s.typeLabel}: your ${callWord} is coming up`,
+            detail: `${fmtWhen(b.scheduledAt)} - ${b.status === "PENDING" ? `waiting for ${org} to confirm` : `confirmed with ${org}`}`,
+            cta: "Details",
+            to: `?meeting=${b.id}`,
+          };
+        }
+        return { title: `${s.typeLabel}: ${nextStepPhrase(s.stepId, s.label)}`, detail: `${svc}: ${conciergeName} will take you through it in chat`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
+      }
       default:
-        return { title: `${s.typeLabel}: ${s.label.toLowerCase()}`, detail: `${svc}: ${conciergeName} will take you through it in chat`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
+        return { title: `${s.typeLabel}: ${nextStepPhrase(s.stepId, s.label)}`, detail: `${svc}: ${conciergeName} will take you through it in chat`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
     }
   };
   const nextStepRows = (() => {
@@ -245,7 +307,7 @@ export default function ParentHomePage() {
     const first = journeyNextSteps[0];
     if (first?.stepId === "onboarding") return `${journeyPart} Next, I have a few questions so I can find your best matches - pick up where we left off in chat.`.trim();
     if (first?.stepId === "exploring") return `${journeyPart} I have profiles ready for you to look through - your next step is choosing who feels right.`.trim();
-    if (first) return `${journeyPart} Your next step is ${first.label.toLowerCase()}, and I'll walk you through it in chat.`.trim();
+    if (first) return `${journeyPart} Your next step is to ${nextStepPhrase(first.stepId, first.label)}, and I'll walk you through it in chat.`.trim();
     return journeyPart || `Nothing is waiting on you right now. I'm in chat whenever you want to pick things up.`;
   })();
 
@@ -422,6 +484,12 @@ export default function ParentHomePage() {
             {/* Per-terminal next steps LAST: the concrete items above are
                 things blocking on the parent right now; these are the
                 standing "here's what comes next" per journey. */}
+            {/* The title counts only what is waiting on the parent; the
+                standing next steps get their own label so "(1)" never sits
+                over three rows. */}
+            {blockingCount > 0 && nextStepRows.length > 0 && (
+              <p className="t-micro-label pt-2">Next steps</p>
+            )}
             {nextStepRows.map((c) => (
               <QueueRow
                 key={c.key}
@@ -464,7 +532,12 @@ export default function ParentHomePage() {
                   <div className="flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
-                      <p className="t-helper">{fmtWhen(b.scheduledAt)}</p>
+                      <p className="t-helper">
+                        {fmtWhen(b.scheduledAt)}
+                        {b.status === "PENDING" && (
+                          <span className="text-[hsl(var(--brand-warning-text))]"> - awaiting confirmation</span>
+                        )}
+                      </p>
                     </div>
                     <Button
                       variant="outline"

@@ -238,7 +238,7 @@ function BookingDetailBody({ booking, onClose, inline }: { booking: any; onClose
           {booking.meetingUrl && (
             <div className="flex items-center gap-2 text-sm">
               <Video className="w-4 h-4 text-muted-foreground" />
-              <a href={booking.meetingUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{booking.meetingUrl}</a>
+              <a href={booking.meetingUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate inline-flex items-center min-h-11 md:min-h-6">{booking.meetingUrl}</a>
             </div>
           )}
           {booking.notes && (
@@ -356,7 +356,9 @@ function BookingDetailBody({ booking, onClose, inline }: { booking: any; onClose
             />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-2 pt-4 border-t">
+        {/* 44px on touch screens: these were 32px targets for Reschedule and
+            Cancel on a phone. */}
+        <div className="flex flex-wrap items-center gap-2 pt-4 border-t [&_button]:min-h-11 md:[&_button]:min-h-8">
           {!isNoShow && !isParentNoShow && !isProviderNoShow && isPending && isProvider && !showSuggestForm && (
             <>
               <Button size="sm" onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending || declineMutation.isPending} className="gap-1" data-testid="button-confirm-booking">
@@ -415,7 +417,13 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
 export function BookingDetailPanel({ booking, onClose }: { booking: any; onClose: () => void }) {
   if (!booking) return null;
   return (
-    <div className="rounded-[var(--radius)] border bg-secondary/30 p-4 space-y-1" data-testid={`booking-detail-panel-${booking.id}`}>
+    <div
+      id={`booking-detail-panel-${booking.id}`}
+      role="region"
+      aria-label={booking.subject || "Meeting details"}
+      className="rounded-[var(--radius)] border bg-secondary/30 p-4 space-y-1"
+      data-testid={`booking-detail-panel-${booking.id}`}
+    >
       <BookingDetailBody booking={booking} onClose={onClose} inline />
     </div>
   );

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -21,7 +21,7 @@ function formatTime12(date: Date): string {
 }
 
 export default function BookingConfirmationPage() {
-  const { bookingId: token } = useParams<{ bookingId: string }>();
+  const { token } = useParams<{ token: string }>();
   const companyName = useCompanyName();
   const { data: brand } = useBrandSettings();
   const brandColor = brand?.primaryColor || "hsl(var(--primary))";
@@ -80,9 +80,16 @@ export default function BookingConfirmationPage() {
   if (!booking) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-display font-heading mb-2">Booking Not Found</h1>
-          <p className="text-muted-foreground">This booking may have been cancelled or doesn't exist.</p>
+        {/* "May have been cancelled" alarmed parents holding a live booking,
+            and the page had no way out. Say what we know and where the
+            booking always is. */}
+        <div className="text-center max-w-sm px-4 space-y-4">
+          <h1 className="text-2xl font-display font-heading">We couldn't open this link</h1>
+          <p className="text-muted-foreground">It may be incomplete or out of date. Your meetings are always on Home and in your chat.</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild><Link to="/home">Go to Home</Link></Button>
+            <Button asChild variant="outline"><Link to="/chat">Open chat</Link></Button>
+          </div>
         </div>
       </div>
     );
@@ -108,29 +115,27 @@ export default function BookingConfirmationPage() {
               </div>
             ) : isRescheduled ? (
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
-                <RefreshCw className="w-7 h-7 text-[hsl(var(--brand-warning))]" />
+                <RefreshCw className="w-7 h-7 text-[hsl(var(--brand-warning-text))]" />
               </div>
             ) : isPending ? (
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
-                <Clock className="w-7 h-7 text-[hsl(var(--brand-warning))]" />
+                <Clock className="w-7 h-7 text-[hsl(var(--brand-warning-text))]" />
               </div>
             ) : (
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-[hsl(var(--brand-success)/0.12)] flex items-center justify-center">
-                <Check className="w-7 h-7 text-[hsl(var(--brand-success))]" />
+                <Check className="w-7 h-7 text-[hsl(var(--brand-success-text))]" />
               </div>
             )}
             <h1 className="text-2xl font-display font-heading" data-testid="text-booking-status">
-              {isCancelled ? "Booking Cancelled" : isRescheduled ? "Booking Rescheduled" : isPending ? "Awaiting Confirmation" : "Booking Confirmed"}
+              {isCancelled ? "Booking cancelled" : isRescheduled ? "Booking rescheduled" : isPending ? "Awaiting confirmation" : "Booking confirmed"}
             </h1>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-ui mt-2 ${
-              booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]" :
-              booking.status === "CANCELLED" ? "bg-destructive/15 text-destructive" :
-              booking.status === "PENDING" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
-              booking.status === "RESCHEDULED" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
-              "bg-muted text-foreground"
-            }`} data-testid="text-status-badge">
-              {booking.status}
-            </span>
+            {/* The raw enum ("PENDING") used to sit here under a headline
+                that already said the same thing. */}
+            {isPending && (
+              <p className="text-sm mt-2 text-[hsl(var(--brand-warning-text))]" role="status" data-testid="text-status-badge">
+                Waiting for {booking.providerUser?.provider?.name || booking.providerUser?.name || "the provider"} to confirm. We'll email you as soon as they do.
+              </p>
+            )}
           </div>
 
           <div className="bg-secondary/30 rounded-[var(--radius)] p-4 space-y-3 mb-6">
@@ -229,17 +234,11 @@ export default function BookingConfirmationPage() {
             );
           })()}
 
-          {isPending && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3 mb-4">
-              <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">Awaiting provider confirmation</p>
-              <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">We'll send you an email once {booking.providerUser?.name || "the provider"} confirms your booking.</p>
-            </div>
-          )}
 
           {isConfirmed && (
             <div className="mb-4">
               <p className="t-helper mb-3 flex items-center gap-1.5" data-testid="text-calendar-invite-note">
-                <Check className="w-3.5 h-3.5 text-[hsl(var(--brand-success))] shrink-0" />
+                <Check className="w-3.5 h-3.5 text-[hsl(var(--brand-success-text))] shrink-0" />
                 A calendar invitation has been sent to your email
               </p>
               <AddToCalendarButtons booking={booking} />

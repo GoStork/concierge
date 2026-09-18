@@ -201,8 +201,11 @@ export function InlineBookingNotification({
 
   const TONE_STYLE = {
     destructive: { fg: "hsl(var(--destructive))", bg: "hsl(var(--destructive) / 0.08)", bd: "hsl(var(--destructive) / 0.2)" },
-    warning: { fg: "hsl(var(--brand-warning))", bg: "hsl(var(--brand-warning) / 0.12)", bd: "hsl(var(--brand-warning) / 0.25)" },
-    success: { fg: "hsl(var(--brand-success))", bg: "hsl(var(--brand-success) / 0.12)", bd: "hsl(var(--brand-success) / 0.25)" },
+    // Text takes the -text step: the raw status hues are fills, and amber
+    // text on its own tint read at about 2:1 - the one line that tells the
+    // parent where their booking stands.
+    warning: { fg: "hsl(var(--brand-warning-text))", bg: "hsl(var(--brand-warning) / 0.12)", bd: "hsl(var(--brand-warning) / 0.25)" },
+    success: { fg: "hsl(var(--brand-success-text))", bg: "hsl(var(--brand-success) / 0.12)", bd: "hsl(var(--brand-success) / 0.25)" },
     muted: { fg: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.6)", bd: "hsl(var(--border))" },
   } as const;
 
@@ -217,14 +220,15 @@ export function InlineBookingNotification({
         <div
           className="inline-flex flex-col items-center gap-0.5 rounded-[var(--radius)] border px-4 py-2 text-center max-w-[92%]"
           style={{ background: t.bg, borderColor: t.bd }}
+          role="status"
           data-testid="booking-status-banner"
         >
           <span className="inline-flex items-center gap-1.5">
-            <Icon className="w-4 h-4 shrink-0" style={{ color: t.fg }} />
+            <Icon className="w-4 h-4 shrink-0" style={{ color: t.fg }} aria-hidden="true" />
             <span className="text-sm font-semibold leading-tight" style={{ color: t.fg }}>{status.label}</span>
           </span>
           {status.note && (
-            <span className="text-xs leading-snug" style={{ color: t.fg, opacity: 0.85 }}>{status.note}</span>
+            <span className="text-xs leading-snug" style={{ color: t.fg }}>{status.note}</span>
           )}
         </div>
       </div>
@@ -394,14 +398,14 @@ export function InlineBookingNotification({
           <div className="flex items-center justify-center gap-2 px-4 py-3 border-t bg-muted/20">
             <button
               onClick={() => onRequestReschedule?.()}
-              className="text-center text-xs font-medium px-4 py-2 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
+              className="text-center text-sm font-medium px-4 min-h-11 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
               data-testid="button-reschedule-parent-inline"
             >
               Reschedule
             </button>
             <button
               onClick={() => onRequestCancel?.()}
-              className="text-center text-xs font-medium px-4 py-2 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+              className="text-center text-sm font-medium px-4 min-h-11 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
               data-testid="button-cancel-parent-inline"
             >
               Cancel
