@@ -2077,9 +2077,15 @@ only exists behind Cloudflare and can never show up on a dev Mac:
   `/chat` and `/account/*`. Our bundle has no executed eval (the one match is
   lodash's never-reached `Function("return this")` fallback), and the same
   pages produced none in the walk, so a browser extension is the suspect.
-- **NOT yet exercised under the policy:** a PandaDoc signing frame, a live
-  Daily call, the Trolley payout widget, voice mode / LiveAvatar, the Turnstile
-  signup step. The walk account (a test provider admin) had no agreement or
+- **PandaDoc signing frame: exercised clean 2026-09-18.** Logged in on dev as
+  the parent who owns agreement d33af41b; the `app.pandadoc.com` frame rendered
+  1376x720 with a live signing session and the log shows 0 violations. (Two
+  dead ends first: dev agreements whose PandaDoc document was voided still
+  read `SENT` in our DB, and the W-9 / provider-agreement test documents 404 at
+  PandaDoc. Check `GET /public/v1/documents/:id` before picking a test doc.)
+- **NOT yet exercised under the policy:** a live Daily call (dev has no
+  CONFIRMED upcoming booking - the video page refuses PENDING ones), the
+  Trolley payout widget, voice mode / LiveAvatar, the Turnstile signup step. The walk account (a test provider admin) had no agreement or
   booking of its own. Do these as part of the Phase A smoke tests, then read
   `grep csp-violation`.
 - [ ] Switch to `CSP_MODE=enforce` once the unexercised list above has been
