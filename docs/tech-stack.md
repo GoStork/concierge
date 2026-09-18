@@ -13,7 +13,7 @@
 - **React Router v6** for routing
 - **Redux Toolkit** + `react-redux` (global state); **TanStack Query v5** (server state)
 - **shadcn/ui** on **Radix UI** primitives, styled with **Tailwind CSS** (`tailwind-merge`, `tailwindcss-animate`)
-- **Framer Motion** (animation), `canvas-confetti` (celebration bursts), **lucide-react** + `react-icons` (icons)
+- **Framer Motion** (animation), `canvas-confetti` (celebration bursts), **lucide-react** 1.x + `react-icons` (icons; lucide 1.x renders every icon `aria-hidden` unless it is given an `aria-label`/`title`, so an icon-only control must carry its own label)
 - **react-hook-form** (forms); `react-big-calendar` + `react-day-picker` (scheduling); `embla-carousel`, `react-easy-crop`, `react-resizable-panels`
 
 ## Backend
@@ -127,7 +127,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `embla-carousel-react@^8.6.0`
 - `framer-motion@^11.18.2`
 - `input-otp@^1.4.2`
-- `lucide-react@^0.453.0`
+- `lucide-react@^1.47.0`
 - `next-themes@^0.4.6`
 - `react@^18.3.1`
 - `react-big-calendar@^1.19.4`

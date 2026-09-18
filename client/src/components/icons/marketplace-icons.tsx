@@ -18,6 +18,8 @@ function ProviderGlyph({ className, children }: IconProps & { children: ReactNod
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
+      focusable="false"
     >
       {/* Scale the glyph up within the same icon box so it fills more of its slot
           (matches the enlarged mobile badge glyphs), scaled around the center. */}
@@ -93,6 +95,8 @@ export function AgencyIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
+      focusable="false"
     >
       <rect x="4" y="6" width="16" height="16" rx="2" />
       <path d="M9 2v4" />

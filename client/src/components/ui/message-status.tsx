@@ -23,6 +23,8 @@ export function MessageStatus({
   if (isDelivered) {
     return (
       <svg
+        role="img"
+        aria-label={isRead ? "Read" : "Delivered"}
         viewBox="0 0 18 11"
         width="18"
         height="11"
@@ -44,6 +46,8 @@ export function MessageStatus({
   // Single checkmark (sent)
   return (
     <svg
+      role="img"
+      aria-label="Sent"
       viewBox="0 0 12 11"
       width="12"
       height="11"

@@ -1235,6 +1235,7 @@ export function SwipeDeckCard({
                   onClick={(e) => { e.stopPropagation(); onMessage?.(); }}
                   disabled={!onMessage}
                   className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center disabled:opacity-100 disabled:pointer-events-auto"
+                  aria-label="Ask a question about this profile"
                   data-testid={`button-chat-${id}`}
                 >
                   <Send className="!w-8 !h-8 sm:!w-9 sm:!h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-chat)" }} strokeWidth={3} />
@@ -1250,6 +1251,7 @@ export function SwipeDeckCard({
                   onClick={(e) => { e.stopPropagation(); onCheckout(); }}
                   className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center"
                   title="Buy now - direct checkout"
+                  aria-label="Buy now - direct checkout"
                   data-testid={`button-checkout-${id}`}
                 >
                   <ShoppingBag className="!w-8 !h-8 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "hsl(var(--brand-success))" }} strokeWidth={3} />

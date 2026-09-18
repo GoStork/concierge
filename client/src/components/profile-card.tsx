@@ -42,7 +42,7 @@ function NewBadge({ profileId }: { profileId: string }) {
       <div className="rounded-full bg-card flex items-center justify-center shadow-lg z-10" style={{ width: 48, height: 48, border: "1px solid hsl(var(--accent))" }}>
         <span className="font-heading tracking-wide" style={{ fontSize: 13, color: "hsl(var(--accent))" }}>NEW</span>
       </div>
-      <svg width="56" height="32" viewBox="0 0 56 32" className="-mt-3 z-0">
+      <svg width="56" height="32" viewBox="0 0 56 32" className="-mt-3 z-0" aria-hidden="true" focusable="false">
         <defs>
           <radialGradient id={`bowL-${profileId}`} cx="0.35" cy="0.4" r="0.7">
             <stop offset="0%" stopColor="hsl(var(--brand-success) / 0.4)" />
