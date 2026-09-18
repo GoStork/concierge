@@ -30,6 +30,7 @@ import { CalendarController } from "../calendar/calendar.controller";
 import { maybeCompleteBookingEarly } from "../calendar/call-outcome.sweep";
 import { BillingService } from "../billing/billing.service";
 import { hasProviderRole, hasAnyRole, isBillingManagerOnly } from "../../../../shared/roles";
+import { adHocCallIdentity } from "./ad-hoc-call";
 
 const GOSTORK_STAFF = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"];
 
@@ -178,7 +179,14 @@ export class VideoController {
       }
     }
 
-    const subject = `Ad-hoc Video Call${session.provider?.name ? ` - ${session.provider.name}` : ""}`;
+    const identity = adHocCallIdentity({
+      callerActsAsProvider,
+      callerIsStaff: isAdmin,
+      callerProviderId: user.providerId ?? null,
+      sessionProviderId: session.providerId ?? null,
+      sessionProviderName: session.provider?.name ?? null,
+    });
+    const subject = identity.subject;
 
     // IDEMPOTENCY. Creating the booking takes seconds (Daily room + email +
     // SMS), and a double-tap on the camera button used to mint TWO bookings
@@ -216,6 +224,9 @@ export class VideoController {
       attendeeName,
       attendeeEmails,
       invitedByUserId: user.id,
+      // Happening now, not booked for later: no "thanks for booking your
+      // consultation on <date>" auto-reply.
+      instantCall: true,
     });
 
     const nameParts = (user.firstName && user.lastName)
@@ -225,7 +236,7 @@ export class VideoController {
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || (callerActsAsProvider ? "Provider" : "Parent");
 
-    const senderType = adminAsHost ? "human" : (callerActsAsProvider ? "provider" : "parent");
+    const senderType = identity.senderType;
     const messageContent = callerActsAsProvider
       ? "I've started a video call - join when you're ready!"
       : "I'd like to start a video call!";

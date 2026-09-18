@@ -1272,6 +1272,10 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     /** Per-email attendee info ({ [email]: { name } }) - names the surrogate
      *  in her lifecycle emails. */
     attendeeDetails?: Record<string, { name?: string; phone?: string }> | null;
+    /** An ad-hoc call that starts NOW. Skips the scheduled-booking auto-reply
+     *  ("thanks for booking your consultation ... on <date>"), which reads as
+     *  nonsense for a call the parent is being invited into this second. */
+    instantCall?: boolean;
   }) {
     // Runtime quarantine gate: a flagged signup cannot book a call or a
     // consultation (both flow through here) until an admin approves it. Covers
@@ -1324,7 +1328,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       this.logger?.error?.(`fireMatchCallPrep failed for booking ${booking.id}: ${e.message}`) ?? console.error(e.message));
     // GoStork concierge calls get GoStork's own greeting in the parent's Eva
     // chat. Self-gates on the host being GoStork staff; deduped once-per-parent.
-    this.fireGoStorkConciergeAutoReply(booking as any).catch(() => {});
+    if (!input.instantCall) this.fireGoStorkConciergeAutoReply(booking as any).catch(() => {});
 
     return booking;
   }

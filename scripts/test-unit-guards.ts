@@ -760,6 +760,36 @@ async function ut18() {
     /never emit it in the same message as a \[\[CONSULTATION_BOOKING\]\]/i.test(releaseRule));
 }
 
+// ─── UT-20: who hosts an ad-hoc call, and how it is labelled ─────────────────
+// A parent's private Eva thread can carry a clinic's providerId. Staff starting
+// a call from it must host AS GoStork - never be labelled as, or post as, the
+// clinic the thread happens to be tagged with (seen live 2026-09-18).
+async function ut20() {
+  const { adHocCallIdentity } = await import("../server/src/modules/video/ad-hoc-call");
+  const clinic = { sessionProviderId: "pClinic", sessionProviderName: "Pacific Fertility Center-Los Angeles (PFCLA)" };
+
+  const staffOnTagged = adHocCallIdentity({ callerActsAsProvider: true, callerIsStaff: true, callerProviderId: "pGoStork", ...clinic });
+  check("staff on a clinic-tagged thread: labelled GoStork", staffOnTagged.subject === "Ad-hoc Video Call - GoStork", staffOnTagged.subject);
+  check("staff on a clinic-tagged thread: posts as a human, not as the clinic", staffOnTagged.senderType === "human", staffOnTagged.senderType);
+
+  const staffNoHouse = adHocCallIdentity({ callerActsAsProvider: true, callerIsStaff: true, callerProviderId: null, ...clinic });
+  check("staff with no provider link still hosts as GoStork", staffNoHouse.hostedByGoStork && staffNoHouse.senderType === "human", JSON.stringify(staffNoHouse));
+
+  const staffUntagged = adHocCallIdentity({ callerActsAsProvider: true, callerIsStaff: true, callerProviderId: null, sessionProviderId: null, sessionProviderName: null });
+  check("staff on an untagged thread: unchanged (GoStork, human)", staffUntagged.senderType === "human" && staffUntagged.hostedByGoStork, JSON.stringify(staffUntagged));
+
+  const realProvider = adHocCallIdentity({ callerActsAsProvider: true, callerIsStaff: false, callerProviderId: "pClinic", ...clinic });
+  check("a clinic's own user: labelled with the clinic, posts as provider",
+    realProvider.subject.endsWith("(PFCLA)") && realProvider.senderType === "provider" && !realProvider.hostedByGoStork, JSON.stringify(realProvider));
+
+  const staffInsideClinic = adHocCallIdentity({ callerActsAsProvider: true, callerIsStaff: true, callerProviderId: "pClinic", ...clinic });
+  check("staff who really belong to that clinic act as the clinic", staffInsideClinic.senderType === "provider", staffInsideClinic.senderType);
+
+  const parent = adHocCallIdentity({ callerActsAsProvider: false, callerIsStaff: false, callerProviderId: null, ...clinic });
+  check("a parent asking for a call: labelled with the thread's provider, posts as parent",
+    parent.senderType === "parent" && parent.subject.endsWith("(PFCLA)"), JSON.stringify(parent));
+}
+
 // ─── UT-19: QUESTION INTERCEPT trigger - structure, not substrings ───────────
 // The old regex matched substring PRESENCE of question words and fired the
 // multi-second regenerate-the-reply path on declarative fragments. Both
@@ -823,6 +853,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-17", name: "A whisper-stamped Eva session never counts as a provider connection", run: ut17 },
   { id: "UT-18", name: "Every tag the prompt promises to strip is stripped before the parent sees it", run: ut18 },
   { id: "UT-19", name: "QUESTION INTERCEPT trigger matches interrogative structure, not question-word substrings", run: ut19 },
+  { id: "UT-20", name: "Ad-hoc calls by GoStork staff are hosted and labelled as GoStork, never the thread's clinic", run: ut20 },
 ];
 
 (async () => {
