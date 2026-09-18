@@ -37,7 +37,7 @@ const SUMMARY_BATCH = 8;
 
 const KINDS = new Set(["PREFERENCE", "CONSTRAINT", "GOAL", "FACT", "DECISION"]);
 
-async function fastJson(system: string, user: string, maxTokens = 500): Promise<any | null> {
+export async function fastJson(system: string, user: string, maxTokens = 500, subsystem = "concierge-memory"): Promise<any | null> {
   try {
     const model = genAI.getGenerativeModel({
       model: GEMINI_CHAT_MODEL,
@@ -45,7 +45,7 @@ async function fastJson(system: string, user: string, maxTokens = 500): Promise<
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json", thinkingConfig: thinkingOff(GEMINI_CHAT_MODEL) } as any,
     });
     const memRes = await model.generateContent(user);
-    trackGemini("concierge-memory", GEMINI_CHAT_MODEL, memRes);
+    trackGemini(subsystem, GEMINI_CHAT_MODEL, memRes);
     const out = memRes.response.text().trim();
     // The model occasionally returns trailing junk (or two concatenated
     // objects) even in JSON mode - parse the FIRST balanced object.
@@ -62,7 +62,7 @@ async function fastJson(system: string, user: string, maxTokens = 500): Promise<
       return null;
     }
   } catch (e: any) {
-    console.warn(`[memory] fastJson failed: ${e?.message}`);
+    console.warn(`[${subsystem}] fastJson failed: ${e?.message}`);
     return null;
   }
 }

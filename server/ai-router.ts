@@ -3049,13 +3049,15 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     if (currentSession?.providerId && (currentSession.status === "PROVIDER_CONNECTED" || currentSession.status === "CONSULTATION_BOOKED")) {
       let userMsgDeliveredAt: string | null = null;
+      let providerOnline = false;
       if (currentSession.providerId) {
         const providerUsers = await prisma.user.findMany({
           where: { providerId: currentSession.providerId },
           select: { id: true },
         });
+        providerOnline = providerUsers.some(u => isUserOnline(u.id));
         // Mark delivered if any provider user is online
-        if (providerUsers.some(u => isUserOnline(u.id))) {
+        if (providerOnline) {
           const now = new Date();
           userMsgDeliveredAt = now.toISOString();
           if (savedUserMsg) {
@@ -3216,6 +3218,59 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
             consultationCard: conciergeCard,
           });
           return;
+        }
+      }
+
+      // The provider owns this chat, so Eva is silent by default - but when
+      // the platform already holds the answer (the family's calls with this
+      // provider, the provider's knowledge base) she answers instead of
+      // leaving the parent waiting. She stays out while the provider is
+      // actively replying (online + wrote recently) so the two never collide.
+      if (!humanEscalationTriggered && userMessage.trim() && currentSessionId) {
+        try {
+          const { decideEvaReplyInProviderChat, PROVIDER_ACTIVE_WINDOW_MS } = await import("./provider-chat-gate");
+          const providerRecentlyActive = providerOnline && !!(await prisma.aiChatMessage.findFirst({
+            where: { sessionId: currentSessionId, senderType: "provider", createdAt: { gte: new Date(Date.now() - PROVIDER_ACTIVE_WINDOW_MS) } },
+            select: { id: true },
+          }));
+          if (providerRecentlyActive) {
+            console.log(`[provider-chat-gate] session ${currentSessionId}: provider is actively replying - Eva stays silent`);
+          } else {
+            const [providerRow, knowledge] = await Promise.all([
+              prisma.provider.findUnique({ where: { id: currentSession.providerId }, select: { name: true } }),
+              searchKnowledgeBase(userMessage, currentSession.providerId, 5),
+            ]);
+            const providerName = providerRow?.name || "the provider";
+            const decision = await decideEvaReplyInProviderChat({
+              sessionId: currentSessionId,
+              providerId: currentSession.providerId,
+              providerName,
+              parentUserId: userId,
+              parentAccountId: currentUser?.parentAccountId ?? null,
+              parentFirstName,
+              parentMessage: userMessage,
+              knowledge,
+            });
+            console.log(`[provider-chat-gate] session ${currentSessionId}: answer=${decision.answer} (${decision.reason})`);
+            if (decision.answer) {
+              // Dual-audience: the parent reads `content`, the provider chat
+              // renders `providerContent`, addressed to the provider.
+              const cardData = { providerContent: `Eva answered ${parentFirstName}'s message for you:\n\n${decision.reply}` };
+              const evaMsg = await prisma.aiChatMessage.create({
+                data: { sessionId: currentSessionId, role: "assistant", content: decision.reply, senderType: "ai", uiCardData: cardData },
+              });
+              sse.sendToken(decision.reply);
+              sse.sendDone({
+                message: { id: evaMsg.id, content: decision.reply, senderType: "ai", role: "assistant", uiCardData: cardData, createdAt: evaMsg.createdAt },
+                sessionId: currentSessionId,
+                userMessageId: savedUserMsg?.id ?? null,
+                userMessageDeliveredAt: userMsgDeliveredAt,
+              });
+              return;
+            }
+          }
+        } catch (e: any) {
+          console.error(`[provider-chat-gate] session ${currentSessionId} failed - Eva stays silent:`, e?.message);
         }
       }
 
