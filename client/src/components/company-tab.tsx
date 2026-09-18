@@ -123,12 +123,15 @@ function SortableItem({ id, children, disabled, readOnly }: { id: string; childr
       <div className="flex items-start gap-1">
         <button
           type="button"
-          className="mt-2 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0 touch-none"
+          // Pointer-only reorder handle (tabIndex -1: dnd-kit's keyboard
+          // sensor lives on the row). It still needs a name and a 24px box.
+          className="mt-1 p-1 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors shrink-0 touch-none rounded"
           {...listeners}
           tabIndex={-1}
+          aria-label="Drag to reorder"
           data-testid={`drag-handle-${id}`}
         >
-          <GripVertical className="w-4 h-4" />
+          <GripVertical className="w-4 h-4" aria-hidden="true" />
         </button>
         <div className="flex-1 min-w-0">{children}</div>
       </div>
@@ -154,7 +157,7 @@ function ServiceRequestInline({ providerId, services }: { providerId: string; se
   return (
     <div className="flex items-center gap-2 pt-1">
       <Select value={typeId} onValueChange={setTypeId}>
-        <SelectTrigger className="w-64 h-9" data-testid="select-request-service-type">
+        <SelectTrigger className="w-64 h-9" aria-label="Request a new service" data-testid="select-request-service-type">
           <SelectValue placeholder="Request a new service..." />
         </SelectTrigger>
         <SelectContent>
@@ -719,6 +722,7 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                             setLocations(updated);
                           }}
                           className="h-8 text-sm"
+                          aria-label={`Location ${idx + 1}`}
                           data-testid={`input-company-location-${idx}`}
                         />
                         <Button
@@ -727,9 +731,10 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                           size="sm"
                           className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                           onClick={() => setLocations(locations.filter((_, i) => i !== idx))}
+                          aria-label={`Remove location ${idx + 1}`}
                           data-testid={`btn-remove-location-${idx}`}
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3.5 h-3.5" aria-hidden="true" />
                         </Button>
                       </>
                     )}
@@ -778,7 +783,8 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                 {isProviderAdmin && !isGostorkAdmin && (
                   <button
                     type="button"
-                    className="ml-1.5 rounded-full hover:bg-foreground/10 p-0.5"
+                    aria-label={`${service.status === "APPROVED" ? "Remove" : "Withdraw"} ${service.providerType?.name || "service"}`}
+                    className="ml-1 rounded-full hover:bg-foreground/10 p-1.5 -my-1"
                     title={service.status === "APPROVED" ? "Remove this service" : "Withdraw this service request"}
                     onClick={async () => {
                       const name = service.providerType?.name || "service";
@@ -1390,9 +1396,10 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                           setEditingMemberIdx(idx);
                           setEditingMemberOriginal({ ...member, locationIds: member.locationIds ? [...member.locationIds] : member.locationIds });
                         }}
+                        aria-label={`Edit ${member.name || "team member"}`}
                         data-testid={`btn-edit-member-${idx}`}
                       >
-                        <Pencil className="w-3 h-3" />
+                        <Pencil className="w-3 h-3" aria-hidden="true" />
                       </Button>
                       <Button
                         type="button"
@@ -1417,9 +1424,10 @@ export default function CompanyTab({ providerId: providerIdProp }: { providerId?
                           }
                           setTeamMembers(teamMembers.filter((_, i) => i !== idx));
                         }}
+                        aria-label={`Remove ${member.name || "team member"}`}
                         data-testid={`btn-remove-member-${idx}`}
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3 h-3" aria-hidden="true" />
                       </Button>
                     </div>
                   )}

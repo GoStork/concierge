@@ -85,10 +85,10 @@ export function GostorkAgreementCard() {
       <div className="rounded-[var(--radius)] border bg-background p-4 space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${signed
-            ? "bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))]"
+            ? "bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success-text))]"
             : preparing
               ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
-              : "bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]"}`}
+              : "bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning-text))]"}`}
           >
             {signed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
             {signed

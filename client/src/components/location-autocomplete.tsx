@@ -39,6 +39,8 @@ type Props = {
   /** id for the onboarding text input so a visible <label htmlFor> can name it. */
   id?: string;
   "data-testid"?: string;
+  /** Accessible name for the text field (rows of locations have no visible label each). */
+  "aria-label"?: string;
 };
 
 function parseNominatimAddress(a: any) {
@@ -286,6 +288,7 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
             aria-controls={id ? `${id}-listbox` : undefined}
             aria-activedescendant={id && isOpen && highlightIdx >= 0 ? `${id}-opt-${highlightIdx}` : undefined}
             data-testid={props["data-testid"]}
+            aria-label={props["aria-label"]}
           />
         ) : (
           <Input
@@ -298,6 +301,7 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
             className={className}
             autoFocus={autoFocus}
             data-testid={props["data-testid"]}
+            aria-label={props["aria-label"]}
           />
         )}
         {loading && (

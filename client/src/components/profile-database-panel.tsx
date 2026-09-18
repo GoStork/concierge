@@ -936,8 +936,10 @@ export default function ProfileDatabasePanel({
               />
               <button
                 type="button"
-                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+                className="absolute right-1 top-1 w-7 h-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
                 data-testid={`toggle-password-${type}`}
                 disabled={!isAdmin}
               >

@@ -13,11 +13,13 @@ export function CopyButton({ value, testId }: { value: string; testId: string })
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+      // 24px box (was 20), a name, and an announcement when it worked.
+      className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
       data-testid={testId}
       title="Copy to clipboard"
+      aria-label={copied ? "Copied" : `Copy ${value}`}
     >
-      {copied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+      {copied ? <Check className="w-3 h-3 text-primary" aria-hidden="true" /> : <Copy className="w-3 h-3" aria-hidden="true" />}
     </button>
   );
 }

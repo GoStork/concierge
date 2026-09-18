@@ -2531,7 +2531,10 @@ export function MarketplaceFilterBar({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             data-testid="input-search-desktop"
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
+            // The ring was zeroed and nothing replaced it: a keyboard user
+            // could not see the search field take focus.
+            className="pl-9 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0"
+            aria-label={currentSearchPlaceholder || "Search"}
             placeholder={currentSearchPlaceholder}
             value={currentSearchValue}
             onChange={(e) => handleSearchChange(e.target.value)}

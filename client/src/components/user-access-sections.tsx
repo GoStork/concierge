@@ -110,8 +110,8 @@ export function CalendarLinkSection({ slug }: { slug: string }) {
           <span className="t-helper mr-1 shrink-0">/book/</span>
           <span className="text-sm font-ui font-heading" data-testid="text-calendar-slug">{slug}</span>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={handleCopy} data-testid="button-copy-calendar-link">
-          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+        <Button type="button" variant="outline" size="sm" onClick={handleCopy} aria-label={copied ? "Calendar link copied" : "Copy calendar link"} data-testid="button-copy-calendar-link">
+          {copied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
         </Button>
       </div>
       <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline break-all" data-testid="link-calendar-booking-url">{bookingUrl}</a>

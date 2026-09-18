@@ -295,7 +295,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
               ? "This provider's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."
               : "Your business's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."}
             {isW9AutoFilled && state?.lastW9SyncAt && (
-              <span className="block mt-1 text-xs" style={{ color: "hsl(var(--brand-success))" }}>
+              <span className="block mt-1 text-xs" style={{ color: "hsl(var(--brand-success-text))" }}>
                 <Sparkles className="w-3 h-3 inline mr-1" />
                 Auto-filled from {isAdmin ? "the provider's" : "your"} signed W-9 on {new Date(state.lastW9SyncAt).toLocaleDateString()}.
                 {isAdmin ? "" : " You can override any field below."}
@@ -318,7 +318,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         </Button>}
       </header>
       {syncMutation.isSuccess && (
-        <p className="text-xs" style={{ color: "hsl(var(--brand-success))" }}>
+        <p className="text-xs" style={{ color: "hsl(var(--brand-success-text))" }}>
           {(() => {
             const d = syncMutation.data as any;
             if (d?.status === "applied") return `Applied ${d.appliedFields?.length || 0} field(s) from W-9.`;
@@ -328,7 +328,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         </p>
       )}
       {syncMutation.isError && (
-        <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(syncMutation.error as Error).message}</p>
+        <p className="text-xs" style={{ color: "hsl(var(--brand-error-text))" }}>{(syncMutation.error as Error).message}</p>
       )}
 
       {/* The GoStork Provider Service Agreement - FIRST on Legal: signing it
@@ -516,12 +516,12 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       </section>
 
       {saveMutation.isError && (
-        <p className="text-sm" style={{ color: "hsl(var(--brand-error))" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--brand-error-text))" }}>
           {(saveMutation.error as Error).message}
         </p>
       )}
       {saveMutation.isSuccess && (
-        <p className="text-sm flex items-center gap-1.5" style={{ color: "hsl(var(--brand-success))" }}>
+        <p className="text-sm flex items-center gap-1.5" style={{ color: "hsl(var(--brand-success-text))" }}>
           <CheckCircle2 className="w-4 h-4" />
           Saved
         </p>
@@ -552,7 +552,7 @@ function Field({
     <div className="space-y-1.5">
       <Label>
         {label}
-        {required && <span style={{ color: "hsl(var(--brand-error))" }} className="ml-0.5">*</span>}
+        {required && <span style={{ color: "hsl(var(--brand-error-text))" }} className="ml-0.5">*</span>}
       </Label>
       {children}
       {hint && <p className="t-helper">{hint}</p>}

@@ -447,8 +447,8 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                           </Button>
                         )}
                         {canEditMember(member) && (
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(member)} data-testid={`button-edit-member-${member.id}`}>
-                            <Pencil className="w-4 h-4" />
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(member)} aria-label={`Edit ${member.name || member.email}`} data-testid={`button-edit-member-${member.id}`}>
+                            <Pencil className="w-4 h-4" aria-hidden="true" />
                           </Button>
                         )}
                         {canToggleMember(member) && (

@@ -109,7 +109,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
 
   return (
     <div className="space-y-1.5">
-      <Label>{FORM} <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
+      <Label>{FORM} <span style={{ color: "hsl(var(--brand-error-text))" }}>*</span></Label>
       {/* Stacks on mobile - one horizontal row starves the title into
           letter-wrap once the completed-state action cluster appears. */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-[var(--radius)] border p-3 bg-secondary/40">
@@ -132,7 +132,7 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
 
         {!pendingSwitch && w9?.status === "COMPLETED" && w9.w9Id && (
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-            <span className="flex items-center gap-1 text-xs font-medium" style={{ color: "hsl(var(--brand-success))" }}>
+            <span className="flex items-center gap-1 text-xs font-medium" style={{ color: "hsl(var(--brand-success-text))" }}>
               <Check className="w-3.5 h-3.5" /> Completed
             </span>
             <Button variant="ghost" size="sm" onClick={() => navigate(`/w9/${w9.w9Id}`)} title="View">
@@ -242,13 +242,13 @@ export function ProviderW9Section({ providerId, mode, formType }: ProviderW9Sect
         )}
       </div>
       {w9SendMutation.isError && (
-        <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9SendMutation.error as Error).message}</p>
+        <p className="text-xs" style={{ color: "hsl(var(--brand-error-text))" }}>{(w9SendMutation.error as Error).message}</p>
       )}
       {w9FillMutation.isError && (
-        <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9FillMutation.error as Error).message}</p>
+        <p className="text-xs" style={{ color: "hsl(var(--brand-error-text))" }}>{(w9FillMutation.error as Error).message}</p>
       )}
       {w9ResubmitMutation.isError && (
-        <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9ResubmitMutation.error as Error).message}</p>
+        <p className="text-xs" style={{ color: "hsl(var(--brand-error-text))" }}>{(w9ResubmitMutation.error as Error).message}</p>
       )}
       <p className="t-helper">
         {isProviderMode

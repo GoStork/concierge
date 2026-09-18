@@ -118,7 +118,8 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-heading">Agreements</h1>
+        {/* The page already has its h1 ("Settings"); two h1s on one page. */}
+        <h2 className="text-2xl font-heading">Agreements</h2>
         <p className="t-helper mt-1">
           {isGoStorkAdmin
             ? "Configure the GoStork Provider Service Agreement template, send it to providers, and track every signature."
@@ -276,8 +277,8 @@ export default function DocumentsTab({ providerId: providerIdProp }: { providerI
             <FileText className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-heading">Sent Agency Agreements</h2>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="w-4 h-4" />
+          <Button variant="ghost" size="sm" onClick={() => refetch()} aria-label="Refresh sent agreements">
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
           </Button>
         </div>
 

@@ -567,8 +567,9 @@ export default function ImageUploader({
                         className="p-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                         data-testid={`${testId}-edit`}
                         title="Edit photo"
+                        aria-label="Edit photo"
                       >
-                        <Pencil className="w-4 h-4 text-white" />
+                        <Pencil className="w-4 h-4 text-white" aria-hidden="true" />
                       </button>
                     )}
                     <button
@@ -577,8 +578,9 @@ export default function ImageUploader({
                       className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                       data-testid={`${testId}-upload`}
                       title={displayUrl ? "Replace photo" : "Upload photo"}
+                      aria-label={displayUrl ? "Replace photo" : "Upload photo"}
                     >
-                      <Camera className="w-4 h-4 text-white" />
+                      <Camera className="w-4 h-4 text-white" aria-hidden="true" />
                     </button>
                     {displayUrl && (
                       <button
@@ -587,8 +589,9 @@ export default function ImageUploader({
                         className="p-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                         data-testid={`${testId}-delete`}
                         title="Remove photo"
+                        aria-label="Remove photo"
                       >
-                        <Trash2 className="w-4 h-4 text-white" />
+                        <Trash2 className="w-4 h-4 text-white" aria-hidden="true" />
                       </button>
                     )}
                   </>
@@ -649,20 +652,24 @@ export default function ImageUploader({
                 {mode === "logo" && !isSvgUrl(value) && (
                   <button
                     type="button"
-                    className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                    // 16-20px tall text links measured under the 24px target
+                    // minimum on six uploaders.
+                    className="min-h-6 px-1 -mx-1 rounded text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
                     onClick={(e) => { e.stopPropagation(); editExisting(); }}
+                    aria-label="Edit image"
                     data-testid={`${testId}-edit`}
                   >
-                    <Pencil className="w-3 h-3" /> Edit
+                    <Pencil className="w-3 h-3" aria-hidden="true" /> Edit
                   </button>
                 )}
                 <button
                   type="button"
-                  className="t-helper hover:text-destructive flex items-center gap-1"
+                  className="min-h-6 px-1 -mx-1 rounded t-helper hover:text-destructive flex items-center gap-1"
                   onClick={(e) => { e.stopPropagation(); onChange(null); }}
+                  aria-label="Remove image"
                   data-testid={`${testId}-delete`}
                 >
-                  <Trash2 className="w-3 h-3" /> Remove
+                  <Trash2 className="w-3 h-3" aria-hidden="true" /> Remove
                 </button>
               </div>
             </div>

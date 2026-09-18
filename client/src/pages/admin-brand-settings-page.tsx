@@ -395,9 +395,10 @@ function OptionalColorInput({
         {isSet && !disabled && (
           <button
             type="button"
-            className="w-6 h-6 flex items-center justify-center rounded-[var(--radius)] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="w-6 h-6 shrink-0 flex items-center justify-center rounded-[var(--radius)] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             onClick={() => onChange(null)}
             title="Reset to default"
+            aria-label="Reset to default"
             data-testid={`${testId}-clear`}
           >
             <X className="w-3 h-3" />
@@ -1023,6 +1024,8 @@ function NavPreview({ form }: { form: BrandSettings }) {
                 key={tab.label}
                 type="button"
                 onClick={() => setActiveIdx(idx)}
+                aria-label={`Preview the ${tab.label} tab as active`}
+                aria-pressed={isActive}
                 className="flex flex-col items-center justify-center flex-1 gap-0.5 transition-colors duration-200 cursor-pointer bg-transparent border-0 outline-none"
                 style={{ color }}
                 data-testid={`preview-nav-${tab.label.toLowerCase()}`}
@@ -3134,8 +3137,8 @@ export function BrandSettingsForm({
                       data-testid="input-bottom-nav-bg-hex"
                     />
                     {form.bottomNavBgColor && (
-                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => updateField("bottomNavBgColor", null)} data-testid="btn-clear-bottom-nav-bg">
-                        <X className="w-3.5 h-3.5" />
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => updateField("bottomNavBgColor", null)} aria-label="Clear the bottom bar background color" data-testid="btn-clear-bottom-nav-bg">
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
                       </Button>
                     )}
                   </div>

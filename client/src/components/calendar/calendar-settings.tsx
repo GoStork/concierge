@@ -806,12 +806,13 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
             <Input
               value={bookingPageSlug}
               onChange={(e) => setBookingPageSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-              className="border-0 bg-transparent p-0 h-auto text-sm font-ui focus-visible:ring-0 shadow-none"
+              className="border-0 bg-transparent p-0 h-auto min-h-6 text-sm font-ui focus-visible:ring-0 shadow-none"
+              aria-label="Your booking link name"
               data-testid="input-booking-slug"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={copyBookingLink} data-testid="button-copy-link">
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+          <Button variant="outline" size="sm" onClick={copyBookingLink} aria-label={copied ? "Booking link copied" : "Copy booking link"} data-testid="button-copy-link">
+            {copied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
           </Button>
         </div>
         {bookingPageSlug && (
@@ -933,9 +934,10 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
                   setCopiedVideo(true);
                   setTimeout(() => setCopiedVideo(false), 2000);
                 }}
+                aria-label={copiedVideo ? "Video room link copied" : "Copy video room link"}
                 data-testid="button-copy-video-link"
               >
-                {copiedVideo ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copiedVideo ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
               </Button>
             </div>
           ) : (
@@ -1004,6 +1006,7 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
                   <Switch
                     checked={isActive}
                     onCheckedChange={() => toggleDay(dayIndex)}
+                    aria-label={`Available on ${dayName}`}
                     data-testid={`switch-day-${dayIndex}`}
                   />
                   <span className={`text-sm font-ui ${isActive ? "" : "text-muted-foreground"}`}>
@@ -1021,6 +1024,7 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
                             value={slot.startTime}
                             onChange={(e) => updateSlot(slot.originalIndex, "startTime", e.target.value)}
                             className="w-28 text-sm"
+                            aria-label={`${dayName} start time${i > 0 ? `, slot ${i + 1}` : ""}`}
                             data-testid={`input-start-${dayIndex}-${i}`}
                           />
                           <span className="t-helper">to</span>
@@ -1029,11 +1033,12 @@ export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
                             value={slot.endTime}
                             onChange={(e) => updateSlot(slot.originalIndex, "endTime", e.target.value)}
                             className="w-28 text-sm"
+                            aria-label={`${dayName} end time${i > 0 ? `, slot ${i + 1}` : ""}`}
                             data-testid={`input-end-${dayIndex}-${i}`}
                           />
                           {daySlots.filter((s) => s.isActive).length > 1 && (
-                            <Button variant="ghost" size="sm" onClick={() => removeSlot(slot.originalIndex)} className="text-muted-foreground hover:text-destructive h-8 w-8 p-0">
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <Button variant="ghost" size="sm" onClick={() => removeSlot(slot.originalIndex)} aria-label={`Remove ${dayName} slot ${i + 1}`} className="text-muted-foreground hover:text-destructive h-8 w-8 p-0">
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                             </Button>
                           )}
                         </div>
