@@ -2218,17 +2218,31 @@ I'll check in with you right after the call. You've got this!`;
     });
     if (!config) throw new NotFoundException("Booking page not found");
 
-    const userTz = timezone || config.timezone;
+    // Same rule as the slot list below: working hours belong to the HOST's
+    // dates and zone. The old loop matched the host's weekly hours against
+    // the BOOKER's calendar date, so far from the host's zone it lit days
+    // with no bookable time and missed days that had some (a Tokyo parent's
+    // mornings come from the host's previous evening). Each host window is
+    // now a real interval, and a booker day is lit when a meeting could
+    // start inside it.
+    const hostTz = config.timezone || "America/New_York";
+    const userTz = timezone || hostTz;
     const monthStart = DateTime.fromISO(`${month}-01`, { zone: userTz }).startOf("month");
     const monthEnd = monthStart.endOf("month");
     const today = DateTime.now().setZone(userTz).startOf("day");
+    const duration = config.meetingDuration || 30;
+    const earliestStart = Date.now() + (config.minBookingNotice || 0) * 60 * 1000;
+
+    const hostFirst = monthStart.setZone(hostTz).startOf("day").minus({ days: 1 });
+    const hostLast = monthEnd.setZone(hostTz).startOf("day").plus({ days: 1 });
 
     const overrides = await this.prisma.availabilityOverride.findMany({
       where: {
         userId: config.userId,
-        date: { gte: monthStart.toJSDate(), lte: monthEnd.toJSDate() },
+        date: { gte: new Date(hostFirst.toISODate() + "T00:00:00"), lte: new Date(hostLast.toISODate() + "T23:59:59") },
       },
     });
+    // Keyed the way overrides are stored: server-local midnight of the date.
     const overrideMap = new Map(overrides.map((o) => {
       const d = new Date(o.date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -2239,48 +2253,44 @@ I'll check in with you right after the call. You've got this!`;
       where: {
         userId: config.userId,
         OR: [
-          { recurrence: null, startTime: { lte: monthEnd.toJSDate() }, endTime: { gte: monthStart.toJSDate() } },
+          { recurrence: null, startTime: { lte: hostLast.endOf("day").toJSDate() }, endTime: { gte: hostFirst.toJSDate() } },
           { recurrence: { not: null } },
         ],
       },
     });
 
-    const activeDays = new Set<number>();
     const slotsPerDay = config.availabilitySlots.filter((s) => s.isActive);
-
-    let current = monthStart;
-    while (current <= monthEnd) {
-      if (current < today) {
-        current = current.plus({ days: 1 });
-        continue;
+    const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+    // [start, latestStart] in ms for every host window that fits a meeting.
+    const intervals: Array<[number, number]> = [];
+    for (let hd = hostFirst; hd <= hostLast; hd = hd.plus({ days: 1 })) {
+      const override = overrideMap.get(hd.toISODate()!);
+      if (override && !override.isAvailable) continue;
+      const windows: { startTime: string; endTime: string }[] =
+        override && override.isAvailable && override.slots
+          ? (override.slots as any[])
+          : slotsPerDay.filter((s) => s.dayOfWeek === hd.weekday % 7);
+      for (const w of windows) {
+        const ws = hd.plus({ minutes: toMin(w.startTime) }).toMillis();
+        const latest = hd.plus({ minutes: toMin(w.endTime) - duration }).toMillis();
+        if (latest >= ws) intervals.push([ws, latest]);
       }
-      const dateKey = current.toFormat("yyyy-MM-dd");
-      const dayOfWeek = current.weekday % 7;
-      const override = overrideMap.get(dateKey);
+    }
+    const expandedAvailable = this.expandRecurringBlocks(allUserBlocks, hostFirst.toJSDate(), hostLast.endOf("day").toJSDate())
+      .filter((b) => b.blockType === "available");
+    for (const b of expandedAvailable) {
+      const ws = new Date(b.startTime).getTime();
+      const latest = new Date(b.endTime).getTime() - duration * 60 * 1000;
+      if (latest >= ws) intervals.push([ws, latest]);
+    }
 
-      if (override && !override.isAvailable) {
-        current = current.plus({ days: 1 });
-        continue;
-      }
-
-      let hasTimeWindows = false;
-      if (override && override.isAvailable && override.slots) {
-        const slots = override.slots as any[];
-        hasTimeWindows = slots.length > 0;
-      } else {
-        hasTimeWindows = slotsPerDay.some((s) => s.dayOfWeek === dayOfWeek);
-      }
-
-      const dayStart = current.startOf("day").toJSDate();
-      const dayEnd = current.endOf("day").toJSDate();
-      const expandedBlocks = this.expandRecurringBlocks(allUserBlocks, dayStart, dayEnd);
-      const availableBlocks = expandedBlocks.filter((b) => b.blockType === "available");
-      if (availableBlocks.length > 0) hasTimeWindows = true;
-
-      if (hasTimeWindows) {
-        activeDays.add(current.day);
-      }
-      current = current.plus({ days: 1 });
+    const activeDays = new Set<number>();
+    for (let day = monthStart; day <= monthEnd; day = day.plus({ days: 1 })) {
+      if (day < today) continue;
+      const dayStartMs = Math.max(day.startOf("day").toMillis(), earliestStart);
+      const dayEndMs = day.endOf("day").toMillis();
+      if (dayStartMs > dayEndMs) continue;
+      if (intervals.some(([ws, latest]) => ws <= dayEndMs && latest >= dayStartMs)) activeDays.add(day.day);
     }
 
     return { availableDays: Array.from(activeDays) };

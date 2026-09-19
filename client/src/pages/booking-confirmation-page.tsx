@@ -7,7 +7,6 @@ import { hasBookingEnded } from "@/lib/booking-time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Loader2, Calendar, Clock, Video, User, Users, Check, X, RefreshCw
 } from "lucide-react";
@@ -275,11 +274,11 @@ export default function BookingConfirmationPage() {
               ) : (
                 <>
                   <div className="space-y-1">
-                    <Label>New Date</Label>
+                    <Label>New date</Label>
                     <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} data-testid="input-reschedule-date" />
                   </div>
                   <div className="space-y-1">
-                    <Label>New Time</Label>
+                    <Label>New time</Label>
                     <Input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} data-testid="input-reschedule-time" />
                   </div>
                   {rescheduleMutation.isError && (
@@ -296,22 +295,37 @@ export default function BookingConfirmationPage() {
             </div>
           )}
 
-          {isActive && (
+          {/* Confirmed in place, like the chat card and Home - no modal. */}
+          {isActive && cancelOpen && (
+            <div className="rounded-[var(--radius)] border border-[hsl(var(--brand-error)/0.3)] bg-[hsl(var(--brand-error)/0.06)] p-4 mb-4 space-y-3" role="group" aria-labelledby="cancel-booking-q" data-testid="section-cancel-confirm">
+              <p id="cancel-booking-q" className="text-sm">
+                Cancel this booking? {booking.providerUser?.name || "The provider"} will be told, and this can't be undone.
+              </p>
+              {cancelMutation.isError && (
+                <p className="text-sm text-destructive" role="alert" data-testid="text-cancel-dialog-error">
+                  {(cancelMutation.error as Error).message || "Could not cancel this booking. Please try again."}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setCancelOpen(false)}>Keep booking</Button>
+                <Button variant="destructive" className="flex-1" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-confirm-cancel">
+                  {cancelMutation.isPending ? "Cancelling..." : "Yes, cancel it"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {isActive && !cancelOpen && (
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setRescheduleOpen((v) => !v)} data-testid="button-reschedule">
+              <Button variant="outline" className="flex-1" onClick={() => { setCancelOpen(false); setRescheduleOpen((v) => !v); }} data-testid="button-reschedule">
                 <RefreshCw className="w-4 h-4 mr-1" /> Reschedule
               </Button>
-              <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={() => setCancelOpen(true)} data-testid="button-cancel">
+              <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={() => { setRescheduleOpen(false); setCancelOpen(true); }} data-testid="button-cancel">
                 <X className="w-4 h-4 mr-1" /> Cancel
               </Button>
             </div>
           )}
 
-          {cancelMutation.isError && (
-            <p className="text-sm text-destructive mt-3 text-center" data-testid="text-cancel-error">
-              {(cancelMutation.error as Error).message || "Could not cancel this booking. Please try again."}
-            </p>
-          )}
         </div>
 
         <p className="t-helper text-center mt-4">
@@ -319,25 +333,6 @@ export default function BookingConfirmationPage() {
         </p>
       </div>
 
-      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel Booking</DialogTitle>
-            <DialogDescription>Are you sure you want to cancel this booking? This cannot be undone.</DialogDescription>
-          </DialogHeader>
-          {cancelMutation.isError && (
-            <p className="text-sm text-destructive" data-testid="text-cancel-dialog-error">
-              {(cancelMutation.error as Error).message || "Could not cancel this booking. Please try again."}
-            </p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>Keep Booking</Button>
-            <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-confirm-cancel">
-              {cancelMutation.isPending ? "Cancelling..." : "Yes, Cancel"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     </div>
   );
