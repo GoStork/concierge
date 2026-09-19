@@ -1,10 +1,6 @@
-import { useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, AlertCircle, Download, Baby } from "lucide-react";
-import { useBrandSettings } from "@/hooks/use-brand-settings";
-import { getPhotoSrc, getBrandAssetSrc } from "@/lib/profile-utils";
+import { PandaDocSigningShell, useInAppBack } from "@/components/pandadoc-signing-shell";
 
 // formLabel = "W-9" | "W-8BEN-E": the page serves both IRS forms, so every
 // bit of copy names the one this row actually is.
@@ -18,9 +14,7 @@ export default function W9SigningPage() {
   // GoStork account yet).
   const { id: w9Id, token } = useParams<{ id?: string; token?: string }>();
   const isGuest = !!token && !w9Id;
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data: brand } = useBrandSettings();
 
   const sessionUrl = isGuest ? `/api/public/w9/${token}/session` : `/api/w9/${w9Id}/signing-session`;
   const downloadUrl = isGuest ? `/api/public/w9/${token}/download` : `/api/w9/${w9Id}/download`;
@@ -42,34 +36,7 @@ export default function W9SigningPage() {
   const isCompleted = data?.isCompletedView === true;
   const formLabel = data?.formLabel || "tax form";
 
-  // When the signer clicks Finish, PandaDoc's embedded session posts a
-  // session_view.document.completed message - bounce back to where they
-  // started (same pattern as provider-agreement-signing-page) so the user
-  // is not left staring at the iframe wondering what happens next.
-  useEffect(() => {
-    function onMessage(e: MessageEvent) {
-      const t = typeof e.data === "string" ? e.data : String((e.data as any)?.type || (e.data as any)?.event || "");
-      if (t.includes("session_view.document.completed")) {
-        // Guest signers have no app to bounce back to - flip to the signed
-        // view instead. Logged-in signers go back where they started.
-        if (isGuest) {
-          setTimeout(() => queryClient.invalidateQueries({ queryKey: [sessionUrl] }), 1500);
-        } else {
-          // Give PandaDoc's own confirmation a beat to render first.
-          setTimeout(() => handleBack(), 1500);
-        }
-      }
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-    // handleBack closes over stable refs; re-binding per render is pointless.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isGuest, sessionUrl]);
-  const logoSrc = brand?.logoUrl ? (getBrandAssetSrc(brand.logoUrl) || brand.logoUrl) : null;
-  const companyName = brand?.companyName || "GoStork";
-
-  // Back action: try history first; if none (e.g. user opened the email link
-  // directly in a new tab), fall back to their billing tab.
+  const back = useInAppBack(() => "/account/billing");
   function handleBack() {
     // Refresh the Billing tab's W-9 status (and any consumer that reads
     // /w9 endpoints) so the user immediately sees "Completed" after signing
@@ -87,97 +54,23 @@ export default function W9SigningPage() {
     // on screen after the user just signed.
     queryClient.invalidateQueries({ queryKey: ["/api/provider/tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/provider/dashboard-queue"] });
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate("/account/billing");
-    }
+    back();
   }
 
   return (
-    <div className="flex flex-col" style={{ height: "100dvh" }}>
-      {/* Unified header - same for both entry points (billing tab + email link). */}
-      <div className="flex items-center gap-3 px-4 h-14 border-b bg-card shrink-0">
-        {!isGuest && (
-          <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5 shrink-0">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Button>
-        )}
-
-        <div className="flex items-center gap-2 min-w-0">
-          {logoSrc ? (
-            <img src={logoSrc} alt="" className="w-8 h-8 rounded-[var(--radius)] object-contain shrink-0" />
-          ) : (
-            <div className="w-8 h-8 rounded-[var(--radius)] bg-primary flex items-center justify-center text-primary-foreground shrink-0">
-              <Baby className="w-4 h-4" />
-            </div>
-          )}
-          <span className="font-display font-heading text-base text-primary truncate hidden sm:inline" style={{ color: "hsl(var(--primary))" }}>
-            {companyName}
-          </span>
-        </div>
-
-        <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
-
-        <span className="text-sm font-medium truncate">
-          {isCompleted ? `Signed ${formLabel}` : `Complete ${formLabel}`}
-        </span>
-
-        {isCompleted && (
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            Download
-          </a>
-        )}
-      </div>
-
-      {/* Content area */}
-      <div className="flex-1 relative">
-        {isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="t-helper">Loading tax form...</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
-            <AlertCircle className="w-10 h-10 text-destructive" />
-            <p className="text-sm font-medium">Could not load the tax form</p>
-            <p className="t-helper max-w-sm">{(error as Error).message}</p>
-            {!isGuest && (
-              <Button variant="outline" size="sm" onClick={handleBack}>
-                Go Back
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Completed - render signed PDF inline */}
-        {isCompleted && (
-          <iframe
-            src={downloadUrl}
-            className="w-full h-full border-0"
-            title={`Signed ${formLabel}`}
-          />
-        )}
-
-        {/* Signing iframe */}
-        {data && !data.isCompletedView && data.signingUrl && (
-          <iframe
-            src={data.signingUrl}
-            className="w-full h-full border-0"
-            title={`Complete ${formLabel}`}
-            allow="camera; microphone; fullscreen; clipboard-write"
-          />
-        )}
-      </div>
-    </div>
+    <PandaDocSigningShell
+      title={isCompleted ? `Signed ${formLabel}` : `Complete ${formLabel}`}
+      onBack={isGuest ? undefined : handleBack}
+      downloadUrl={isCompleted ? downloadUrl : null}
+      isLoading={isLoading}
+      loadingLabel="Loading tax form..."
+      error={error as Error | null}
+      errorTitle="Could not load the tax form"
+      signedPdfUrl={isCompleted ? downloadUrl : null}
+      signingUrl={data && !data.isCompletedView ? data.signingUrl : null}
+      // Guest signers have no app to bounce back to - flip to the signed view
+      // instead. Logged-in signers go back where they started.
+      onSigned={() => (isGuest ? queryClient.invalidateQueries({ queryKey: [sessionUrl] }) : handleBack())}
+    />
   );
 }

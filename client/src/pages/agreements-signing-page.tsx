@@ -1,7 +1,6 @@
-import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, AlertCircle, Download } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PandaDocSigningShell, useInAppBack } from "@/components/pandadoc-signing-shell";
 
 type SigningSessionResponse =
   | { isProviderView: true; status: string; agreementId: string; sessionId: string | null; providerId: string }
@@ -9,7 +8,7 @@ type SigningSessionResponse =
 
 export default function AgreementsSigningPage() {
   const { id: agreementId } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<SigningSessionResponse>({
     queryKey: ["/api/agreements", agreementId, "signing-session"],
@@ -27,94 +26,40 @@ export default function AgreementsSigningPage() {
     retry: false,
   });
 
-  const handleBack = () => {
-    // Return to wherever the user actually came from (Home dashboard, the
-    // Agreements page, the chat, an email link...). React Router stamps an
-    // index on history state - idx > 0 means there IS an in-app page behind
-    // us. Only when the agreement was opened directly (fresh tab from an
-    // email) do we fall back to the conversation it belongs to.
-    if ((window.history.state?.idx ?? 0) > 0) {
-      navigate(-1);
-      return;
-    }
-    if (data?.sessionId) {
-      if (data.providerId) {
-        navigate(`/chat/${data.providerId}/${data.sessionId}`);
-      } else {
-        navigate(`/chat/concierge?session=${data.sessionId}`);
-      }
-    } else {
-      navigate("/chat");
-    }
-  };
+  // Back to wherever the user came from (Home, Agreements, the chat, an email
+  // link). Opened directly from an email, fall back to the conversation the
+  // agreement belongs to.
+  const goBack = useInAppBack(() => {
+    if (!data?.sessionId) return "/chat";
+    return data.providerId
+      ? `/chat/${data.providerId}/${data.sessionId}`
+      : `/chat/concierge?session=${data.sessionId}`;
+  });
 
-  const isSigned = data?.isProviderView ? data.status === "SIGNED" : false;
+  const isProviderView = data?.isProviderView === true;
+  const isSigned = isProviderView && data.status === "SIGNED";
 
   return (
-    <div className="flex flex-col" style={{ height: "100dvh" }}>
-      {/* Minimal header */}
-      <div className="flex items-center gap-3 px-4 h-14 border-b bg-background shrink-0">
-        <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Button>
-        <span className="text-sm font-medium">
-          {data?.isProviderView ? "Agreement" : "Sign Agreement"}
-        </span>
-        {data?.isProviderView && isSigned && (
-          <a
-            href={`/api/agreements/${agreementId}/download`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline"
-          >
-            <Download className="w-4 h-4" />
-            Download
-          </a>
-        )}
-      </div>
-
-      {/* Content area */}
-      <div className="flex-1 relative">
-        {isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="t-helper">Loading agreement...</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
-            <AlertCircle className="w-10 h-10 text-destructive" />
-            <p className="text-sm font-medium">Could not load the signing session</p>
-            <p className="t-helper max-w-sm">
-              {(error as Error).message}
-            </p>
-            <Button variant="outline" size="sm" onClick={handleBack}>
-              Go Back
-            </Button>
-          </div>
-        )}
-
-        {/* Provider view - render signed PDF inline */}
-        {data?.isProviderView && (
-          <iframe
-            src={`/api/agreements/${agreementId}/download`}
-            className="w-full h-full border-0"
-            title="Signed Agreement"
-          />
-        )}
-
-        {/* Parent view - signing iframe */}
-        {!data?.isProviderView && data?.signingUrl && (
-          <iframe
-            src={data.signingUrl}
-            className="w-full h-full border-0"
-            title="Sign Agreement"
-            allow="camera; microphone; fullscreen; clipboard-write"
-          />
-        )}
-      </div>
-    </div>
+    <PandaDocSigningShell
+      title={isProviderView ? "Agreement" : "Sign Agreement"}
+      onBack={goBack}
+      downloadUrl={isSigned ? `/api/agreements/${agreementId}/download` : null}
+      isLoading={isLoading}
+      loadingLabel="Loading agreement..."
+      error={error as Error | null}
+      errorTitle="Could not load the signing session"
+      signedPdfUrl={isProviderView ? `/api/agreements/${agreementId}/download` : null}
+      signingUrl={!isProviderView ? data?.signingUrl : null}
+      onSigned={() => {
+        // The parent just signed: every agreement card and list must stop
+        // showing "awaiting your signature" before they land back on it.
+        queryClient.invalidateQueries({
+          predicate: (q) =>
+            Array.isArray(q.queryKey) &&
+            q.queryKey.some((k) => typeof k === "string" && k.includes("agreement")),
+        });
+        goBack();
+      }}
+    />
   );
 }
